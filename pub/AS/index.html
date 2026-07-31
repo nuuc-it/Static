@@ -115,7 +115,8 @@
   <div id="signinView" class="top signin">
     <h1>Team actions</h1>
     <p>Sign in with the Google account your team lead added to a NUUC team folder.
-       Your identity is verified by NUUC-Dispatch and never stored by this page.</p>
+       Your identity is verified by NUUC-Dispatch; this page keeps you signed in for up to
+       45 days by saving that verified identity token in your browser's local storage.</p>
     <div id="g_id_onload"
          data-client_id="657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com"
          data-callback="onGoogleSignIn"
@@ -188,7 +189,9 @@
       <ul>
         <li>Sign-in is a real Google identity, verified server-side by NUUC-Dispatch and
           exchanged for a signed identity assertion scoped to this portal — this page never
-          sees or stores your raw Google credential beyond the sign-in moment.</li>
+          sees or stores your raw Google credential beyond the sign-in moment. The assertion
+          itself is saved in your browser's local storage for up to 45 days so you aren't
+          re-prompted on every visit; <strong>Sign out</strong> deletes it immediately.</li>
         <li>Each row arrives already carrying the server's own status display answer
           (bucket, resolved, icon) — this page re-derives nothing, so it cannot disagree
           with the sheet or the add-on sidebar about what a status means.</li>
@@ -236,6 +239,39 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
 
+// ---- auth caching (ADR-0003, NUUC-Dispatch: 45-day assertion TTL) -----
+// The assertion is the only session artifact (no refresh token) — cache it
+// client-side and reuse it directly until it's within RENEW_SKEW_SECONDS of
+// its own exp, at which point a normal sign-in mints a fresh 45-day one.
+const AUTH_STORAGE_KEY = 'nuucAsAuth.v1';
+const AUTH_RENEW_SKEW_SECONDS = 300; // treat as expired 5min early to avoid edge-of-expiry races
+
+function _decodeJwtPayload(jwt){
+  try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
+  catch (e) { return null; }
+}
+
+function saveCachedAuth(){
+  const payload = _decodeJwtPayload(state.assertion);
+  if (!payload || typeof payload.exp !== 'number') return;
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+    assertion: state.assertion, exp: payload.exp, sub: state.sub, email: state.email
+  }));
+}
+
+function clearCachedAuth(){
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+function loadCachedAuth(){
+  let cached;
+  try { cached = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null'); }
+  catch (e) { return null; }
+  if (!cached || typeof cached.exp !== 'number') return null;
+  if (Math.floor(Date.now() / 1000) >= cached.exp - AUTH_RENEW_SKEW_SECONDS) return null;
+  return cached;
+}
+
 function toast(msg){ toastEl.textContent = msg; toastEl.classList.add('show');
   clearTimeout(toast.t); toast.t = setTimeout(()=>toastEl.classList.remove('show'), 2200); }
 
@@ -275,6 +311,7 @@ function onGoogleSignIn(credentialResponse){
       }
       state.assertion = res.assertion;
       state.sub = res.sub; state.email = res.email;
+      saveCachedAuth();
       return loadTeams();
     })
     .catch(err => {
@@ -286,6 +323,7 @@ function onGoogleSignIn(credentialResponse){
 function signOut(){
   state.idToken = null; state.assertion = null; state.sub = ''; state.email = '';
   state.teams = []; state.teamId = null; state.tier = 'NONE'; state.rows = [];
+  clearCachedAuth();
   $('appView').classList.add('hidden');
   $('signinView').classList.remove('hidden');
   if (window.google && google.accounts && google.accounts.id) {
@@ -293,6 +331,19 @@ function signOut(){
   }
 }
 $('signOutBtn').addEventListener('click', signOut);
+
+// ---- resume a cached session (skip Google + verify_identity entirely) --
+// loadTeams() never rejects (transport errors are caught internally and
+// surface as a banner) — a cached assertion the server no longer accepts
+// resolves as an empty team list (R6 fail-closed), same as any other
+// teamless visitor. Nothing to distinguish here; sign-in view stays
+// available underneath if the visitor needs to re-auth.
+(function initAuth(){
+  const cached = loadCachedAuth();
+  if (!cached) return;
+  state.assertion = cached.assertion; state.sub = cached.sub; state.email = cached.email;
+  loadTeams();
+})();
 
 // ---- team discovery (R21, §12.3) ---------------------------------------
 function loadTeams(){
