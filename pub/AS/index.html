@@ -126,12 +126,21 @@
     <div id="signinError" class="banner" style="max-width:480px"></div>
   </div>
 
+  <!-- ============ Transitional view: credential accepted / cached session
+       found, identity exchange still in flight (gts-79dw.4.20). Distinct
+       from both the sign-in prompt and the app shell so the click/resume
+       is visibly registered before any network call resolves. ============ -->
+  <div id="launchView" class="top signin hidden">
+    <span class="spinner" style="width:22px;height:22px;border-width:3px"></span>
+    <h1 id="launchMsg">Signing you in…</h1>
+  </div>
+
   <!-- ============ Signed-in view ============ -->
   <div id="appView" class="hidden">
     <div class="top">
       <div class="title">
         <div>
-          <h1>Team actions</h1>
+          <h1>Team actions <span id="titleSpinner" class="spinner hidden" style="margin-left:8px;vertical-align:middle"></span></h1>
           <div class="sub" id="sub">—</div>
         </div>
         <div class="who">
@@ -298,10 +307,37 @@ function postJson(url, payload){
   });
 }
 
+// ---- transitional / progressive-render helpers (gts-79dw.4.20) --------
+// showLaunch: the instant-feedback state for the gap between "visitor did
+// something" (clicked the Google button / page loaded with a cached
+// session) and "we know who they are" — no identity to show yet, so it's
+// just a distinct not-the-sign-in-prompt state.
+function showLaunch(msg){
+  $('signinView').classList.add('hidden');
+  $('appView').classList.add('hidden');
+  $('launchMsg').textContent = msg;
+  $('launchView').classList.remove('hidden');
+}
+// showAppShell: identity is known (sub/email) but team/action data may
+// still be in flight — reveal the app shell immediately so the visitor
+// sees "Signed in as X" rather than waiting on list_my_teams/
+// list_team_actions to also finish. loadTeams()/refreshActions() fill in
+// the rest progressively via setBusy()'s title-line spinner.
+function showAppShell(subMsg){
+  $('launchView').classList.add('hidden');
+  $('signinView').classList.add('hidden');
+  $('appView').classList.remove('hidden');
+  $('whoEmail').textContent = state.email;
+  $('sub').textContent = subMsg || ('Signed in as ' + state.email + ' — loading your teams…');
+}
+
 // ---- sign-in -----------------------------------------------------------
 function onGoogleSignIn(credentialResponse){
   state.idToken = credentialResponse.credential;
   $('signinError').style.display = 'none';
+  // Problem 1: show a distinct in-progress state the instant the credential
+  // callback fires, before verify_identity/list_my_teams resolve.
+  showLaunch('Signing you in…');
 
   postJson(NUUC_DISPATCH_URL, { action: 'verify_identity', idToken: state.idToken, aud: ASSERTION_AUD })
     .then(res => {
@@ -312,9 +348,14 @@ function onGoogleSignIn(credentialResponse){
       state.assertion = res.assertion;
       state.sub = res.sub; state.email = res.email;
       saveCachedAuth();
+      // Problem 2: identity is known now, before list_my_teams/
+      // list_team_actions return — render it immediately.
+      showAppShell();
       return loadTeams();
     })
     .catch(err => {
+      $('launchView').classList.add('hidden');
+      $('signinView').classList.remove('hidden');
       $('signinError').style.display = 'block';
       $('signinError').textContent = err.message || String(err);
     });
@@ -325,6 +366,7 @@ function signOut(){
   state.teams = []; state.teamId = null; state.tier = 'NONE'; state.rows = [];
   clearCachedAuth();
   $('appView').classList.add('hidden');
+  $('launchView').classList.add('hidden');
   $('signinView').classList.remove('hidden');
   if (window.google && google.accounts && google.accounts.id) {
     google.accounts.id.disableAutoSelect();
@@ -338,18 +380,32 @@ $('signOutBtn').addEventListener('click', signOut);
 // resolves as an empty team list (R6 fail-closed), same as any other
 // teamless visitor. Nothing to distinguish here; sign-in view stays
 // available underneath if the visitor needs to re-auth.
+//
+// No Google prompt happens on this path at all, so from first paint this
+// must show something other than the raw sign-in view or a blank page
+// (gts-79dw.4.20 problem 1). Unlike onGoogleSignIn, identity (sub/email)
+// is already known synchronously from the cached record, so go straight to
+// the app shell with a "resuming" message rather than the generic
+// identity-less showLaunch() state — that's strictly more informative and
+// still satisfies "distinct state from first paint".
 (function initAuth(){
   const cached = loadCachedAuth();
   if (!cached) return;
   state.assertion = cached.assertion; state.sub = cached.sub; state.email = cached.email;
+  showAppShell('Resuming your session — signed in as ' + cached.email + '…');
   loadTeams();
 })();
 
 // ---- team discovery (R21, §12.3) ---------------------------------------
 function loadTeams(){
+  // showAppShell() already ran (caller's job) so identity is visible;
+  // this call's own latency is now covered by the title-line spinner
+  // rather than a withheld view.
+  setBusy(true);
   return postJson(GACTIONSHEET_URL, { action: 'list_my_teams', assertion: state.assertion })
     .then(res => {
       state.teams = res.teams || [];
+      $('launchView').classList.add('hidden');
       $('signinView').classList.add('hidden');
       $('appView').classList.remove('hidden');
       $('whoEmail').textContent = state.email;
@@ -359,6 +415,7 @@ function loadTeams(){
         $('listWrap').classList.add('hidden');
         $('filtersRow').classList.add('hidden');
         $('countLabel').textContent = '';
+        setBusy(false);
         return;
       }
       $('noTeamsNotice').classList.add('hidden');
@@ -376,6 +433,7 @@ function loadTeams(){
     .catch(err => {
       $('loadError').style.display = 'block';
       $('loadError').textContent = 'Could not load your teams: ' + (err.message || err);
+      setBusy(false);
     });
 }
 
@@ -416,8 +474,10 @@ function refreshActions(){
 }
 
 function setBusy(b){
+  // Problem 3: the in-flight indicator lives on the title line, right of
+  // "Team actions", not centered/blocking over the filters/count row.
   state.busy = b;
-  $('countLabel').innerHTML = b ? '<span class="spinner"></span>' : '';
+  $('titleSpinner').classList.toggle('hidden', !b);
 }
 
 // ---- status display ------------------------------------------------------
