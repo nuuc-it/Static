@@ -211,11 +211,9 @@
         <li>Each row arrives already carrying the server's own status display answer
           (bucket, resolved, icon) — this page re-derives nothing, so it cannot disagree
           with the sheet or the add-on sidebar about what a status means.</li>
-        <li><strong>Read paths are wired; some writes are inert.</strong> The
-          <strong>sync</strong> control on each document is live. Per-row <strong>Edit</strong>
-          and the assignee <strong>status-change</strong> control only report what they would
-          do for now — they land in a follow-up bead against the AC frozen at this page's
-          design review.</li>
+        <li><strong>Read and write paths are wired.</strong> The <strong>sync</strong>
+          control, per-row <strong>Edit</strong>, and the assignee <strong>status-change</strong>
+          control all call the live backend and refresh the list in place — no page reload.</li>
         <li>The window ages out <strong>resolved rows only</strong> — an open action is
           never hidden by it, however long since it was touched, at any window setting.</li>
         <li>If you belong to more than one team, a <strong>Team</strong> switcher appears
@@ -266,11 +264,32 @@ const state = {
   tier: 'NONE',
   status: 'open', scope: 'all', windowDays: 60,
   rows: [], statusOptions: [],
-  busy: false
+  busy: false,
+  editingId: null      // global_id of the row currently showing the edit form, or null
 };
 
 const $ = (id) => document.getElementById(id);
 const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
+
+// ---- query-string routing (gts-79dw.4.24, extended by gts-79dw.4.23/Unit D) --
+// Two shapes already exist server-side: ?doc=<docId>&team=<teamId> (chip-link
+// CTA, src/WebApp.js's _handlePreviewNotice) and ?team=<teamId> (this page's
+// own teamPortalUrl, src/DocView.js, preselects the team on load). Read once
+// at load; routing is UX only — the server re-resolves tier itself on every
+// call regardless of these params.
+//
+// ?doc= now routes straight to View B (doc.html, gts-79dw.4.23) instead of
+// the interim docViewNotice placeholder Unit C shipped (View B didn't exist
+// yet at that point) — location.replace (not .href) so the redirect doesn't
+// leave this dead-end page in browser history. The rest of this page's init
+// (auth resume, team loading) is skipped in that case; doc.html re-derives
+// everything it needs itself.
+const QUERY_PARAMS = new URLSearchParams(location.search);
+const QUERY_TEAM = QUERY_PARAMS.get('team') || null;
+const QUERY_DOC = QUERY_PARAMS.get('doc') || null;
+if (QUERY_DOC) {
+  location.replace('doc.html' + location.search);
+}
 
 // ---- auth caching (ADR-0003, NUUC-Dispatch: 45-day assertion TTL) -----
 // The assertion is the only session artifact (no refresh token) — cache it
@@ -413,6 +432,7 @@ $('signOutBtn').addEventListener('click', signOut);
 // identity-less showLaunch() state — that's strictly more informative and
 // still satisfies "distinct state from first paint".
 (function initAuth(){
+  if (QUERY_DOC) return; // redirecting to doc.html — see QUERY_DOC handling above
   const cached = loadCachedAuth();
   if (!cached) return;
   state.assertion = cached.assertion; state.sub = cached.sub; state.email = cached.email;
@@ -449,7 +469,13 @@ function loadTeams(){
       $('teamField').classList.toggle('hidden', state.teams.length <= 1);
       $('teamSel').innerHTML = state.teams.map(t =>
         `<option value="${escape(t.teamId)}">${escape(t.teamName)} (${t.tier})</option>`).join('');
-      state.teamId = state.teams[0].teamId;
+      // ?team= preselects only if the caller actually has access to that
+      // team (list_my_teams already scoped this to the caller — a ?team=
+      // for a team they can't see must not be trusted client-side); falls
+      // back to the existing default otherwise (regression guard, AC3).
+      state.teamId = (QUERY_TEAM && state.teams.some(t => t.teamId === QUERY_TEAM))
+        ? QUERY_TEAM
+        : state.teams[0].teamId;
       $('teamSel').value = state.teamId;
 
       return refreshActions();
@@ -570,12 +596,20 @@ function render(){
   });
 
   listEl.querySelectorAll('[data-sync]').forEach(b => b.addEventListener('click', onSyncClick));
-  listEl.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click',
-    () => toast('Editing lands in a follow-up bead (gts-79dw.4.14) — inert here.')));
+  listEl.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
+    state.editingId = b.dataset.edit;
+    render();
+  }));
+  listEl.querySelectorAll('[data-cancel-edit]').forEach(b => b.addEventListener('click', () => {
+    state.editingId = null;
+    render();
+  }));
+  listEl.querySelectorAll('[data-save-edit]').forEach(b => b.addEventListener('click', onSaveEditClick));
   listEl.querySelectorAll('.status.mine').forEach(c => c.addEventListener('click', openStatusMenu));
 }
 
 function rowHtml(r, tier){
+  if (state.editingId === r.global_id) return editRowHtml(r);
   const mine = isMine(r);
   return `
     <div class="row">
@@ -593,6 +627,54 @@ function rowHtml(r, tier){
           ? `<button class="btn small" data-edit="${r.global_id}">Edit</button>` : ''}
       </div>
     </div>`;
+}
+
+// ---- edit form (gts-79dw.4.21 — LIVE, calls team_edit_action) ---------
+function editRowHtml(r){
+  return `
+    <div class="row">
+      <div class="aiN">${escape(r.action_id ? ('AI-' + String(r.action_id).replace(/^AI-/,'')) : '')}</div>
+      <div class="rowmain">
+        <input class="sel" style="width:100%" data-field="action_text" value="${escape(r.action_text)}" />
+        <div class="rowmeta" style="margin-top:6px">
+          <input class="sel" data-field="assignee_name" placeholder="Assignee name"
+                 value="${escape(r.assignee_name || '')}" style="flex:1;min-width:120px" />
+          <input class="sel" data-field="assignee_email" placeholder="Assignee email"
+                 value="${escape(r.assignee_email || '')}" style="flex:1;min-width:160px" />
+        </div>
+      </div>
+      <div class="controls">
+        <button class="btn small primary" data-save-edit="${r.global_id}">Save</button>
+        <button class="btn small" data-cancel-edit="${r.global_id}">Cancel</button>
+      </div>
+    </div>`;
+}
+
+function onSaveEditClick(e){
+  const btn = e.currentTarget;
+  const globalId = btn.dataset.saveEdit;
+  const rowEl = btn.closest('.row');
+  const fields = {
+    action_text:    rowEl.querySelector('[data-field="action_text"]').value,
+    assignee_name:  rowEl.querySelector('[data-field="assignee_name"]').value,
+    assignee_email: rowEl.querySelector('[data-field="assignee_email"]').value
+  };
+  btn.disabled = true;
+  postJson(GACTIONSHEET_URL, {
+    action: 'team_edit_action', assertion: state.assertion, teamId: state.teamId,
+    global_id: globalId, fields: fields
+  })
+    .then(res => {
+      state.editingId = null;
+      if (res.ok) { toast('Saved.'); return refreshActions(); }
+      toast('Edit did not apply: ' + (res.outcome || 'unknown'));
+      render();
+    })
+    .catch(err => {
+      state.editingId = null;
+      toast('Edit failed: ' + (err.message || err));
+      render();
+    });
 }
 
 // ---- sync control: LIVE (R14/R15) ------------------------------------
@@ -617,9 +699,10 @@ function onSyncClick(e){
     .finally(() => { btn.disabled = (state.tier !== 'EDIT'); btn.textContent = prevLabel; });
 }
 
-// ---- assignee status control (inert — gts-79dw.4.14) -------------------
+// ---- assignee status control (gts-79dw.4.22 — LIVE, calls team_patch_status) -
 function openStatusMenu(e){
   const chip = e.currentTarget, box = chip.getBoundingClientRect();
+  const globalId = chip.dataset.statusFor;
   menuEl.innerHTML = '<h4>Set status</h4>' +
     state.statusOptions.map(o =>
       `<button class="opt" data-set="${escape(o.status)}" title="${escape(o.alt)}"
@@ -630,14 +713,25 @@ function openStatusMenu(e){
   menuEl.style.top  = (box.bottom + window.scrollY + 6) + 'px';
   menuEl.style.display = 'block';
   menuEl.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => {
-    toast('Status changes land in a follow-up bead (gts-79dw.4.14) — inert here.'); closeMenu();
+    submitStatusChange(globalId, b.dataset.set); closeMenu();
   }));
   $('customStatus').addEventListener('keydown', ev => {
     if (ev.key === 'Enter' && ev.target.value.trim()){
-      toast('Status changes land in a follow-up bead (gts-79dw.4.14) — inert here.'); closeMenu();
+      submitStatusChange(globalId, ev.target.value.trim()); closeMenu();
     }
   });
   e.stopPropagation();
+}
+function submitStatusChange(globalId, newStatus){
+  postJson(GACTIONSHEET_URL, {
+    action: 'team_patch_status', assertion: state.assertion, teamId: state.teamId,
+    global_id: globalId, status: newStatus
+  })
+    .then(res => {
+      if (res.ok) { toast('Status updated.'); return refreshActions(); }
+      toast('Status change did not apply: ' + (res.outcome || 'unknown'));
+    })
+    .catch(err => toast('Status change failed: ' + (err.message || err)));
 }
 function closeMenu(){ menuEl.style.display = 'none'; }
 document.addEventListener('click', e => { if (!menuEl.contains(e.target)) closeMenu(); });
