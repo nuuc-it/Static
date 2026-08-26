@@ -24,7 +24,7 @@ its own folder beneath `pub/`.
 |---|---|---|---|
 | `pub/AS` | GActionSheet (`static-portal/src`, `scripts/publish-static-portal.js`) | production | <https://nuuc-it.github.io/Static/pub/AS/> |
 | `pub/AS-sit` | GActionSheet (same pipeline, SIT build) | test | <https://nuuc-it.github.io/Static/pub/AS-sit/> |
-| `pub/ballot` | RankChoiceVoting (`tools/publish-static-pages.js`, NUUC target) | nuuc | <https://nuuc-it.github.io/Static/pub/ballot/> |
+| `pub/ballot` | RankChoiceVoting (`tools/static-pages.js` via `gas-static`, NUUC build) | nuuc | <https://nuuc-it.github.io/Static/pub/ballot/> |
 | `pub/pmix-sit` | PracticeMix (`tools/static-pages.js` via `gas-static`) | test | <https://nuuc-it.github.io/Static/pub/pmix-sit/> |
 | `pub/pmix` | PracticeMix (same pipeline, PROD build) | prod | <https://nuuc-it.github.io/Static/pub/pmix/> |
 
