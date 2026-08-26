@@ -1,22 +1,27 @@
-# pub/AS — NUUC-Dispatch Spike S1 harness
+# static-portal/src — Team Action Portal (published static frontend)
 
-Static GitHub Pages content for Spike S1 (`GTaskSheet-79dw.1` in the GActionSheet bd
-tracker): a GIS sign-in page that calls the NUUC-Dispatch GAS backend
-(`../../../NUUC-Dispatch`) to verify a Google identity from a genuinely cross-origin
-static page. See `../../../GActionSheet/docs/verified-board-portal-plan.md` §5 for the
-full spike design.
+Source of truth for the team-action portal's static frontend (`gts-79dw.4.25`,
+migrated from hand-editing `Static/pub/AS/index.html` directly). Built and
+published through GAS-Core's shared `gas-static` package, configured by
+`scripts/static-pages.js` — see that file's header and
+`packages/gas-static/README.md` (GAS-Core) for the stamping/publish mechanics.
 
-- `index.html` — the sign-in + verification harness. Two placeholders need real values
-  once `../../../NUUC-Dispatch/SETUP.md` is complete: `GIS_CLIENT_ID_PLACEHOLDER` and
-  `WEBAPP_EXEC_URL_PLACEHOLDER`.
-- `privacy/`, `terms/` — OAuth-consent-screen-linked pages, adapted from GActionSheet's
-  `assets/store-details/{privacy,terms}` for NUUC-Dispatch's much narrower scope
-  (identity verification only, `openid email`, no Drive/Doc access).
-- `icon-{32,48,96,128}.png` — copied from GActionSheet's `assets/store-details/` as a
-  starting visual identity.
-- `consent-screen-text.md` — the exact text/links to paste into the GCP OAuth consent
-  screen form.
+- `index.html` — the team portal page. Three placeholders are stamped at build
+  time from `src/Version.js`'s `BUILD_INFO` (already stamped by
+  `manage-deployments.js`'s `stampVersionInfo` earlier in the same deploy):
+  `STATIC_BUILD_VERSION_`, `STATIC_WEBAPP_URL_`, `STATIC_ENV_LABEL_`.
+- `privacy/`, `terms/` — OAuth-consent-screen-linked pages for NUUC-Dispatch's
+  identity-verification scope (`openid email`, no Drive/Doc access) — carried
+  over verbatim from the original spike content, not specific to this page's
+  own functionality.
+- `icon-{32,48,96,128}.png` — visual identity, copied from GActionSheet's
+  `assets/store-details/`.
+- `consent-screen-text.md` — the exact text/links pasted into the GCP OAuth
+  consent screen form for NUUC-Dispatch.
 
-Not yet live — GitHub Pages configuration for this repo (`nuuc-it/Static`)
-hasn't been confirmed enabled; check via repo Settings → Pages, or
-`gh api repos/nuuc-it/Static/pages`.
+Published to the sibling `Static` repo (`local.settings.json`'s
+`staticPortalRepoPath`) — SIT to `pub/AS-sit/`, PROD to `pub/AS/` — as the
+automatic last step of `pnpm run deploy:test` / `pnpm run deploy:prod`. For a
+standalone build or a recovery publish:
+`node -e "require('./scripts/static-pages.js').build('sit')"` /
+`.publish('sit', { yes: true })`.
