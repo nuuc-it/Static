@@ -28,7 +28,7 @@ its own folder beneath `pub/`.
 | `pub/pmix-sit` | PracticeMix (`tools/static-pages.js` via `gas-static`) | test | <https://nuuc-it.github.io/Static/pub/pmix-sit/> |
 | `pub/pmix` | PracticeMix (same pipeline, PROD build) | prod | <https://nuuc-it.github.io/Static/pub/pmix/> |
 
-`pub/pmix` is registered but not yet published — PracticeMix's first PROD deploy creates it.
+`pub/pmix` went live on 2026-08-26 with PracticeMix v1.6.8 — its first PROD deploy.
 
 The OAuth-consent pages under `pub/AS*/privacy/` and `pub/AS*/terms/` are referenced by
 NUUC-Dispatch's consent-screen configuration; they are published by GActionSheet along with the rest
