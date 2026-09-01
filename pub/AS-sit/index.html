@@ -93,6 +93,13 @@
   .banner{margin-top:14px;padding:12px 14px;border-radius:12px;border:1px solid #fecaca;
           background:#fef2f2;color:#991b1b;display:none}
   .banner code{background:#fff;border:1px solid #fecaca;border-radius:6px;padding:1px 5px}
+  .scanstatus{margin-left:10px;font-size:12px;color:var(--muted);white-space:nowrap}
+  .scanstatus .dot{display:inline-block;width:7px;height:7px;border-radius:50%;
+    margin-right:5px;vertical-align:middle;background:var(--muted)}
+  .scanstatus .dot.run{background:#2e7d32;animation:scanpulse 1.2s ease-in-out infinite}
+  .scanstatus .dot.wait{background:#ef6c00}
+  .scanstatus .dot.err{background:#c62828}
+  @keyframes scanpulse{0%,100%{opacity:1}50%{opacity:.25}}
   .notice{margin-top:14px;padding:16px;border-radius:12px;border:1px solid var(--line);
           background:#fff;color:var(--muted)}
   .caveats{margin-top:20px;color:var(--muted);font-size:12.5px;line-height:1.6}
@@ -214,14 +221,18 @@
           <button class="btn small" id="expandAllBtn">Expand all</button>
           <button class="btn small" id="collapseAllBtn">Collapse all</button>
         </div>
-        <!-- gts-gwyg: admin-only, per-team. Never shown in All-teams mode
-             (admin_scan_team_docs authorizes against ONE real teamId, same
+        <!-- gts-gwyg/gts-lgpx: admin-only, per-team. Never shown in All-teams
+             mode (the scan routes authorize against ONE real teamId, same
              constraint as the write routes above) or to a non-admin caller
              (state.isAdmin comes from list_team_actions's server-verified
              isAdmin field — this toggle is UX only, real authorization is
-             re-checked server-side on the scan call itself). -->
+             re-checked server-side on every scan call itself).
+             The button's label and enabled-ness track the persisted scan
+             state (Start / Resume / running), so the operator can always
+             tell whether a scan is moving without reading the log. -->
         <div class="field hidden" id="adminScanField">
           <button class="btn small" id="adminScanBtn">Scan for untracked docs</button>
+          <span id="adminScanStatus" class="scanstatus"></span>
         </div>
         <div class="field" id="countLabel"></div>
       </div>
@@ -280,7 +291,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.2.3.86";
+var STATIC_BUILD_VERSION_ = "0.2.3.87";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -386,6 +397,10 @@ const state = {
                        // docs" button; never trusted for the scan call
                        // itself, which re-checks Config!AdminUsers server-side.
   scanBusy: false,
+  scan: null,          // gts-lgpx: last admin_scan_status payload
+                       // {phase,status,scanned,total,queued,matched,candidates,...}
+  scanPollTimer: null,
+  scanTeamShown: null,   // teamId whose scan status is currently displayed
   teamTiers: {},       // {teamId: tier} — populated in ALL-teams mode from res.teams,
                         // used to gate each row/doc-group's Sync/Edit controls per its
                         // OWN team rather than one blended state.tier (gts-zm8w)
@@ -686,39 +701,124 @@ function refreshActions(){
     .finally(() => setBusy(false));
 }
 
-// ---- admin: scan for untracked docs (gts-gwyg) ---------------------------
-// Client-side isAdmin only gates whether this button is shown; the actual
-// admin check (Config!AdminUsers) runs server-side on this call regardless.
+// ---- admin: scan for untracked docs (gts-gwyg, resumable per gts-lgpx) ---
+// The scan no longer runs inside this request. Clicking enqueues it
+// (admin_scan_start) and returns immediately; a self-rescheduling one-shot
+// trigger advances it server-side across as many executions as it needs.
+// This client just polls admin_scan_status and renders progress, so a scan
+// that outlives the browser tab keeps going and is still there on return.
+//
+// Client-side isAdmin only gates whether these controls are shown; the real
+// admin check (Config!AdminUsers) runs server-side on every call below,
+// including the read-only status poll.
+
+const SCAN_POLL_MS = 5000;
+
+function scanCall(action){
+  return postJson(GACTIONSHEET_URL, { action, assertion: state.assertion, teamId: state.teamId });
+}
+
+// Poll only while the scan is actually advancing. A done/idle/error scan
+// stops the timer so an idle tab isn't calling the backend forever.
+function scheduleScanPoll(){
+  clearTimeout(state.scanPollTimer);
+  const st = state.scan && state.scan.status;
+  if (st !== 'running' && st !== 'waiting') return;
+  state.scanPollTimer = setTimeout(refreshScanStatus, SCAN_POLL_MS);
+}
+
+function refreshScanStatus(){
+  if (!state.isAdmin || !state.teamId || state.teamId === ALL_TEAMS_ID) return Promise.resolve();
+  return scanCall('admin_scan_status')
+    .then(res => {
+      if (!res.ok) return;               // forbidden — leave the panel blank
+      state.scan = res;
+      renderScanPanel();
+      scheduleScanPoll();
+    })
+    .catch(() => { /* a dropped poll is not worth a toast; the next one retries */ });
+}
+
+// Start a fresh scan, or resume the one already persisted. The button label
+// (renderScanPanel) tells the operator which of the two the click will do.
 function runAdminScan(){
   if (state.scanBusy || !state.teamId || state.teamId === ALL_TEAMS_ID) return;
-  state.scanBusy = true;
-  $('adminScanBtn').disabled = true;
-  $('adminScanResults').classList.add('hidden');
+  const resumable = state.scan && (state.scan.status === 'waiting'
+    || state.scan.status === 'stale' || state.scan.status === 'error');
+  const action = resumable ? 'admin_scan_resume' : 'admin_scan_start';
 
-  postJson(GACTIONSHEET_URL, {
-    action: 'admin_scan_team_docs', assertion: state.assertion, teamId: state.teamId
-  })
+  state.scanBusy = true;
+  renderScanPanel();
+  scanCall(action)
     .then(res => {
       if (!res.ok) { toast('Scan denied: ' + (res.reason || 'unknown error')); return; }
-      renderAdminScanResults(res);
+      state.scan = res;
     })
     .catch(err => toast('Scan failed: ' + (err.message || err)))
-    .finally(() => { state.scanBusy = false; $('adminScanBtn').disabled = false; });
+    .finally(() => {
+      state.scanBusy = false;
+      renderScanPanel();
+      scheduleScanPoll();
+    });
 }
 $('adminScanBtn').addEventListener('click', runAdminScan);
 
-function renderAdminScanResults(res){
+// One line answering all three of the operator's questions at once: what is
+// it doing, how far along, and is it moving right now or waiting on its
+// trigger. `waiting` is deliberately worded as queued-not-stalled — the
+// one-shot fires about a minute out, and without saying so the pause reads
+// as a hang (which is exactly how the old blocking scan failed).
+function scanStatusLine(sc){
+  if (!sc || sc.status === 'idle') return '';
+  const n = sc.scanned || 0;
+  if (sc.status === 'error') return `<span class="dot err"></span>Scan failed${sc.error ? ' (' + escape(sc.error) + ')' : ''} — Resume to retry`;
+  if (sc.phase === 'enumerate') {
+    const found = sc.queued || 0;
+    const where = sc.status === 'running' ? 'Finding docs' : 'Finding docs (queued)';
+    return `<span class="dot ${sc.status === 'running' ? 'run' : 'wait'}"></span>${where} — ${found} found so far`;
+  }
+  if (sc.complete) return `<span class="dot"></span>Done — scanned ${n} of ${sc.total}, ${sc.matched || 0} match(es)`;
+  const total = (typeof sc.total === 'number') ? sc.total : '?';
+  if (sc.status === 'stale') return `<span class="dot err"></span>Stalled at ${n} of ${total} — Resume to continue`;
+  const verb = sc.status === 'running' ? 'Scanning' : 'Queued — next pass within a minute;';
+  return `<span class="dot ${sc.status === 'running' ? 'run' : 'wait'}"></span>${verb} ${n} of ${total}`;
+}
+
+function renderScanPanel(){
+  const sc = state.scan;
+  const btn = $('adminScanBtn');
+  const running = !!sc && sc.status === 'running';
+  const resumable = !!sc && (sc.status === 'waiting' || sc.status === 'stale' || sc.status === 'error');
+
+  btn.textContent = running ? 'Scanning…'
+    : resumable ? 'Resume scan'
+    : 'Scan for untracked docs';
+  // Only a genuinely in-flight pass disables the button — a waiting scan
+  // stays clickable so the operator can pull the next pass forward instead
+  // of waiting out the trigger delay.
+  btn.disabled = state.scanBusy || running;
+
+  $('adminScanStatus').innerHTML = scanStatusLine(sc);
+  renderAdminScanResults(sc);
+}
+
+function renderAdminScanResults(sc){
   const box = $('adminScanResults');
-  const candidates = res.candidates || [];
-  const incompleteNote = res.complete === false
-    ? `<p><em>Scan stopped early (time budget) after ${res.scanned} docs — run again to continue.</em></p>` : '';
+  const candidates = (sc && sc.candidates) || [];
+  if (!sc || sc.status === 'idle' || (!candidates.length && !sc.complete)) {
+    box.classList.add('hidden');
+    return;
+  }
   if (!candidates.length) {
-    box.innerHTML = `<p>Scanned ${res.scanned} doc(s) under this team's folder(s) — no untracked action-looking docs found.</p>${incompleteNote}`;
+    box.innerHTML = `<p>Scanned ${sc.scanned} doc(s) under this team's folder(s) — no untracked action-looking docs found.</p>`;
   } else {
-    box.innerHTML = `<p>${candidates.length} untracked doc(s) look action-bearing (of ${res.scanned} scanned):</p>` +
+    const heading = sc.complete
+      ? `${candidates.length} untracked doc(s) look action-bearing (of ${sc.scanned} scanned):`
+      : `${candidates.length} found so far (${sc.scanned} of ${sc.total} scanned) — still running:`;
+    box.innerHTML = `<p>${heading}</p>` +
       '<ul>' + candidates.map(c =>
         `<li><a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.docName)}</a></li>`
-      ).join('') + '</ul>' + incompleteNote;
+      ).join('') + '</ul>';
   }
   box.classList.remove('hidden');
 }
@@ -765,7 +865,23 @@ function rowByDocId(docId){ return state.rows.find(r => r.doc_id === docId); }
 function render(){
   const isAllTeams = state.teamId === ALL_TEAMS_ID;
   $('sub').textContent = (isAllTeams ? 'All teams' : state.teamId) + ' • signed in';
-  $('adminScanField').classList.toggle('hidden', isAllTeams || !state.isAdmin);
+  const showScan = !isAllTeams && state.isAdmin;
+  $('adminScanField').classList.toggle('hidden', !showScan);
+  // gts-lgpx: the scan lives server-side in a Script Property, so on load (and
+  // on every team switch) ask what it is doing rather than assuming idle — a
+  // scan started in a previous session may still be running right now.
+  if (showScan) {
+    if (state.scanTeamShown !== state.teamId) {
+      state.scanTeamShown = state.teamId;
+      state.scan = null;
+      $('adminScanStatus').innerHTML = '';
+      $('adminScanResults').classList.add('hidden');
+      refreshScanStatus();
+    }
+  } else {
+    state.scanTeamShown = null;
+    clearTimeout(state.scanPollTimer);
+  }
   // gts-zm8w: ALL-teams tier varies per document (state.teamTiers), so the
   // single title-line tag can't say EDIT/VIEW for the whole page — each doc
   // group's own controls are gated individually below instead.
