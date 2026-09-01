@@ -214,11 +214,21 @@
           <button class="btn small" id="expandAllBtn">Expand all</button>
           <button class="btn small" id="collapseAllBtn">Collapse all</button>
         </div>
+        <!-- gts-gwyg: admin-only, per-team. Never shown in All-teams mode
+             (admin_scan_team_docs authorizes against ONE real teamId, same
+             constraint as the write routes above) or to a non-admin caller
+             (state.isAdmin comes from list_team_actions's server-verified
+             isAdmin field — this toggle is UX only, real authorization is
+             re-checked server-side on the scan call itself). -->
+        <div class="field hidden" id="adminScanField">
+          <button class="btn small" id="adminScanBtn">Scan for untracked docs</button>
+        </div>
         <div class="field" id="countLabel"></div>
       </div>
     </div>
 
     <div class="banner" id="loadError"></div>
+    <div class="notice hidden" id="adminScanResults"></div>
     <div class="notice hidden" id="noTeamsNotice">
       You don't currently have access to any team's actions. If you believe this is wrong,
       contact your team lead — they add members to the team's shared Drive folder.
@@ -270,7 +280,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.2.3.77";
+var STATIC_BUILD_VERSION_ = "0.2.3.78";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -371,6 +381,11 @@ const state = {
   teams: [],           // [{teamId, teamName, tier}] from list_my_teams
   teamId: null,
   tier: 'NONE',
+  isAdmin: false,      // gts-gwyg: server-verified (list_team_actions'
+                       // isAdmin field) — gates the "Scan for untracked
+                       // docs" button; never trusted for the scan call
+                       // itself, which re-checks Config!AdminUsers server-side.
+  scanBusy: false,
   teamTiers: {},       // {teamId: tier} — populated in ALL-teams mode from res.teams,
                         // used to gate each row/doc-group's Sync/Edit controls per its
                         // OWN team rather than one blended state.tier (gts-zm8w)
@@ -618,6 +633,7 @@ function loadTeams(){
 
 $('teamSel').addEventListener('change', e => {
   state.teamId = e.target.value;
+  $('adminScanResults').classList.add('hidden');
   refreshActions();
 });
 
@@ -655,6 +671,7 @@ function refreshActions(){
       state.rows = res.actions || [];
       state.statusOptions = res.statusOptions || [];
       state.tier = res.tier || 'NONE';
+      state.isAdmin = !!res.isAdmin;
       // gts-zm8w: only the ALL-teams response carries `teams` — a per-team
       // tier map so each doc group can gate Sync/Edit by ITS OWN team's
       // tier rather than the single blended state.tier above.
@@ -667,6 +684,43 @@ function refreshActions(){
       $('loadError').textContent = 'Could not load actions: ' + (err.message || err);
     })
     .finally(() => setBusy(false));
+}
+
+// ---- admin: scan for untracked docs (gts-gwyg) ---------------------------
+// Client-side isAdmin only gates whether this button is shown; the actual
+// admin check (Config!AdminUsers) runs server-side on this call regardless.
+function runAdminScan(){
+  if (state.scanBusy || !state.teamId || state.teamId === ALL_TEAMS_ID) return;
+  state.scanBusy = true;
+  $('adminScanBtn').disabled = true;
+  $('adminScanResults').classList.add('hidden');
+
+  postJson(GACTIONSHEET_URL, {
+    action: 'admin_scan_team_docs', assertion: state.assertion, teamId: state.teamId
+  })
+    .then(res => {
+      if (!res.ok) { toast('Scan denied: ' + (res.reason || 'unknown error')); return; }
+      renderAdminScanResults(res);
+    })
+    .catch(err => toast('Scan failed: ' + (err.message || err)))
+    .finally(() => { state.scanBusy = false; $('adminScanBtn').disabled = false; });
+}
+$('adminScanBtn').addEventListener('click', runAdminScan);
+
+function renderAdminScanResults(res){
+  const box = $('adminScanResults');
+  const candidates = res.candidates || [];
+  const incompleteNote = res.complete === false
+    ? `<p><em>Scan stopped early (time budget) after ${res.scanned} docs — run again to continue.</em></p>` : '';
+  if (!candidates.length) {
+    box.innerHTML = `<p>Scanned ${res.scanned} doc(s) under this team's folder(s) — no untracked action-looking docs found.</p>${incompleteNote}`;
+  } else {
+    box.innerHTML = `<p>${candidates.length} untracked doc(s) look action-bearing (of ${res.scanned} scanned):</p>` +
+      '<ul>' + candidates.map(c =>
+        `<li><a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.docName)}</a></li>`
+      ).join('') + '</ul>' + incompleteNote;
+  }
+  box.classList.remove('hidden');
 }
 
 function setBusy(b){
@@ -711,6 +765,7 @@ function rowByDocId(docId){ return state.rows.find(r => r.doc_id === docId); }
 function render(){
   const isAllTeams = state.teamId === ALL_TEAMS_ID;
   $('sub').textContent = (isAllTeams ? 'All teams' : state.teamId) + ' • signed in';
+  $('adminScanField').classList.toggle('hidden', isAllTeams || !state.isAdmin);
   // gts-zm8w: ALL-teams tier varies per document (state.teamTiers), so the
   // single title-line tag can't say EDIT/VIEW for the whole page — each doc
   // group's own controls are gated individually below instead.
