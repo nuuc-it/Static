@@ -291,7 +291,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.2.3.93";
+var STATIC_BUILD_VERSION_ = "0.2.3.94";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -802,6 +802,9 @@ function renderScanPanel(){
   renderAdminScanResults(sc);
 }
 
+// Selection only makes sense once the candidate set is final (sc.complete) —
+// the panel re-renders every SCAN_POLL_MS while a scan is still running, which
+// would otherwise wipe checkbox state out from under the operator mid-click.
 function renderAdminScanResults(sc){
   const box = $('adminScanResults');
   const candidates = (sc && sc.candidates) || [];
@@ -811,16 +814,54 @@ function renderAdminScanResults(sc){
   }
   if (!candidates.length) {
     box.innerHTML = `<p>Scanned ${sc.scanned} doc(s) under this team's folder(s) — no untracked action-looking docs found.</p>`;
-  } else {
-    const heading = sc.complete
-      ? `${candidates.length} untracked doc(s) look action-bearing (of ${sc.scanned} scanned):`
-      : `${candidates.length} found so far (${sc.scanned} of ${sc.total} scanned) — still running:`;
-    box.innerHTML = `<p>${heading}</p>` +
+  } else if (!sc.complete) {
+    box.innerHTML = `<p>${candidates.length} found so far (${sc.scanned} of ${sc.total} scanned) — still running:</p>` +
       '<ul>' + candidates.map(c =>
         `<li><a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.docName)}</a></li>`
       ).join('') + '</ul>';
+  } else {
+    box.innerHTML =
+      `<p>${candidates.length} untracked doc(s) look action-bearing (of ${sc.scanned} scanned):</p>` +
+      `<p><label><input type="checkbox" id="trackSelectAll" /> Select all</label></p>` +
+      '<ul class="trackable">' + candidates.map(c =>
+        `<li><label><input type="checkbox" class="trackCandidate" data-doc-id="${escape(c.docId)}" data-doc-name="${escape(c.docName)}" /> ` +
+        `<a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.docName)}</a></label></li>`
+      ).join('') + '</ul>' +
+      `<button class="btn small" id="trackSelectedBtn">Track selected</button>`;
+    $('trackSelectAll').addEventListener('change', (e) => {
+      box.querySelectorAll('.trackCandidate').forEach(cb => { cb.checked = e.target.checked; });
+    });
+    $('trackSelectedBtn').addEventListener('click', trackSelectedDocs);
   }
   box.classList.remove('hidden');
+}
+
+// Track = cheap DocData registration only (admin_scan_track), not a full
+// doc sync — the next syncAll sweep (gts-qkev, DocData-walk) discovers and
+// syncs each tracked doc's Actions on its own. Per human direction
+// 2026-09-01: the list simply goes away on success; the operator re-scans
+// later if/when they want to see what remains.
+function trackSelectedDocs(){
+  const box = $('adminScanResults');
+  const checked = Array.from(box.querySelectorAll('.trackCandidate:checked'));
+  if (!checked.length) { toast('Select at least one document to track.'); return; }
+  const docs = checked.map(cb => ({ docId: cb.dataset.docId, docName: cb.dataset.docName }));
+
+  const btn = $('trackSelectedBtn');
+  btn.disabled = true;
+  btn.textContent = 'Tracking…';
+  postJson(GACTIONSHEET_URL, { action: 'admin_scan_track', assertion: state.assertion, teamId: state.teamId, docs })
+    .then(res => {
+      if (!res.ok) { toast('Track failed: ' + (res.reason || 'unknown error')); return; }
+      toast(`Tracking ${res.tracked.length} document(s) — they'll pick up actions on the next background sync.`);
+      state.scan = null;
+      renderScanPanel();
+    })
+    .catch(err => toast('Track failed: ' + (err.message || err)))
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = 'Track selected';
+    });
 }
 
 function setBusy(b){
