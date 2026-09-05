@@ -295,7 +295,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.2.5.6";
+var STATIC_BUILD_VERSION_ = "0.2.5.7";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -826,7 +826,7 @@ function scanStatusLine(sc){
   const teamProgress = sc.allTeams
     ? ` — team ${escape(teamDisplayName(sc.teamId))}${sc.teamsRemaining ? `, ${sc.teamsRemaining} more queued` : ''}`
     : '';
-  if (sc.status === 'error') return `<span class="dot err"></span>Scan failed${sc.error ? ' (' + escape(sc.error) + ')' : ''} — Resume to retry${teamProgress}${updated}`;
+  if (sc.status === 'error') return `<span class="dot err"></span>Scan failed${sc.scanError ? ' (' + escape(sc.scanError) + ')' : ''} — Resume to retry${teamProgress}${updated}`;
   if (sc.phase === 'enumerate') {
     const found = sc.queued || 0;
     const where = sc.status === 'running' ? 'Finding docs' : 'Finding docs (queued)';
