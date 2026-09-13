@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NDocs — Stage 2 pipeline</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+  code { background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; }
+  #health { margin-top: 1rem; }
+  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ccc; color: #666; }
+</style>
+</head>
+<body>
+  <h1>NDocs</h1>
+  <p>
+    This is the Stage 2 (<code>pipeline</code>) deploy-verification page — not the application.
+    It exists to prove the stamp/publish/verify loop works end to end while the backend still
+    carries only <code>version</code> and <code>health</code>. The clickable mockup
+    (<code>ndocs/*.html</code>) is a separate, local artifact until Stage 6 cuts it over to this
+    same backend and this page is retired.
+  </p>
+  <div id="health">Checking backend health…</div>
+  <footer>
+    Build <span id="build-version"></span> — <span id="build-env"></span>
+  </footer>
+  <script>
+    var STATIC_BUILD_VERSION_ = "0.0.0.1";
+    var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
+    var STATIC_ENV_LABEL_ = "SIT";
+
+    document.getElementById('build-version').textContent = STATIC_BUILD_VERSION_;
+    document.getElementById('build-env').textContent = STATIC_ENV_LABEL_;
+
+    fetch(STATIC_WEBAPP_URL_ + '?cmd=health')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        document.getElementById('health').textContent =
+          'Backend health: ' + (data.ok ? 'ok' : 'not ok') + ' (server version ' + data.version + ')';
+      })
+      .catch(function (err) {
+        document.getElementById('health').textContent = 'Backend health check failed: ' + err.message;
+      });
+  </script>
+</body>
+</html>
