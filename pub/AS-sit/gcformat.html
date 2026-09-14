@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>GC Format — NUUC Action Sheet</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  /* Same visual idiom as index.html/doc.html (View A/B) — carried over
+     verbatim so this page reads as one product with them, not a third one. */
+  :root{
+    --bg:#f6f8fb; --panel:#ffffff; --line:#d9e1ec; --text:#1f2937; --muted:#6b7280;
+    --blue:#2563eb; --blue2:#dbeafe; --green:#059669; --green2:#d1fae5; --red:#dc2626;
+    --amber:#d97706; --amber2:#fef3c7; --slate2:#e5e7eb;
+    --shadow:0 8px 28px rgba(15,23,42,.08);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+       background:linear-gradient(180deg,#eef2ff,#f8fafc 180px);color:var(--text)}
+  .page{max-width:640px;margin:0 auto;padding:18px 16px 40px}
+
+  .top{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+       box-shadow:var(--shadow);padding:14px 16px}
+  .title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .title h1{font-size:19px;margin:0}
+  .sub{color:var(--muted);font-size:13px;margin-top:3px}
+  .sub a{color:inherit}
+  .who{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .tag{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
+       border:1px solid var(--line);background:#f9fafb;font-size:12px;color:var(--muted)}
+  .tag.edit{background:var(--green2);border-color:#a7f3d0;color:#065f46}
+  .tag.view{background:var(--slate2);border-color:#d1d5db}
+  .email{font-size:12.5px;color:var(--muted)}
+  .linkbtn{border:0;background:none;color:var(--blue);cursor:pointer;font:inherit;padding:0}
+
+  .ops{margin-top:16px;display:flex;flex-direction:column;gap:10px}
+  .op{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);
+      border-radius:10px;background:#fbfcfe}
+  .op input{margin-top:3px}
+  .op label{font-weight:600;cursor:pointer}
+  .op .desc{color:var(--muted);font-size:12.5px;margin-top:2px}
+
+  .actionsrow{margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button.primary{background:var(--blue);color:#fff;border:0;border-radius:10px;padding:9px 16px;
+                 font:inherit;font-weight:600;cursor:pointer}
+  button.primary:disabled{opacity:.55;cursor:default}
+  button.secondary{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 14px;
+                   font:inherit;cursor:pointer}
+  label.dryrun{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+
+  .result{margin-top:16px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);
+          background:#fff}
+  .result h2{font-size:13px;margin:0 0 6px}
+  .result ul{margin:6px 0 0;padding-left:18px}
+  .result.ok{border-color:#a7f3d0;background:var(--green2)}
+  .result.err{border-color:#fecaca;background:#fef2f2;color:#991b1b}
+
+  .notice{margin-top:14px;padding:16px;border-radius:12px;border:1px solid var(--line);
+          background:#fff;color:var(--muted)}
+  .banner{margin-top:14px;padding:12px 14px;border-radius:12px;border:1px solid #fecaca;
+          background:#fef2f2;color:#991b1b;display:none}
+
+  .signin{display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;
+           padding:60px 16px}
+  .signin h1{font-size:22px;margin:0}
+  .signin p{color:var(--muted);max-width:480px;margin:0}
+
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;
+         padding:9px 13px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:1}
+  .hidden{display:none !important}
+  .spinner{display:inline-block;width:13px;height:13px;border:2px solid #d9e1ec;
+           border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .buildbadge{position:fixed;bottom:8px;right:10px;font-size:11px;color:var(--muted);
+              background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;
+              padding:3px 9px;z-index:60;pointer-events:none}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============ Signed-out view ============ -->
+  <div id="signinView" class="top signin">
+    <h1>GC Format</h1>
+    <p>Sign in with the Google account your team lead added to a NUUC team folder to configure
+       and run GC formatting on this document.</p>
+    <div id="g_id_onload"
+         data-client_id="657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com"
+         data-callback="onGoogleSignIn"
+         data-auto_select="false">
+    </div>
+    <div class="g_id_signin" data-type="standard" data-shape="pill"></div>
+    <div id="signinError" class="banner" style="max-width:480px"></div>
+  </div>
+
+  <!-- ============ Transitional view ============ -->
+  <div id="launchView" class="top signin hidden">
+    <span class="spinner" style="width:22px;height:22px;border-width:3px"></span>
+    <h1 id="launchMsg">Signing you in…</h1>
+  </div>
+
+  <!-- ============ Signed-in view ============ -->
+  <div id="appView" class="hidden">
+    <div class="top">
+      <div class="title">
+        <div>
+          <h1>GC Format <span id="titleSpinner" class="spinner hidden" style="margin-left:8px;vertical-align:middle"></span></h1>
+          <div class="sub" id="sub">—</div>
+        </div>
+        <div class="who">
+          <span class="email" id="whoEmail"></span>
+          <span class="tag" id="tierTag">—</span>
+          <button class="linkbtn" id="signOutBtn">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="banner" id="loadError"></div>
+    <div class="notice hidden" id="noAccessNotice">
+      You don't currently have EDIT access to this document's team, so you can't run GC Format
+      here. If you believe this is wrong, contact your team lead.
+    </div>
+
+    <div id="formWrap" class="hidden">
+      <div class="ops" id="opsList"></div>
+      <div class="actionsrow">
+        <button class="primary" id="runBtn">Run GC Format</button>
+        <button class="secondary" id="dryRunBtn">Preview (dry run)</button>
+        <label class="dryrun"><input type="checkbox" id="allBox"> select all</label>
+      </div>
+    </div>
+
+    <div class="result hidden" id="resultBox"></div>
+  </div>
+
+  <!-- ============ No ?doc= at all ============ -->
+  <div id="noDocView" class="top notice hidden">
+    This link doesn't name a document to configure.
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="buildbadge" id="buildBadge"></div>
+
+<script>
+// Build-time stamps (identical convention to index.html/doc.html) — left null
+// in the unbuilt source, stamped by scripts/build-static-portal.js.
+var STATIC_BUILD_VERSION_ = null;
+var STATIC_WEBAPP_URL_ = null;
+var STATIC_ENV_LABEL_ = null;
+
+const NUUC_DISPATCH_URL = 'https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec';
+const GACTIONSHEET_URL  = STATIC_WEBAPP_URL_;
+const ASSERTION_AUD = 'gactionsheet';
+
+// The closed operations set (contract §2, gts-atpv.14) — kept in exact sync
+// with src/GcFormatRules.js's _GC_FORMAT_OPERATIONS by hand; a new operation
+// requires updating BOTH this list and the server enum (never the manifest).
+const OPERATIONS = [
+  { id: 'document_styles', label: 'Document styles', desc: 'Named-style definitions for Normal Text and Heading 1-4 (font, size, bold, color, spacing).' },
+  { id: 'page_setup',      label: 'Page setup',       desc: 'Margins and footer pagination from page 2.' },
+  { id: 'structure',       label: 'Structure',        desc: 'Heading classification (Policy/Procedure titles → Heading 3/4).' },
+  { id: 'format',          label: 'Format',           desc: 'Bold lead-ins, direct-formatting strip, numbered-list spacing, blank-paragraph cleanup.' },
+  { id: 'report',          label: 'Report',           desc: 'Bibliography order, footnotes, broken internal links — never mutates.' }
+];
+
+const $buildBadge_ = document.getElementById('buildBadge');
+function applyVersionState_(clientBuild, serverVersion){
+  const env = STATIC_ENV_LABEL_ ? STATIC_ENV_LABEL_ + ' · ' : '';
+  $buildBadge_.textContent = clientBuild ? (env + 'v' + clientBuild) : (env + 'unbuilt source');
+}
+applyVersionState_(STATIC_BUILD_VERSION_, null);
+
+const state = {
+  idToken: null, assertion: null, sub: '', email: '',
+  docId: null, teamId: null, tier: 'NONE',
+  docName: '', docUrl: '', savedOperations: [],
+  busy: false
+};
+
+const $ = (id) => document.getElementById(id);
+const opsListEl = $('opsList'), toastEl = $('toast');
+
+const QUERY_PARAMS = new URLSearchParams(location.search);
+state.docId = QUERY_PARAMS.get('doc') || null;
+state.teamId = QUERY_PARAMS.get('team') || null;
+
+// ---- auth caching (identical convention to index.html/doc.html) --------
+const AUTH_STORAGE_KEY = 'nuucAsAuth.v1';
+const AUTH_RENEW_SKEW_SECONDS = 300;
+
+function _decodeJwtPayload(jwt){
+  try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
+  catch (e) { return null; }
+}
+function saveCachedAuth(){
+  const payload = _decodeJwtPayload(state.assertion);
+  if (!payload || typeof payload.exp !== 'number') return;
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+    assertion: state.assertion, exp: payload.exp, sub: state.sub, email: state.email
+  }));
+}
+function clearCachedAuth(){ localStorage.removeItem(AUTH_STORAGE_KEY); }
+function loadCachedAuth(){
+  let cached;
+  try { cached = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null'); }
+  catch (e) { return null; }
+  if (!cached || typeof cached.exp !== 'number') return null;
+  if (Math.floor(Date.now() / 1000) >= cached.exp - AUTH_RENEW_SKEW_SECONDS) return null;
+  return cached;
+}
+
+function toast(msg){ toastEl.textContent = msg; toastEl.classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(()=>toastEl.classList.remove('show'), 2200); }
+const escape = (s) => String(s==null?'':s).replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function postJson(url, payload){
+  const body = (url === GACTIONSHEET_URL)
+    ? Object.assign({ clientVersion: STATIC_BUILD_VERSION_ }, payload)
+    : payload;
+  return fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body)
+  }).then(r => r.text()).then(text => {
+    try { return JSON.parse(text); }
+    catch (e) {
+      throw new Error('Non-JSON response from ' + url + ' — the deployment may be mid-propagation: ' + text.slice(0, 200));
+    }
+  });
+}
+
+function showLaunch(msg){
+  $('signinView').classList.add('hidden'); $('appView').classList.add('hidden');
+  $('launchMsg').textContent = msg; $('launchView').classList.remove('hidden');
+}
+function showAppShell(subMsg){
+  $('launchView').classList.add('hidden'); $('signinView').classList.add('hidden');
+  $('appView').classList.remove('hidden'); $('whoEmail').textContent = state.email;
+  $('sub').textContent = subMsg || ('Signed in as ' + state.email + ' — loading this document…');
+}
+
+// ---- sign-in (identical flow to index.html/doc.html — reused, not reimplemented) -
+function onGoogleSignIn(credentialResponse){
+  state.idToken = credentialResponse.credential;
+  $('signinError').style.display = 'none';
+  showLaunch('Signing you in…');
+
+  postJson(NUUC_DISPATCH_URL, { action: 'verify_identity', idToken: state.idToken, aud: ASSERTION_AUD })
+    .then(res => {
+      if (!res.verified || !res.assertion) {
+        throw new Error('Google verified your sign-in, but NUUC-Dispatch could not issue an ' +
+          'identity assertion for this portal (' + (res.error || 'not verified') + ').');
+      }
+      state.assertion = res.assertion;
+      state.sub = res.sub; state.email = res.email;
+      saveCachedAuth();
+      showAppShell();
+      return loadContext();
+    })
+    .catch(err => {
+      $('launchView').classList.add('hidden');
+      $('signinView').classList.remove('hidden');
+      $('signinError').style.display = 'block';
+      $('signinError').textContent = err.message || String(err);
+    });
+}
+
+function signOut(){
+  state.idToken = null; state.assertion = null; state.sub = ''; state.email = '';
+  state.tier = 'NONE';
+  clearCachedAuth();
+  $('appView').classList.add('hidden'); $('launchView').classList.add('hidden');
+  $('signinView').classList.remove('hidden');
+  if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+}
+$('signOutBtn').addEventListener('click', signOut);
+
+// ---- context load (gc_format_get_context, gts-atpv.14) ------------------
+function loadContext(){
+  if (!state.docId) return Promise.resolve();
+  setBusy(true);
+  $('loadError').style.display = 'none';
+
+  return postJson(GACTIONSHEET_URL, {
+    action: 'gc_format_get_context', assertion: state.assertion, docId: state.docId
+  })
+    .then(res => {
+      state.tier = res.tier || 'NONE';
+      state.teamId = res.teamId || state.teamId;
+      state.docName = res.docName || '';
+      state.docUrl = res.docUrl || '';
+      state.savedOperations = res.savedOperations || [];
+      render();
+    })
+    .catch(err => {
+      $('loadError').style.display = 'block';
+      $('loadError').textContent = 'Could not load this document: ' + (err.message || err);
+    })
+    .finally(() => setBusy(false));
+}
+
+function setBusy(b){ state.busy = b; $('titleSpinner').classList.toggle('hidden', !b); }
+
+function render(){
+  $('sub').innerHTML = state.docName
+    ? ('<a href="' + escape(state.docUrl) + '" target="_blank" rel="noopener">' + escape(state.docName) + '</a>')
+    : 'signed in';
+  $('tierTag').textContent = state.tier === 'EDIT' ? 'EDIT'
+                            : state.tier === 'VIEW' ? 'VIEW — read only' : 'NONE';
+  $('tierTag').className = 'tag ' + state.tier.toLowerCase();
+
+  const canRun = state.tier === 'EDIT';
+  $('noAccessNotice').classList.toggle('hidden', canRun);
+  $('formWrap').classList.toggle('hidden', !canRun);
+  if (!canRun) return;
+
+  opsListEl.innerHTML = OPERATIONS.map(op => `
+    <div class="op">
+      <input type="checkbox" id="op_${op.id}" data-op="${op.id}"
+             ${state.savedOperations.indexOf(op.id) !== -1 || !state.savedOperations.length ? 'checked' : ''}>
+      <div>
+        <label for="op_${op.id}">${escape(op.label)}</label>
+        <div class="desc">${escape(op.desc)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function checkedOperations(){
+  return OPERATIONS.map(op => op.id).filter(id => $('op_' + id) && $('op_' + id).checked);
+}
+
+$('allBox').addEventListener('change', (e) => {
+  OPERATIONS.forEach(op => { const el = $('op_' + op.id); if (el) el.checked = e.target.checked; });
+});
+
+function runGcFormat(dryRun){
+  const operations = checkedOperations();
+  if (!operations.length) { toast('Choose at least one operation.'); return; }
+
+  $('runBtn').disabled = true; $('dryRunBtn').disabled = true;
+  $('resultBox').className = 'result hidden';
+
+  postJson(GACTIONSHEET_URL, {
+    action: 'gc_format_document', assertion: state.assertion, docId: state.docId,
+    operations: operations, options: { dryRun: !!dryRun }
+  })
+    .then(res => {
+      $('resultBox').classList.remove('hidden');
+      if (!res.ok) {
+        $('resultBox').className = 'result err';
+        $('resultBox').innerHTML = '<h2>Failed</h2><p>' + escape(res.error || 'Unknown error.') + '</p>';
+        return;
+      }
+      $('resultBox').className = 'result ok';
+      const appliedLines = Object.keys(res.applied || {}).map(k => '<li>rule ' + escape(k) + ': ' + escape(res.applied[k]) + '</li>').join('');
+      const findingLines = (res.findings || []).map(f => '<li>' + escape(f.rule) + ': ' + escape(f.message) + '</li>').join('');
+      $('resultBox').innerHTML =
+        '<h2>' + (dryRun ? 'Preview' : 'Done') + ' — ran: ' + escape((res.operations || []).join(', ')) + '</h2>' +
+        (appliedLines ? '<ul>' + appliedLines + '</ul>' : '<p>Nothing to apply.</p>') +
+        (findingLines ? '<h2>Findings</h2><ul>' + findingLines + '</ul>' : '');
+      if (!dryRun) state.savedOperations = operations; // mirrors the server's own save (AC6)
+    })
+    .catch(err => {
+      $('resultBox').classList.remove('hidden');
+      $('resultBox').className = 'result err';
+      $('resultBox').innerHTML = '<h2>Failed</h2><p>' + escape(err.message || String(err)) + '</p>';
+    })
+    .finally(() => { $('runBtn').disabled = false; $('dryRunBtn').disabled = false; });
+}
+$('runBtn').addEventListener('click', () => runGcFormat(false));
+$('dryRunBtn').addEventListener('click', () => runGcFormat(true));
+
+// ---- resume a cached session (identical convention to index.html/doc.html) -
+(function initAuth(){
+  if (!state.docId) {
+    $('signinView').classList.add('hidden');
+    $('noDocView').classList.remove('hidden');
+    return;
+  }
+  const cached = loadCachedAuth();
+  if (!cached) return;
+  state.assertion = cached.assertion; state.sub = cached.sub; state.email = cached.email;
+  showAppShell('Resuming your session — signed in as ' + cached.email + '…');
+  loadContext();
+})();
+</script>
+</body>
+</html>
