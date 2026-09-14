@@ -33,12 +33,15 @@
   .email{font-size:12.5px;color:var(--muted)}
   .linkbtn{border:0;background:none;color:var(--blue);cursor:pointer;font:inherit;padding:0}
 
-  .ops{margin-top:16px;display:flex;flex-direction:column;gap:10px}
-  .op{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);
-      border-radius:10px;background:#fbfcfe}
-  .op input{margin-top:3px}
-  .op label{font-weight:600;cursor:pointer}
-  .op .desc{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .ops{margin-top:10px;display:flex;flex-direction:column;gap:3px}
+  .op{display:flex;gap:8px;align-items:center;padding:5px 10px;border:1px solid var(--line);
+      border-radius:8px;background:#fbfcfe;min-width:0}
+  .op input{flex:none}
+  .op label{font-weight:600;cursor:pointer;flex:none;white-space:nowrap}
+  .op .opdesc{color:var(--muted);font-size:12px;flex:1 1 auto;min-width:0;overflow:hidden;
+              text-overflow:ellipsis;white-space:nowrap}
+  .op .appliedTag{flex:none;font-size:10.5px;font-weight:600;color:#065f46;background:var(--green2);
+                  border:1px solid #a7f3d0;padding:1px 8px;border-radius:999px;white-space:nowrap}
 
   .actionsrow{margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   button.primary{background:var(--blue);color:#fff;border:0;border-radius:10px;padding:9px 16px;
@@ -147,7 +150,7 @@
 <script>
 // Build-time stamps (identical convention to index.html/doc.html) — left null
 // in the unbuilt source, stamped by scripts/build-static-portal.js.
-var STATIC_BUILD_VERSION_ = "0.2.5.34";
+var STATIC_BUILD_VERSION_ = "0.2.5.35";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -217,7 +220,19 @@ function toast(msg){ toastEl.textContent = msg; toastEl.classList.add('show');
 const escape = (s) => String(s==null?'':s).replace(/[&<>"]/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-function postJson(url, payload){
+// Bounded retry on a non-JSON (echo-page) response — mirrors scripts/call_webapp.py's `call()`
+// and scn/session.py's `_http_post` (5 attempts, exponential backoff 3s/6s/12s/24s). Documented
+// there as a recurring /exec -> script.googleusercontent.com/echo routing quirk (redirect
+// replayed as GET, dropping the POST body) seen intermittently with no deploy in progress, not a
+// one-time post-deploy propagation window — a bare single-shot fetch (this page's prior behavior)
+// surfaced it to the user as a scary error on the first hiccup instead of quietly retrying through
+// it, discovered via gcformat-config-404-static-portal-not-built follow-up.
+const POST_MAX_ATTEMPTS = 5;
+const POST_RETRY_BASE_MS = 3000;
+const _delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function postJson(url, payload, attempt){
+  attempt = attempt || 1;
   const body = (url === GACTIONSHEET_URL)
     ? Object.assign({ clientVersion: STATIC_BUILD_VERSION_ }, payload)
     : payload;
@@ -226,7 +241,12 @@ function postJson(url, payload){
   }).then(r => r.text()).then(text => {
     try { return JSON.parse(text); }
     catch (e) {
-      throw new Error('Non-JSON response from ' + url + ' — the deployment may be mid-propagation: ' + text.slice(0, 200));
+      if (attempt < POST_MAX_ATTEMPTS) {
+        return _delay(POST_RETRY_BASE_MS * Math.pow(2, attempt - 1))
+          .then(() => postJson(url, payload, attempt + 1));
+      }
+      throw new Error('Non-JSON response from ' + url + ' after ' + POST_MAX_ATTEMPTS +
+        ' attempts — the deployment may be mid-propagation: ' + text.slice(0, 200));
     }
   });
 }
@@ -316,15 +336,17 @@ function render(){
   $('formWrap').classList.toggle('hidden', !canRun);
   if (!canRun) return;
 
-  opsListEl.innerHTML = OPERATIONS.map(op => `
+  opsListEl.innerHTML = OPERATIONS.map(op => {
+    const appliedLastRun = state.savedOperations.indexOf(op.id) !== -1;
+    const checked = appliedLastRun || !state.savedOperations.length;
+    return `
     <div class="op">
-      <input type="checkbox" id="op_${op.id}" data-op="${op.id}"
-             ${state.savedOperations.indexOf(op.id) !== -1 || !state.savedOperations.length ? 'checked' : ''}>
-      <div>
-        <label for="op_${op.id}">${escape(op.label)}</label>
-        <div class="desc">${escape(op.desc)}</div>
-      </div>
-    </div>`).join('');
+      <input type="checkbox" id="op_${op.id}" data-op="${op.id}" ${checked ? 'checked' : ''}>
+      <label for="op_${op.id}">${escape(op.label)}</label>
+      <span class="opdesc" title="${escape(op.desc)}">${escape(op.desc)}</span>
+      ${appliedLastRun ? '<span class="appliedTag">Applied last run</span>' : ''}
+    </div>`;
+  }).join('');
 }
 
 function checkedOperations(){
