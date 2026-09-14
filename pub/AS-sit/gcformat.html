@@ -154,7 +154,7 @@
 <script>
 // Build-time stamps (identical convention to index.html/doc.html) — left null
 // in the unbuilt source, stamped by scripts/build-static-portal.js.
-var STATIC_BUILD_VERSION_ = "0.2.5.37";
+var STATIC_BUILD_VERSION_ = "0.2.5.38";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -422,6 +422,21 @@ $('runBtn').addEventListener('click', () => runGcFormat(false));
 $('dryRunBtn').addEventListener('click', () => runGcFormat(true));
 
 // ---- resume a cached session (identical convention to index.html/doc.html) -
+// Google's One Tap prompt ("Sign in as ... / Continue") is a browser-chrome-level bubble driven
+// by the g_id_onload markup's mere presence -- it is NOT part of #signinView, so hiding that div
+// (the resume-from-cache path above already does) has no effect on it, and data-auto_select="false"
+// only stops it from *silently completing* sign-in, not from *appearing*. When we've already
+// resumed a still-valid cached session there is nothing for it to do, so cancel it explicitly the
+// moment GSI's library is available -- polled rather than keyed off the script's own onload, since
+// this inline script can run before or after that external <script async defer> finishes loading.
+function _cancelPendingOneTap(){
+  if (window.google && google.accounts && google.accounts.id) {
+    try { google.accounts.id.cancel(); } catch (e) { /* GSI not fully initialized yet */ }
+    return true;
+  }
+  return false;
+}
+
 (function initAuth(){
   if (!state.docId) {
     $('signinView').classList.add('hidden');
@@ -433,6 +448,11 @@ $('dryRunBtn').addEventListener('click', () => runGcFormat(true));
   state.assertion = cached.assertion; state.sub = cached.sub; state.email = cached.email;
   showAppShell('Resuming your session — signed in as ' + cached.email + '…');
   loadContext();
+
+  if (!_cancelPendingOneTap()) {
+    let tries = 0;
+    const iv = setInterval(() => { if (_cancelPendingOneTap() || ++tries > 30) clearInterval(iv); }, 100);
+  }
 })();
 </script>
 </body>
