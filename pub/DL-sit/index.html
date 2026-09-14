@@ -2,44 +2,228 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>NDocs — Stage 2 pipeline</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NDocs — identity check</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
-  code { background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; }
-  #health { margin-top: 1rem; }
-  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ccc; color: #666; }
+  body { font: 15px/1.55 system-ui, sans-serif; margin: 0; padding: 2rem 1rem; color: #1a1a1a; background: #fbfbfa; }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  .lede { color: #555; margin-top: 0; }
+  code { background: #eee; padding: .1em .3em; border-radius: 3px; font-size: .9em; }
+  .hidden { display: none; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
+  .banner { background: #fdecea; border: 1px solid #f5c2bd; border-radius: 6px; padding: .75rem 1rem; margin: 1rem 0; }
+  .muted { color: #666; }
+  ul { margin: .35rem 0 0; padding-left: 1.2rem; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; border-bottom: 1px solid #eee; padding: .35rem .5rem; vertical-align: top; }
+  button { font: inherit; padding: .35rem .8rem; border-radius: 4px; border: 1px solid #bbb; background: #fff; cursor: pointer; }
+  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; color: #666; font-size: .85em; }
 </style>
 </head>
 <body>
+<main>
   <h1>NDocs</h1>
-  <p>
-    This is the Stage 2 (<code>pipeline</code>) deploy-verification page — not the application.
-    It exists to prove the stamp/publish/verify loop works end to end while the backend still
-    carries only <code>version</code> and <code>health</code>. The clickable mockup
-    (<code>ndocs/*.html</code>) is a separate, local artifact until Stage 6 cuts it over to this
-    same backend and this page is retired.
+  <p class="lede">
+    Stage 4 (<code>identity</code>) verification page. It signs you in for real and asks the
+    deployed Web App two questions — <code>whoami</code> and <code>get_bootstrap</code> — so
+    that a person can confirm the backend knows who they are and which teams are theirs. It is
+    not the application: the catalog pages cut over to this same backend at Stage 6.
   </p>
-  <div id="health">Checking backend health…</div>
+
+  <!-- Signed out -->
+  <section id="signinView" class="card">
+    <p>
+      Sign in with the Google account that belongs to your team's group. Your identity is
+      verified by NUUC-Dispatch, which issues NDocs a signed assertion; this page stores that
+      assertion in your browser and never keeps your Google credential.
+    </p>
+    <div id="g_id_onload" data-callback="onGoogleSignIn" data-auto_select="false"></div>
+    <div class="g_id_signin" data-type="standard" data-shape="pill"></div>
+  </section>
+
+  <!-- Sign-in in flight -->
+  <section id="launchView" class="card hidden"><strong id="launchMsg">Signing you in…</strong></section>
+
+  <div id="errorBanner" class="banner hidden"></div>
+
+  <!-- Signed in -->
+  <section id="appView" class="hidden">
+    <div class="card">
+      <p>
+        Signed in as <strong id="whoEmail"></strong>
+        <span id="whoAdmin" class="muted"></span>
+        <button id="signOutBtn" type="button">Sign out</button>
+      </p>
+      <p class="muted" id="whoSub"></p>
+      <h2 style="font-size:1.05rem">Your teams</h2>
+      <div id="myTeams">Loading…</div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:1.05rem">Team directory <span class="muted">(get_bootstrap)</span></h2>
+      <div id="directory">Loading…</div>
+      <p class="muted" id="bootstrapStubs"></p>
+    </div>
+  </section>
+
   <footer>
-    Build <span id="build-version"></span> — <span id="build-env"></span>
+    Build <span id="build-version"></span> — <span id="build-env"></span> ·
+    <span id="health">checking backend…</span>
   </footer>
-  <script>
-    var STATIC_BUILD_VERSION_ = "0.0.0.5";
-    var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
-    var STATIC_ENV_LABEL_ = "SIT";
+</main>
 
-    document.getElementById('build-version').textContent = STATIC_BUILD_VERSION_;
-    document.getElementById('build-env').textContent = STATIC_ENV_LABEL_;
+<script>
+// Build-time stamps — replaced by tools/static-pages.js (gas-static) immediately before
+// publish. Left null in the unbuilt source: a raw static-src/index.html opened directly has
+// no backend to call and no identity provider to call either.
+var STATIC_BUILD_VERSION_ = "0.0.0.6";
+var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
+var STATIC_ENV_LABEL_ = "SIT";
+var STATIC_BUILD_ENV_ = "test";
+var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
+var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com";
+</script>
+<!-- The shared front-end modules, unchanged — this page is a second consumer of them, not a
+     second copy of them (this project's CLAUDE.md "reuse, do not re-derive"). app/config.js
+     reads the stamped globals declared above. -->
+<script src="app/config.js"></script>
+<script src="app/session.js"></script>
+<script src="app/transport.js"></script>
+<script>
+(function () {
+  'use strict';
 
-    fetch(STATIC_WEBAPP_URL_ + '?cmd=health')
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        document.getElementById('health').textContent =
-          'Backend health: ' + (data.ok ? 'ok' : 'not ok') + ' (server version ' + data.version + ')';
-      })
+  var $ = function (id) { return document.getElementById(id); };
+
+  $('build-version').textContent = NDOCS_CONFIG.VERSION;
+  $('build-env').textContent = STATIC_ENV_LABEL_ || NDOCS_CONFIG.ENV;
+
+  // The GIS client id is stamped, not hardcoded, so PROD can carry its own without a code
+  // change. Applied here rather than as a literal data-client_id attribute for that reason.
+  if (NDOCS_CONFIG.GIS_CLIENT_ID.indexOf('.apps.googleusercontent.com') !== -1) {
+    $('g_id_onload').setAttribute('data-client_id', NDOCS_CONFIG.GIS_CLIENT_ID);
+  } else {
+    showError('This build has no Google client id stamped into it, so the sign-in button will not work.');
+  }
+
+  function show(view) {
+    ['signinView', 'launchView', 'appView'].forEach(function (id) {
+      $(id).classList.toggle('hidden', id !== view);
+    });
+  }
+
+  function showError(message) {
+    $('errorBanner').textContent = message;
+    $('errorBanner').classList.remove('hidden');
+  }
+
+  function clearError() {
+    $('errorBanner').classList.add('hidden');
+  }
+
+  function escapeHtml(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function renderTeams(teams) {
+    if (!teams || teams.length === 0) {
+      $('myTeams').innerHTML = '<p class="muted">The backend reports no team membership for ' +
+        'this account. That is the correct answer for someone who is not in any pilot team\'s ' +
+        'Google Group.</p>';
+      return;
+    }
+    $('myTeams').innerHTML = teams.map(function (team) {
+      var folders = (team.folders || []).length
+        ? '<ul>' + team.folders.map(function (f) {
+            return '<li><a href="' + escapeHtml(f.url) + '" rel="noopener" target="_blank">' +
+              escapeHtml(f.name || f.folderId) + '</a>' +
+              (f.path ? ' <span class="muted">' + escapeHtml(f.path) + '</span>' : '') + '</li>';
+          }).join('') + '</ul>'
+        : '<p class="muted">No tracked folders recorded yet.</p>';
+      return '<div><strong>' + escapeHtml(team.name) + '</strong> ' +
+        '<span class="muted">(' + escapeHtml(team.teamId) + ')</span>' + folders + '</div>';
+    }).join('');
+  }
+
+  function renderDirectory(bootstrap) {
+    var teams = bootstrap.teams || [];
+    if (teams.length === 0) {
+      $('directory').innerHTML = '<p class="muted">The Teams sheet has no rows yet — Stage 5 ' +
+        'seeds it by hand.</p>';
+    } else {
+      $('directory').innerHTML = '<table><thead><tr><th>Team</th><th>Id</th><th>Prefix</th>' +
+        '<th>State</th><th>Config</th></tr></thead><tbody>' +
+        teams.map(function (t) {
+          return '<tr><td>' + escapeHtml(t.name) + '</td><td>' + escapeHtml(t.teamId) +
+            '</td><td>' + escapeHtml(t.docIdPrefix) + '</td><td>' + escapeHtml(t.state) +
+            '</td><td>' + escapeHtml(t.configState) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    var stubs = ['vocab', 'fields', 'teamFields', 'provisions'].filter(function (key) {
+      return bootstrap[key] === null;
+    });
+    $('bootstrapStubs').textContent = stubs.length
+      ? 'Not served by this build (no source yet, deliberately null rather than fabricated): ' +
+        stubs.join(', ') + '.'
+      : '';
+  }
+
+  function loadIdentity() {
+    show('appView');
+    $('whoEmail').textContent = NDocsSession.email() || '(resolving…)';
+    return NDocsTransport.call('whoami', {}).then(function (principal) {
+      NDocsSession.setPrincipal(principal);
+      $('whoEmail').textContent = principal.email;
+      $('whoSub').textContent = 'Google subject ' + principal.sub;
+      $('whoAdmin').textContent = principal.isAdmin ? '· administrator ' : '· not an administrator ';
+      renderTeams(principal.teams);
+      return NDocsTransport.call('get_bootstrap', {});
+    }).then(renderDirectory).catch(function (err) {
+      if (err && err.name === 'NotAuthorized') {
+        // A cached assertion the backend no longer accepts is indistinguishable from never
+        // having signed in — drop it and offer sign-in rather than leaving a dead shell up.
+        NDocsSession.signOut();
+        show('signinView');
+        showError('Your saved sign-in is no longer accepted. Please sign in again.');
+        return;
+      }
+      showError((err && err.message) || String(err));
+    });
+  }
+
+  window.onGoogleSignIn = function (credentialResponse) {
+    clearError();
+    show('launchView');
+    NDocsSession.signIn(credentialResponse && credentialResponse.credential)
+      .then(loadIdentity)
       .catch(function (err) {
-        document.getElementById('health').textContent = 'Backend health check failed: ' + err.message;
+        show('signinView');
+        showError((err && err.message) || String(err));
       });
-  </script>
+  };
+
+  $('signOutBtn').addEventListener('click', function () {
+    NDocsSession.signOut();
+    clearError();
+    show('signinView');
+  });
+
+  // Health footer — an `open` route, so it answers whether or not anyone has signed in.
+  NDocsTransport.call('health', {}).then(function (data) {
+    $('health').textContent = 'backend health: ' + (data.sheetReachable === null ? 'ok (sheet not read yet)' : 'ok');
+  }).catch(function (err) {
+    $('health').textContent = 'backend health check failed: ' + ((err && err.message) || err);
+  });
+
+  if (NDocsSession.resume()) {
+    loadIdentity();
+  } else {
+    show('signinView');
+  }
+})();
+</script>
 </body>
 </html>
