@@ -154,7 +154,7 @@
 <script>
 // Build-time stamps (identical convention to index.html/doc.html) — left null
 // in the unbuilt source, stamped by scripts/build-static-portal.js.
-var STATIC_BUILD_VERSION_ = "0.2.5.38";
+var STATIC_BUILD_VERSION_ = "0.2.5.39";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -184,7 +184,7 @@ applyVersionState_(STATIC_BUILD_VERSION_, null);
 
 const state = {
   idToken: null, assertion: null, sub: '', email: '',
-  docId: null, teamId: null, tier: 'NONE',
+  docId: null, tier: 'NONE',
   docName: '', docUrl: '', savedOperations: [],
   range: null, // captured selection, contract §3 — see QUERY_PARAMS.get('range') below
   busy: false
@@ -195,7 +195,6 @@ const opsListEl = $('opsList'), toastEl = $('toast');
 
 const QUERY_PARAMS = new URLSearchParams(location.search);
 state.docId = QUERY_PARAMS.get('doc') || null;
-state.teamId = QUERY_PARAMS.get('team') || null;
 // Selection captured at menu-click time by GcFormat.js's menuGcFormatActiveDoc/_gcFmtConfigOpenLink
 // (_gcFmtBuildRangeDescriptor) and relayed opaquely through doGet's landing page
 // (_handleGcFormatConfigPage) — this page has no other way to see the doc's live cursor, being a
@@ -324,7 +323,6 @@ function loadContext(){
   })
     .then(res => {
       state.tier = res.tier || 'NONE';
-      state.teamId = res.teamId || state.teamId;
       state.docName = res.docName || '';
       state.docUrl = res.docUrl || '';
       state.savedOperations = res.savedOperations || [];
