@@ -139,11 +139,19 @@
       </div>
     </div>
 
-    <!-- Shown in place of formWrap while a real (non-dry-run) run is in flight. -->
-    <div id="progressView" class="top hidden" style="margin-top:16px;text-align:center;padding:28px 16px">
-      <span class="spinner" style="width:20px;height:20px;border-width:3px"></span>
-      <p style="margin:12px 0 0;color:var(--muted)">Running GC Format — do not close this window…</p>
-      <button class="secondary" id="cancelBtn2" style="margin-top:14px">Cancel</button>
+    <!-- Replaces formWrap for the rest of this page's life once Run is clicked -- the checkbox
+         screen has no further value after that (nothing to go back and reselect mid-run), so this
+         view is a one-way transition: stage-by-stage progress building directly into the same
+         result list shown at the end, never a return to formWrap. -->
+    <div id="progressView" class="top hidden" style="margin-top:16px">
+      <div style="text-align:center;padding:10px 0 4px">
+        <span id="progressSpinner" class="spinner" style="width:18px;height:18px;border-width:3px"></span>
+        <span id="progressMsg" style="margin-left:8px;color:var(--muted)">Running GC Format…</span>
+      </div>
+      <ul id="stageList" style="list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:4px"></ul>
+      <div style="text-align:center;margin-top:16px">
+        <button class="secondary" id="cancelBtn2">Cancel</button>
+      </div>
     </div>
 
     <div class="result hidden" id="resultBox"></div>
@@ -162,7 +170,7 @@
 <script>
 // Build-time stamps (identical convention to index.html/doc.html) — left null
 // in the unbuilt source, stamped by scripts/build-static-portal.js.
-var STATIC_BUILD_VERSION_ = "0.2.5.41";
+var STATIC_BUILD_VERSION_ = "0.2.5.42";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -389,52 +397,127 @@ $('allBox').addEventListener('change', (e) => {
   OPERATIONS.forEach(op => { const el = $('op_' + op.id); if (el) el.checked = e.target.checked; });
 });
 
+// Splits a checked operations list into sequential network-call stages, one visible progress
+// step per call, WITHOUT changing what any individual gc_format_document call does server-side
+// (WebApp.js's _handleGcFormatDocument, contract §2). Two constraints from that handler drove the
+// grouping instead of one-call-per-operation:
+//  - ORDER IS LOAD-BEARING: structure must run (and persist, via its own batchUpdate) before
+//    format's strip/lead-in step reads the document again. Splitting into separate calls is safe
+//    for that because each call re-fetches the live doc — the classification a structure-stage
+//    call just wrote is on Drive by the time the format-stage call's Docs.Documents.get runs.
+//  - format+report must stay in ONE call: `report`'s changeReport is built from `stripped`, an
+//    in-memory result of THIS SAME call's format step (WebApp.js ~2174) — it is never persisted,
+//    so a separate report-only call would silently produce an empty changeReport even though
+//    format ran moments before. Keeping them paired when both are checked preserves that.
+function buildRunStages(operations){
+  const has = (id) => operations.indexOf(id) !== -1;
+  const stages = [];
+  if (has('document_styles')) stages.push({ id: 'document_styles', label: 'Document styles', ops: ['document_styles'] });
+  if (has('page_setup'))      stages.push({ id: 'page_setup',      label: 'Page setup',       ops: ['page_setup'] });
+  if (has('structure'))       stages.push({ id: 'structure',       label: 'Structure',        ops: ['structure'] });
+  if (has('format') && has('report'))      stages.push({ id: 'format_report', label: 'Format + report', ops: ['format', 'report'] });
+  else if (has('format'))                  stages.push({ id: 'format',        label: 'Format',          ops: ['format'] });
+  else if (has('report'))                  stages.push({ id: 'report',        label: 'Report',          ops: ['report'] });
+  return stages;
+}
+
+function stageRow(stage){
+  return '<li id="stage_' + stage.id + '" style="display:flex;align-items:center;gap:8px;padding:4px 2px">' +
+    '<span class="stageIcon" style="width:16px;text-align:center;color:var(--muted)">·</span>' +
+    '<span>' + escape(stage.label) + '</span></li>';
+}
+function setStageIcon(stage, iconHtml){
+  const el = document.querySelector('#stage_' + stage.id + ' .stageIcon');
+  if (el) el.innerHTML = iconHtml;
+}
+
 function runGcFormat(dryRun){
   const operations = checkedOperations();
   if (!operations.length) { toast('Choose at least one operation.'); return; }
 
-  $('runBtn').disabled = true; $('dryRunBtn').disabled = true;
-  $('resultBox').className = 'result hidden';
-  // Real runs (not preview) clear the form and show a progress state — the server call is a
-  // single blocking request with no incremental progress to report, so "progress" here just means
-  // "visibly busy, not the stale checkbox list" while it's in flight.
-  if (!dryRun) { $('formWrap').classList.add('hidden'); $('progressView').classList.remove('hidden'); }
+  const stages = buildRunStages(operations);
+  let cancelled = false;
 
-  postJson(GACTIONSHEET_URL, Object.assign(
-    { action: 'gc_format_document', assertion: state.assertion, docId: state.docId,
-      operations: operations, options: { dryRun: !!dryRun } },
-    state.range ? { range: state.range } : {}
-  ))
-    .then(res => {
-      $('resultBox').classList.remove('hidden');
-      if (!res.ok) {
-        $('resultBox').className = 'result err';
-        $('resultBox').innerHTML = '<h2>Failed</h2><p>' + escape(res.error || 'Unknown error.') + '</p>';
-        return;
-      }
-      $('resultBox').className = 'result ok';
-      const appliedLines = Object.keys(res.applied || {}).map(k => '<li>rule ' + escape(k) + ': ' + escape(res.applied[k]) + '</li>').join('');
-      const findingLines = (res.findings || []).map(f => '<li>' + escape(f.rule) + ': ' + escape(f.message) + '</li>').join('');
-      $('resultBox').innerHTML =
-        '<h2>' + (dryRun ? 'Preview' : 'Done') + ' — ran: ' + escape((res.operations || []).join(', ')) + '</h2>' +
-        (appliedLines ? '<ul>' + appliedLines + '</ul>' : '<p>Nothing to apply.</p>') +
-        (findingLines ? '<h2>Findings</h2><ul>' + findingLines + '</ul>' : '');
+  // One-way transition (per review 2026-09-15): once Run/Preview starts, the checkbox screen is
+  // gone for the rest of this page's life — there is nothing to go back and reselect mid-run, so
+  // this never reverts to formWrap, win or lose.
+  $('formWrap').classList.add('hidden');
+  $('progressView').classList.remove('hidden');
+  $('progressMsg').textContent = (dryRun ? 'Previewing' : 'Running') + ' GC Format…';
+  $('stageList').innerHTML = stages.map(stageRow).join('');
+  $('resultBox').className = 'result hidden';
+  $('resultBox').innerHTML = '';
+
+  function doCancel(){
+    cancelled = true;
+    window.close();
+  }
+  $('cancelBtn2').removeEventListener('click', doCancel); // idempotent across calls
+  $('cancelBtn2').addEventListener('click', doCancel);
+
+  const merged = { applied: {}, findings: [], changeReport: [], operations: [], resolvedRange: null, staleRange: null };
+
+  function renderMergedSoFar(final){
+    $('resultBox').classList.remove('hidden');
+    $('resultBox').className = 'result ok';
+    const appliedLines = Object.keys(merged.applied).map(k => '<li>rule ' + escape(k) + ': ' + escape(merged.applied[k]) + '</li>').join('');
+    const findingLines = merged.findings.map(f => '<li>' + escape(f.rule) + ': ' + escape(f.message) + '</li>').join('');
+    $('resultBox').innerHTML =
+      '<h2>' + (final ? (dryRun ? 'Preview complete' : 'Done') : 'Building…') +
+      ' — ran: ' + escape(merged.operations.join(', ')) + '</h2>' +
+      (appliedLines ? '<ul>' + appliedLines + '</ul>' : '<p>Nothing applied yet.</p>') +
+      (findingLines ? '<h2>Findings</h2><ul>' + findingLines + '</ul>' : '');
+  }
+
+  function runStage(i){
+    if (cancelled) return Promise.resolve();
+    if (i >= stages.length) {
+      $('progressSpinner').classList.add('hidden');
+      $('progressMsg').textContent = dryRun ? 'Preview complete.' : 'Done.';
+      renderMergedSoFar(true);
       if (!dryRun) state.savedOperations = operations; // mirrors the server's own save (AC6)
-    })
-    .catch(err => {
+      return Promise.resolve();
+    }
+    const stage = stages[i];
+    setStageIcon(stage, '<span class="spinner" style="width:11px;height:11px;border-width:2px"></span>');
+    return postJson(GACTIONSHEET_URL, Object.assign(
+      { action: 'gc_format_document', assertion: state.assertion, docId: state.docId,
+        operations: stage.ops, options: { dryRun: !!dryRun } },
+      state.range ? { range: state.range } : {}
+    )).then(res => {
+      if (!res.ok) throw new Error(res.error || 'Unknown error.');
+      setStageIcon(stage, '✓');
+      Object.keys(res.applied || {}).forEach(k => { merged.applied[k] = res.applied[k]; });
+      merged.findings = merged.findings.concat(res.findings || []);
+      if ((res.changeReport || []).length) merged.changeReport = res.changeReport;
+      merged.operations = merged.operations.concat(res.operations || stage.ops);
+      merged.resolvedRange = res.resolvedRange; merged.staleRange = res.staleRange;
+      renderMergedSoFar(false);
+      return runStage(i + 1);
+    }).catch(err => {
+      setStageIcon(stage, '✗');
+      $('progressSpinner').classList.add('hidden');
+      $('progressMsg').textContent = 'Failed at: ' + stage.label;
       $('resultBox').classList.remove('hidden');
       $('resultBox').className = 'result err';
-      $('resultBox').innerHTML = '<h2>Failed</h2><p>' + escape(err.message || String(err)) + '</p>';
-    })
-    .finally(() => {
-      $('runBtn').disabled = false; $('dryRunBtn').disabled = false;
-      if (!dryRun) { $('progressView').classList.add('hidden'); $('formWrap').classList.remove('hidden'); }
+      $('resultBox').innerHTML = '<h2>Failed — ' + escape(stage.label) + '</h2><p>' + escape(err.message || String(err)) + '</p>' +
+        (merged.operations.length ? '<p>Already applied before the failure: ' + escape(merged.operations.join(', ')) + '.</p>' : '');
     });
+  }
+
+  runStage(0);
 }
 $('runBtn').addEventListener('click', () => runGcFormat(false));
 $('dryRunBtn').addEventListener('click', () => runGcFormat(true));
 $('cancelBtn').addEventListener('click', () => window.close());
-$('cancelBtn2').addEventListener('click', () => window.close());
+
+// Tells the Docs-side launcher dialog (GcFormat.js's menuGcFormatActiveDoc) this popup is going
+// away, so it can close itself -- belt-and-braces alongside that dialog's own win.closed polling
+// (which should already catch this; pagehide fires reliably even when that polling doesn't, e.g.
+// if the launcher tab/iframe was throttled in the background for the ~minute a real run takes).
+window.addEventListener('pagehide', () => {
+  try { if (window.opener) window.opener.postMessage('gcfmt-popup-closed', '*'); } catch (e) { /* cross-origin/no opener */ }
+});
 
 // ---- resume a cached session (identical convention to index.html/doc.html) -
 // Google's One Tap prompt ("Sign in as ... / Continue") is a browser-chrome-level bubble driven
