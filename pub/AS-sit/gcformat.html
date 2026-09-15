@@ -135,7 +135,15 @@
         <button class="primary" id="runBtn">Run GC Format</button>
         <button class="secondary" id="dryRunBtn">Preview (dry run)</button>
         <label class="dryrun"><input type="checkbox" id="allBox"> select all</label>
+        <button class="secondary" id="cancelBtn" style="margin-left:auto">Cancel</button>
       </div>
+    </div>
+
+    <!-- Shown in place of formWrap while a real (non-dry-run) run is in flight. -->
+    <div id="progressView" class="top hidden" style="margin-top:16px;text-align:center;padding:28px 16px">
+      <span class="spinner" style="width:20px;height:20px;border-width:3px"></span>
+      <p style="margin:12px 0 0;color:var(--muted)">Running GC Format — do not close this window…</p>
+      <button class="secondary" id="cancelBtn2" style="margin-top:14px">Cancel</button>
     </div>
 
     <div class="result hidden" id="resultBox"></div>
@@ -154,7 +162,7 @@
 <script>
 // Build-time stamps (identical convention to index.html/doc.html) — left null
 // in the unbuilt source, stamped by scripts/build-static-portal.js.
-var STATIC_BUILD_VERSION_ = "0.2.5.40";
+var STATIC_BUILD_VERSION_ = "0.2.5.41";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -387,6 +395,10 @@ function runGcFormat(dryRun){
 
   $('runBtn').disabled = true; $('dryRunBtn').disabled = true;
   $('resultBox').className = 'result hidden';
+  // Real runs (not preview) clear the form and show a progress state — the server call is a
+  // single blocking request with no incremental progress to report, so "progress" here just means
+  // "visibly busy, not the stale checkbox list" while it's in flight.
+  if (!dryRun) { $('formWrap').classList.add('hidden'); $('progressView').classList.remove('hidden'); }
 
   postJson(GACTIONSHEET_URL, Object.assign(
     { action: 'gc_format_document', assertion: state.assertion, docId: state.docId,
@@ -414,10 +426,15 @@ function runGcFormat(dryRun){
       $('resultBox').className = 'result err';
       $('resultBox').innerHTML = '<h2>Failed</h2><p>' + escape(err.message || String(err)) + '</p>';
     })
-    .finally(() => { $('runBtn').disabled = false; $('dryRunBtn').disabled = false; });
+    .finally(() => {
+      $('runBtn').disabled = false; $('dryRunBtn').disabled = false;
+      if (!dryRun) { $('progressView').classList.add('hidden'); $('formWrap').classList.remove('hidden'); }
+    });
 }
 $('runBtn').addEventListener('click', () => runGcFormat(false));
 $('dryRunBtn').addEventListener('click', () => runGcFormat(true));
+$('cancelBtn').addEventListener('click', () => window.close());
+$('cancelBtn2').addEventListener('click', () => window.close());
 
 // ---- resume a cached session (identical convention to index.html/doc.html) -
 // Google's One Tap prompt ("Sign in as ... / Continue") is a browser-chrome-level bubble driven
