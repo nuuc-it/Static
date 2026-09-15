@@ -170,7 +170,7 @@
 <script>
 // Build-time stamps (identical convention to index.html/doc.html) — left null
 // in the unbuilt source, stamped by scripts/build-static-portal.js.
-var STATIC_BUILD_VERSION_ = "0.2.5.42";
+var STATIC_BUILD_VERSION_ = "0.2.5.43";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -178,18 +178,15 @@ const NUUC_DISPATCH_URL = 'https://script.google.com/macros/s/AKfycbwmoOPRDThQWD
 const GACTIONSHEET_URL  = STATIC_WEBAPP_URL_;
 const ASSERTION_AUD = 'gactionsheet';
 
-// The closed operations set (contract §2, gts-atpv.14) — kept in exact sync
-// with src/GcFormatRules.js's _GC_FORMAT_OPERATIONS by hand; a new operation
-// requires updating BOTH this list and the server enum (never the manifest).
-// `rangeScoped: true` marks the two operations contract §2 honors a `range` for (structure,
-// format) -- everything else always runs whole-document regardless of what's selected.
-const OPERATIONS = [
-  { id: 'document_styles', label: 'Document styles', desc: 'Named-style definitions for Normal Text and Heading 1-4 (font, size, bold, color, spacing).' },
-  { id: 'page_setup',      label: 'Page setup',       desc: 'Margins and footer pagination from page 2.' },
-  { id: 'structure',       label: 'Structure',        desc: 'Heading classification (Policy/Procedure titles → Heading 3/4).', rangeScoped: true },
-  { id: 'format',          label: 'Format',           desc: 'Bold lead-ins, direct-formatting strip, numbered-list spacing, blank-paragraph cleanup.', rangeScoped: true },
-  { id: 'report',          label: 'Report',           desc: 'Bibliography order, footnotes, broken internal links — never mutates.' }
-];
+// The operations set (contract §2) is SERVED, not hardcoded (gts-atpv.17). This used to
+// be a hand-maintained copy of src/GcFormatRules.js's list with a comment asking the next
+// editor to keep the two in sync — the duplication ADR-0032 is about escaping, since a new
+// operation then cost an edit here as well as server-side. gc_format_get_context now returns
+// _GC_FORMAT_OPERATION_CATALOG, so this page renders whatever the current deployment
+// defines and a sixth operation costs nothing on this side.
+// Each entry: {id, label, desc, rangeScoped} — `rangeScoped: true` marks the operations
+// contract §2 honors a `range` for; everything else always runs whole-document.
+let OPERATIONS = [];
 
 const $buildBadge_ = document.getElementById('buildBadge');
 function applyVersionState_(clientBuild, serverVersion){
@@ -338,6 +335,7 @@ function loadContext(){
     action: 'gc_format_get_context', assertion: state.assertion, docId: state.docId
   })
     .then(res => {
+      OPERATIONS = res.operations || [];
       state.tier = res.tier || 'NONE';
       state.docName = res.docName || '';
       state.docUrl = res.docUrl || '';
@@ -397,6 +395,14 @@ $('allBox').addEventListener('change', (e) => {
   OPERATIONS.forEach(op => { const el = $('op_' + op.id); if (el) el.checked = e.target.checked; });
 });
 
+// MIRRORS src/GcFormatRules.js's _gcFormatBuildRunStages, which is the authority (gts-atpv.17).
+// Not yet served to this page the way the operations catalog above now is: the server-side plan
+// is exposed on `gc_format_run_stage`, a WEBAPP_SECRET route this browser page cannot call (a
+// browser-held secret is not a secret, ADR-0032) — the classic-menu dialog reaches it through the
+// add-on proxy instead. Unifying the two means widening that route to the signed-assertion gate;
+// recorded as an open seam on gts-atpv.17 rather than done here. UNTIL THEN: a change to the
+// ordering constraints below must be made in BOTH places.
+//
 // Splits a checked operations list into sequential network-call stages, one visible progress
 // step per call, WITHOUT changing what any individual gc_format_document call does server-side
 // (WebApp.js's _handleGcFormatDocument, contract §2). Two constraints from that handler drove the
@@ -511,13 +517,11 @@ $('runBtn').addEventListener('click', () => runGcFormat(false));
 $('dryRunBtn').addEventListener('click', () => runGcFormat(true));
 $('cancelBtn').addEventListener('click', () => window.close());
 
-// Tells the Docs-side launcher dialog (GcFormat.js's menuGcFormatActiveDoc) this popup is going
-// away, so it can close itself -- belt-and-braces alongside that dialog's own win.closed polling
-// (which should already catch this; pagehide fires reliably even when that polling doesn't, e.g.
-// if the launcher tab/iframe was throttled in the background for the ~minute a real run takes).
-window.addEventListener('pagehide', () => {
-  try { if (window.opener) window.opener.postMessage('gcfmt-popup-closed', '*'); } catch (e) { /* cross-origin/no opener */ }
-});
+// (gts-atpv.17) The `pagehide` -> postMessage('gcfmt-popup-closed') handshake that used to
+// live here is gone with its only listener: the classic Docs menu no longer opens this page
+// in a popup from a launcher modal, it runs everything in one self-contained dialog inside
+// the document (src/GcFormatDialog.html). This page is now reached only from the
+// universal-action / homepage-card OpenLink surfaces, which have no window to notify.
 
 // ---- resume a cached session (identical convention to index.html/doc.html) -
 // Google's One Tap prompt ("Sign in as ... / Continue") is a browser-chrome-level bubble driven
