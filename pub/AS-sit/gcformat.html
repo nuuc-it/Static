@@ -170,7 +170,7 @@
 <script>
 // Build-time stamps (identical convention to index.html/doc.html) — left null
 // in the unbuilt source, stamped by scripts/build-static-portal.js.
-var STATIC_BUILD_VERSION_ = "0.2.5.47";
+var STATIC_BUILD_VERSION_ = "0.2.5.48";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -395,44 +395,22 @@ $('allBox').addEventListener('change', (e) => {
   OPERATIONS.forEach(op => { const el = $('op_' + op.id); if (el) el.checked = e.target.checked; });
 });
 
-// MIRRORS src/GcFormatRules.js's _gcFormatBuildRunStages, which is the authority (gts-atpv.17).
-// Not yet served to this page the way the operations catalog above now is: the server-side plan
-// is exposed on `gc_format_run_stage`, a WEBAPP_SECRET route this browser page cannot call (a
-// browser-held secret is not a secret, ADR-0032) — the classic-menu dialog reaches it through the
-// add-on proxy instead. Unifying the two means widening that route to the signed-assertion gate;
-// recorded as an open seam on gts-atpv.17 rather than done here. UNTIL THEN: a change to the
-// ordering constraints below must be made in BOTH places.
-//
-// Splits a checked operations list into sequential network-call stages, one visible progress
-// step per call, WITHOUT changing what any individual gc_format_document call does server-side
-// (WebApp.js's _handleGcFormatDocument, contract §2). Two constraints from that handler drove the
-// grouping instead of one-call-per-operation:
-//  - ORDER IS LOAD-BEARING: structure must run (and persist, via its own batchUpdate) before
-//    format's strip/lead-in step reads the document again. Splitting into separate calls is safe
-//    for that because each call re-fetches the live doc — the classification a structure-stage
-//    call just wrote is on Drive by the time the format-stage call's Docs.Documents.get runs.
-//  - format+report must stay in ONE call: `report`'s changeReport is built from `stripped`, an
-//    in-memory result of THIS SAME call's format step (WebApp.js ~2174) — it is never persisted,
-//    so a separate report-only call would silently produce an empty changeReport even though
-//    format ran moments before. Keeping them paired when both are checked preserves that.
-function buildRunStages(operations){
-  const has = (id) => operations.indexOf(id) !== -1;
-  const stages = [];
-  if (has('document_styles')) stages.push({ id: 'document_styles', label: 'Document styles', ops: ['document_styles'] });
-  if (has('page_setup'))      stages.push({ id: 'page_setup',      label: 'Page setup',       ops: ['page_setup'] });
-  if (has('structure'))       stages.push({ id: 'structure',       label: 'Structure',        ops: ['structure'] });
-  if (has('format') && has('report'))      stages.push({ id: 'format_report', label: 'Format + report', ops: ['format', 'report'] });
-  else if (has('format'))                  stages.push({ id: 'format',        label: 'Format',          ops: ['format'] });
-  else if (has('report'))                  stages.push({ id: 'report',        label: 'Report',          ops: ['report'] });
-  return stages;
-}
-
+// The stage PLAN (grouping/order) is no longer duplicated here (gts-atpv.18; open seam recorded
+// on gts-atpv.17). It is now read from `gc_format_run_stage`'s own response (`stages`/`stage`
+// fields, WebApp.js's _handleGcFormatRunStage/_gcFormatBuildRunStages, GcFormatRules.js — the
+// SAME plan the classic-menu dialog's gcFmtDialogRunStage draws), the same way OPERATIONS above
+// is read from the server instead of hand-copied. This also fixes the AC6 persistence bug this
+// bead exists for: gc_format_document, called once per stage, independently saved THAT stage's
+// operations as the document's whole recorded set, so the last stage silently overwrote every
+// earlier one. gc_format_run_stage passes the caller's WHOLE selection through to _gcFormatExecute's
+// saveOperations parameter, so every stage (redundantly, but correctly) persists the full set.
 function stageRow(stage){
   return '<li id="stage_' + stage.id + '" style="display:flex;align-items:center;gap:8px;padding:4px 2px">' +
     '<span class="stageIcon" style="width:16px;text-align:center;color:var(--muted)">·</span>' +
     '<span>' + escape(stage.label) + '</span></li>';
 }
 function setStageIcon(stage, iconHtml){
+  if (!stage) return;
   const el = document.querySelector('#stage_' + stage.id + ' .stageIcon');
   if (el) el.innerHTML = iconHtml;
 }
@@ -441,8 +419,8 @@ function runGcFormat(dryRun){
   const operations = checkedOperations();
   if (!operations.length) { toast('Choose at least one operation.'); return; }
 
-  const stages = buildRunStages(operations);
   let cancelled = false;
+  let stagesRendered = false; // stages/totalStages arrive on stage 0's response, not before
 
   // One-way transition (per review 2026-09-15): once Run/Preview starts, the checkbox screen is
   // gone for the rest of this page's life — there is nothing to go back and reselect mid-run, so
@@ -450,7 +428,7 @@ function runGcFormat(dryRun){
   $('formWrap').classList.add('hidden');
   $('progressView').classList.remove('hidden');
   $('progressMsg').textContent = (dryRun ? 'Previewing' : 'Running') + ' GC Format…';
-  $('stageList').innerHTML = stages.map(stageRow).join('');
+  $('stageList').innerHTML = '';
   $('resultBox').className = 'result hidden';
   $('resultBox').innerHTML = '';
 
@@ -477,36 +455,47 @@ function runGcFormat(dryRun){
 
   function runStage(i){
     if (cancelled) return Promise.resolve();
-    if (i >= stages.length) {
-      $('progressSpinner').classList.add('hidden');
-      $('progressMsg').textContent = dryRun ? 'Preview complete.' : 'Done.';
-      renderMergedSoFar(true);
-      if (!dryRun) state.savedOperations = operations; // mirrors the server's own save (AC6)
-      return Promise.resolve();
-    }
-    const stage = stages[i];
-    setStageIcon(stage, '<span class="spinner" style="width:11px;height:11px;border-width:2px"></span>');
     return postJson(GACTIONSHEET_URL, Object.assign(
-      { action: 'gc_format_document', assertion: state.assertion, docId: state.docId,
-        operations: stage.ops, options: { dryRun: !!dryRun } },
+      { action: 'gc_format_run_stage', assertion: state.assertion, docId: state.docId,
+        operations: operations, stageIndex: i, options: { dryRun: !!dryRun } },
       state.range ? { range: state.range } : {}
     )).then(res => {
-      if (!res.ok) throw new Error(res.error || 'Unknown error.');
+      if (!res.ok) throw Object.assign(new Error(res.error || 'Unknown error.'), { stages: res.stages, stageIndex: i });
+      const stages = res.stages || [];
+      if (!stagesRendered) {
+        $('stageList').innerHTML = stages.map(stageRow).join('');
+        stagesRendered = true;
+      }
+      const stage  = res.stage || stages[i];
+      const result = res.result || {};
+      if (!result.ok) throw Object.assign(new Error(result.error || 'Unknown error.'), { stages: stages, stageIndex: i });
       setStageIcon(stage, '✓');
-      Object.keys(res.applied || {}).forEach(k => { merged.applied[k] = res.applied[k]; });
-      merged.findings = merged.findings.concat(res.findings || []);
-      if ((res.changeReport || []).length) merged.changeReport = res.changeReport;
-      merged.operations = merged.operations.concat(res.operations || stage.ops);
-      merged.resolvedRange = res.resolvedRange; merged.staleRange = res.staleRange;
+      Object.keys(result.applied || {}).forEach(k => { merged.applied[k] = result.applied[k]; });
+      merged.findings = merged.findings.concat(result.findings || []);
+      if ((result.changeReport || []).length) merged.changeReport = result.changeReport;
+      merged.operations = merged.operations.concat(result.operations || (stage ? stage.ops : []));
+      merged.resolvedRange = result.resolvedRange; merged.staleRange = result.staleRange;
       renderMergedSoFar(false);
+
+      const totalStages = res.totalStages || stages.length;
+      if (i + 1 >= totalStages) {
+        $('progressSpinner').classList.add('hidden');
+        $('progressMsg').textContent = dryRun ? 'Preview complete.' : 'Done.';
+        renderMergedSoFar(true);
+        if (!dryRun) state.savedOperations = operations; // mirrors the server's own save (AC6)
+        return Promise.resolve();
+      }
+      setStageIcon(stages[i + 1], '<span class="spinner" style="width:11px;height:11px;border-width:2px"></span>');
       return runStage(i + 1);
     }).catch(err => {
-      setStageIcon(stage, '✗');
+      const stages     = err.stages || [];
+      const failedStage = stages[typeof err.stageIndex === 'number' ? err.stageIndex : -1] || null;
+      setStageIcon(failedStage, '✗');
       $('progressSpinner').classList.add('hidden');
-      $('progressMsg').textContent = 'Failed at: ' + stage.label;
+      $('progressMsg').textContent = 'Failed at: ' + (failedStage ? failedStage.label : 'stage ' + (err.stageIndex + 1));
       $('resultBox').classList.remove('hidden');
       $('resultBox').className = 'result err';
-      $('resultBox').innerHTML = '<h2>Failed — ' + escape(stage.label) + '</h2><p>' + escape(err.message || String(err)) + '</p>' +
+      $('resultBox').innerHTML = '<h2>Failed — ' + escape(failedStage ? failedStage.label : 'GC Format') + '</h2><p>' + escape(err.message || String(err)) + '</p>' +
         (merged.operations.length ? '<p>Already applied before the failure: ' + escape(merged.operations.join(', ')) + '.</p>' : '');
     });
   }
