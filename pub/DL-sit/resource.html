@@ -42,7 +42,7 @@
 </main>
 
 <script>
-var STATIC_BUILD_VERSION_ = "0.0.0.14";
+var STATIC_BUILD_VERSION_ = "0.0.0.15";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_BUILD_ENV_ = "test";
@@ -54,6 +54,8 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
 <script src="app/session.js"></script>
 <script src="app/transport.js"></script>
 <script src="app/records.js"></script>
+<!-- page-resource.js loads BEFORE the gate script below, same reason as catalog.html. -->
+<script src="app/page-resource.js"></script>
 <script>
 (function () {
   'use strict';
@@ -99,6 +101,5 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
   }
 })();
 </script>
-<script src="app/page-resource.js"></script>
 </body>
 </html>

@@ -72,7 +72,7 @@
 <script>
 // Build-time stamps — replaced by tools/static-pages.js (gas-static) immediately before
 // publish. Left null in the unbuilt source, same convention as static-src/index.html.
-var STATIC_BUILD_VERSION_ = "0.0.0.14";
+var STATIC_BUILD_VERSION_ = "0.0.0.15";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_BUILD_ENV_ = "test";
@@ -89,6 +89,10 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
 <script src="app/transport.js"></script>
 <script src="app/vocab.js"></script>
 <script src="app/records.js"></script>
+<!-- page-search.js loads BEFORE the gate script below, which calls
+     `window.NDocsPageSearch.start()` synchronously when a session is already resumed — a
+     script tag loaded after that point would not have defined it yet. -->
+<script src="app/page-search.js"></script>
 <script>
 (function () {
   'use strict';
@@ -158,8 +162,5 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
   }
 })();
 </script>
-<!-- page-search.js loads last, and after the boilerplate above has decided whether to call
-     it — see its own `NDocsPageSearch.start()` entry point. -->
-<script src="app/page-search.js"></script>
 </body>
 </html>
