@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NDocs — Catalog</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  body { font: 15px/1.55 system-ui, sans-serif; margin: 0; padding: 2rem 1rem; color: #1a1a1a; background: #fbfbfa; }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  .lede { color: #555; margin-top: 0; }
+  .hidden { display: none; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
+  .banner { background: #fdecea; border: 1px solid #f5c2bd; border-radius: 6px; padding: .75rem 1rem; margin: 1rem 0; }
+  .muted { color: #666; }
+  table.ndocs-table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  table.ndocs-table th, table.ndocs-table td { text-align: left; border-bottom: 1px solid #eee; padding: .35rem .5rem; vertical-align: top; }
+  .ndocs-chip { display: inline-block; font-size: .78em; padding: .1em .5em; border-radius: 999px; background: #eee; margin-right: .25em; }
+  .ndocs-chip--warn { background: #fdecea; color: #a33; }
+  .ndocs-chip--info { background: #eaf1fd; color: #345; }
+  form#ndocs-search-form { display: flex; gap: .5rem; margin: 1rem 0; }
+  form#ndocs-search-form input { flex: 1; padding: .4rem .6rem; }
+  button { font: inherit; padding: .35rem .8rem; border-radius: 4px; border: 1px solid #bbb; background: #fff; cursor: pointer; }
+  #ndocs-facets select { margin-right: .5rem; }
+  #ndocs-my-teams a { margin-right: .75rem; }
+  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; color: #666; font-size: .85em; }
+</style>
+</head>
+<body>
+<main class="ndocs-page">
+  <h1>NDocs — Catalog</h1>
+  <p class="lede">
+    Search and browse Northlake's catalog of practices and guides. This is the Stage 6
+    (<code>catalog-read</code>) cutover: every result and every record here is read from the
+    real spreadsheet, not the mockup. Registration and editing land in a later stage.
+  </p>
+
+  <!-- Signed out -->
+  <section id="signinView" class="card">
+    <p>Sign in with the Google account that belongs to your team's group.</p>
+    <div id="g_id_onload" data-callback="onGoogleSignIn" data-auto_select="false"></div>
+    <div class="g_id_signin" data-type="standard" data-shape="pill"></div>
+  </section>
+
+  <!-- Sign-in in flight -->
+  <section id="launchView" class="card hidden"><strong id="launchMsg">Signing you in…</strong></section>
+
+  <div id="errorBanner" class="banner hidden"></div>
+
+  <!-- Signed in -->
+  <section id="appView" class="hidden">
+    <nav id="ndocs-my-teams" aria-label="My teams"></nav>
+
+    <form id="ndocs-search-form" role="search">
+      <label for="ndocs-search-q" class="hidden">Search</label>
+      <input id="ndocs-search-q" name="q" type="search" placeholder="Search the catalog…" autocomplete="off">
+      <button type="submit">Search</button>
+    </form>
+
+    <section id="ndocs-facets" aria-label="Filters"></section>
+    <section id="ndocs-results" aria-label="Results"></section>
+  </section>
+
+  <footer>
+    Build <span id="build-version"></span> — <span id="build-env"></span> ·
+    <span id="health">checking backend…</span>
+    · <button id="signOutBtn" type="button" class="hidden">Sign out</button>
+  </footer>
+</main>
+
+<script>
+// Build-time stamps — replaced by tools/static-pages.js (gas-static) immediately before
+// publish. Left null in the unbuilt source, same convention as static-src/index.html.
+var STATIC_BUILD_VERSION_ = "0.0.0.14";
+var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
+var STATIC_ENV_LABEL_ = "SIT";
+var STATIC_BUILD_ENV_ = "test";
+var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
+var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com";
+</script>
+<!-- Shared front-end modules, unchanged (this project's CLAUDE.md "reuse, do not
+     re-derive") — this is a THIRD consumer of them, not a second copy. No drop-register.js
+     and no mock-backend.js: Stage 6's own "Must not offer any write UI", and there is only
+     ever one backend per build (app/transport.js). -->
+<script src="app/config.js"></script>
+<script src="app/ui.js"></script>
+<script src="app/session.js"></script>
+<script src="app/transport.js"></script>
+<script src="app/vocab.js"></script>
+<script src="app/records.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+
+  $('build-version').textContent = NDOCS_CONFIG.VERSION;
+  $('build-env').textContent = STATIC_ENV_LABEL_ || NDOCS_CONFIG.ENV;
+
+  if (NDOCS_CONFIG.GIS_CLIENT_ID.indexOf('.apps.googleusercontent.com') !== -1) {
+    $('g_id_onload').setAttribute('data-client_id', NDOCS_CONFIG.GIS_CLIENT_ID);
+  } else {
+    showError('This build has no Google client id stamped into it, so the sign-in button will not work.');
+  }
+
+  function show(view) {
+    ['signinView', 'launchView', 'appView'].forEach(function (id) {
+      $(id).classList.toggle('hidden', id !== view);
+    });
+    $('signOutBtn').classList.toggle('hidden', view !== 'appView');
+  }
+
+  function showError(message) {
+    $('errorBanner').textContent = message;
+    $('errorBanner').classList.remove('hidden');
+  }
+
+  function clearError() {
+    $('errorBanner').classList.add('hidden');
+  }
+
+  function startCatalog() {
+    show('appView');
+    clearError();
+    if (window.NDocsPageSearch && typeof window.NDocsPageSearch.start === 'function') {
+      window.NDocsPageSearch.start();
+    }
+  }
+
+  window.onGoogleSignIn = function (credentialResponse) {
+    clearError();
+    show('launchView');
+    NDocsSession.signIn(credentialResponse && credentialResponse.credential)
+      .then(startCatalog)
+      .catch(function (err) {
+        show('signinView');
+        showError((err && err.message) || String(err));
+      });
+  };
+
+  $('signOutBtn').addEventListener('click', function () {
+    NDocsSession.signOut();
+    clearError();
+    show('signinView');
+  });
+
+  // Health footer — an `open` route, so it answers whether or not anyone has signed in.
+  NDocsTransport.call('health', {}).then(function (data) {
+    $('health').textContent = 'backend health: ' + (data.sheetReachable ? 'ok' : 'sheet unreachable');
+  }).catch(function (err) {
+    $('health').textContent = 'backend health check failed: ' + ((err && err.message) || err);
+  });
+
+  if (NDocsSession.resume()) {
+    startCatalog();
+  } else {
+    show('signinView');
+  }
+})();
+</script>
+<!-- page-search.js loads last, and after the boilerplate above has decided whether to call
+     it — see its own `NDocsPageSearch.start()` entry point. -->
+<script src="app/page-search.js"></script>
+</body>
+</html>

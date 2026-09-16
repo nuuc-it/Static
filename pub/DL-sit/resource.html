@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NDocs — Resource</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  body { font: 15px/1.55 system-ui, sans-serif; margin: 0; padding: 2rem 1rem; color: #1a1a1a; background: #fbfbfa; }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+  .hidden { display: none; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
+  .banner { background: #fdecea; border: 1px solid #f5c2bd; border-radius: 6px; padding: .75rem 1rem; margin: 1rem 0; }
+  .ndocs-chip { display: inline-block; font-size: .78em; padding: .1em .5em; border-radius: 999px; background: #eee; margin-right: .25em; }
+  .ndocs-chip--warn { background: #fdecea; color: #a33; }
+  .ndocs-chip--info { background: #eaf1fd; color: #345; }
+  dl.ndocs-detail-fields { display: grid; grid-template-columns: 12rem 1fr; row-gap: .35rem; column-gap: 1rem; margin: 1rem 0; }
+  dl.ndocs-detail-fields dt { color: #666; }
+  dl.ndocs-detail-fields dd { margin: 0; }
+  a.ndocs-back { display: inline-block; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<main>
+  <a class="ndocs-back" href="catalog.html">&larr; Back to the catalog</a>
+  <h1>Resource</h1>
+
+  <section id="signinView" class="card">
+    <p>Sign in with the Google account that belongs to your team's group.</p>
+    <div id="g_id_onload" data-callback="onGoogleSignIn" data-auto_select="false"></div>
+    <div class="g_id_signin" data-type="standard" data-shape="pill"></div>
+  </section>
+
+  <section id="launchView" class="card hidden"><strong>Signing you in…</strong></section>
+
+  <div id="errorBanner" class="banner hidden"></div>
+
+  <section id="appView" class="hidden">
+    <div id="ndocs-resource-detail"></div>
+  </section>
+</main>
+
+<script>
+var STATIC_BUILD_VERSION_ = "0.0.0.14";
+var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
+var STATIC_ENV_LABEL_ = "SIT";
+var STATIC_BUILD_ENV_ = "test";
+var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
+var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com";
+</script>
+<script src="app/config.js"></script>
+<script src="app/ui.js"></script>
+<script src="app/session.js"></script>
+<script src="app/transport.js"></script>
+<script src="app/records.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+
+  if (NDOCS_CONFIG.GIS_CLIENT_ID.indexOf('.apps.googleusercontent.com') !== -1) {
+    $('g_id_onload').setAttribute('data-client_id', NDOCS_CONFIG.GIS_CLIENT_ID);
+  }
+
+  function show(view) {
+    ['signinView', 'launchView', 'appView'].forEach(function (id) {
+      $(id).classList.toggle('hidden', id !== view);
+    });
+  }
+
+  function showError(message) {
+    $('errorBanner').textContent = message;
+    $('errorBanner').classList.remove('hidden');
+  }
+
+  function startResource() {
+    show('appView');
+    $('errorBanner').classList.add('hidden');
+    if (window.NDocsPageResource && typeof window.NDocsPageResource.start === 'function') {
+      window.NDocsPageResource.start();
+    }
+  }
+
+  window.onGoogleSignIn = function (credentialResponse) {
+    show('launchView');
+    NDocsSession.signIn(credentialResponse && credentialResponse.credential)
+      .then(startResource)
+      .catch(function (err) {
+        show('signinView');
+        showError((err && err.message) || String(err));
+      });
+  };
+
+  if (NDocsSession.resume()) {
+    startResource();
+  } else {
+    show('signinView');
+  }
+})();
+</script>
+<script src="app/page-resource.js"></script>
+</body>
+</html>
