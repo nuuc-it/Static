@@ -3,19 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NDocs — Resource</title>
+<title>NDocs — Team</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   body { font: 15px/1.55 system-ui, sans-serif; margin: 0; padding: 2rem 1rem; color: #1a1a1a; background: #fbfbfa; }
-  main { max-width: 46rem; margin: 0 auto; }
+  main { max-width: 60rem; margin: 0 auto; }
   h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+  h3 { margin-top: 1.5rem; }
   .hidden { display: none; }
   .card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
   .banner { background: #fdecea; border: 1px solid #f5c2bd; border-radius: 6px; padding: .75rem 1rem; margin: 1rem 0; }
+  table.ndocs-table { border-collapse: collapse; width: 100%; margin-top: .5rem; }
+  table.ndocs-table th, table.ndocs-table td { text-align: left; border-bottom: 1px solid #eee; padding: .35rem .5rem; vertical-align: top; }
   .ndocs-chip { display: inline-block; font-size: .78em; padding: .1em .5em; border-radius: 999px; background: #eee; margin-right: .25em; }
   .ndocs-chip--warn { background: #fdecea; color: #a33; }
   .ndocs-chip--info { background: #eaf1fd; color: #345; }
-  dl.ndocs-detail-fields { display: grid; grid-template-columns: 12rem 1fr; row-gap: .35rem; column-gap: 1rem; margin: 1rem 0; }
+  .ndocs-folder--unresolved { color: #a33; font-style: italic; }
+  dl.ndocs-detail-fields { display: grid; grid-template-columns: 14rem 1fr; row-gap: .35rem; column-gap: 1rem; margin: 1rem 0; }
   dl.ndocs-detail-fields dt { color: #666; }
   dl.ndocs-detail-fields dd { margin: 0; }
   a.ndocs-back { display: inline-block; margin-bottom: 1rem; }
@@ -24,7 +28,7 @@
 <body>
 <main>
   <a class="ndocs-back" href="catalog.html">&larr; Back to the catalog</a>
-  <h1>Resource</h1>
+  <h1>Team</h1>
 
   <section id="signinView" class="card">
     <p>Sign in with the Google account that belongs to your team's group.</p>
@@ -37,7 +41,8 @@
   <div id="errorBanner" class="banner hidden"></div>
 
   <section id="appView" class="hidden">
-    <div id="ndocs-resource-detail"></div>
+    <div id="ndocs-team-config"></div>
+    <section id="ndocs-team-inventory" aria-label="Team inventory, grouped by folder"></section>
   </section>
 </main>
 
@@ -49,13 +54,16 @@ var STATIC_BUILD_ENV_ = "test";
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
 var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com";
 </script>
+<!-- Shared front-end modules, unchanged (this project's CLAUDE.md "reuse, do not
+     re-derive") — this is a FOURTH consumer of them, not a second copy. -->
 <script src="app/config.js"></script>
 <script src="app/ui.js"></script>
 <script src="app/session.js"></script>
 <script src="app/transport.js"></script>
 <script src="app/records.js"></script>
-<!-- page-resource.js loads BEFORE the gate script below, same reason as catalog.html. -->
-<script src="app/page-resource.js"></script>
+<!-- page-team.js loads BEFORE the gate script below, same reason as catalog.html/
+     resource.html. -->
+<script src="app/page-team.js"></script>
 <script>
 (function () {
   'use strict';
@@ -76,18 +84,18 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
     $('errorBanner').classList.remove('hidden');
   }
 
-  function startResource() {
+  function startTeam() {
     show('appView');
     $('errorBanner').classList.add('hidden');
-    if (window.NDocsPageResource && typeof window.NDocsPageResource.start === 'function') {
-      window.NDocsPageResource.start();
+    if (window.NDocsPageTeam && typeof window.NDocsPageTeam.start === 'function') {
+      window.NDocsPageTeam.start();
     }
   }
 
   window.onGoogleSignIn = function (credentialResponse) {
     show('launchView');
     NDocsSession.signIn(credentialResponse && credentialResponse.credential)
-      .then(startResource)
+      .then(startTeam)
       .catch(function (err) {
         show('signinView');
         showError((err && err.message) || String(err));
@@ -95,7 +103,7 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
   };
 
   if (NDocsSession.resume()) {
-    startResource();
+    startTeam();
   } else {
     show('signinView');
   }
