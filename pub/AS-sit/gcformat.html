@@ -34,17 +34,29 @@
   .linkbtn{border:0;background:none;color:var(--blue);cursor:pointer;font:inherit;padding:0}
 
   .scopeNote{font-size:11.5px;color:var(--muted);margin:8px 0 0}
+  .grp{margin-top:12px}
+  .grp>h2{font-size:11px;margin:0 0 5px;color:var(--muted);font-weight:700;text-transform:uppercase;
+          letter-spacing:.04em}
+  .grp>h2 .note{font-weight:400;text-transform:none;letter-spacing:0}
   .ops{margin-top:6px;display:flex;flex-direction:column;gap:3px}
   .op{display:flex;gap:8px;align-items:center;padding:5px 10px;border:1px solid var(--line);
       border-radius:8px;background:#fbfcfe;min-width:0}
+  .op.locked{background:var(--panel);border-style:dashed}
+  .op.locked input{opacity:.5}
   .op input{flex:none}
-  .op label{font-weight:600;cursor:pointer;flex:none;white-space:nowrap}
-  .op .opdesc{color:var(--muted);font-size:12px;flex:1 1 auto;min-width:0;overflow:hidden;
-              text-overflow:ellipsis;white-space:nowrap}
+  .op .body{flex:1 1 auto;min-width:0}
+  .op label{font-weight:600;cursor:pointer;display:block}
+  .op .opdesc{color:var(--muted);font-size:12px;margin-top:2px;line-height:1.4}
+  .op .spec{display:none;color:#9aa3ad;font-size:11px;margin-top:2px;font-style:italic}
+  body.showspec .op .spec{display:block}
+  .op .tags{flex:none;display:flex;flex-direction:column;gap:3px;align-items:flex-end}
   .op .appliedTag{flex:none;font-size:10.5px;font-weight:600;color:#065f46;background:var(--green2);
                   border:1px solid #a7f3d0;padding:1px 8px;border-radius:999px;white-space:nowrap}
   .op .scopeTag{flex:none;font-size:10.5px;color:var(--muted);background:#f9fafb;
                 border:1px solid var(--line);padding:1px 8px;border-radius:999px;white-space:nowrap}
+  .op .hazardTag{flex:none;font-size:10.5px;color:var(--amber);background:var(--amber2);
+                border:1px solid #f2d888;padding:1px 8px;border-radius:999px;white-space:nowrap}
+  .op .hazardTag.danger{color:var(--red);background:#fee2e2;border-color:#fecaca}
 
   .actionsrow{margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   button.primary{background:var(--blue);color:#fff;border:0;border-radius:10px;padding:9px 16px;
@@ -135,6 +147,7 @@
         <button class="primary" id="runBtn">Run GC Format</button>
         <button class="secondary" id="dryRunBtn">Preview (dry run)</button>
         <label class="dryrun"><input type="checkbox" id="allBox"> select all</label>
+        <label class="dryrun"><input type="checkbox" id="specBox"> show spec wording</label>
         <button class="secondary" id="cancelBtn" style="margin-left:auto">Cancel</button>
       </div>
     </div>
@@ -170,7 +183,7 @@
 <script>
 // Build-time stamps (identical convention to index.html/doc.html) — left null
 // in the unbuilt source, stamped by scripts/build-static-portal.js.
-var STATIC_BUILD_VERSION_ = "0.2.5.59";
+var STATIC_BUILD_VERSION_ = "0.2.5.60";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -178,15 +191,19 @@ const NUUC_DISPATCH_URL = 'https://script.google.com/macros/s/AKfycbwmoOPRDThQWD
 const GACTIONSHEET_URL  = STATIC_WEBAPP_URL_;
 const ASSERTION_AUD = 'gactionsheet';
 
-// The operations set (contract §2) is SERVED, not hardcoded (gts-atpv.17). This used to
-// be a hand-maintained copy of src/GcFormatRules.js's list with a comment asking the next
-// editor to keep the two in sync — the duplication ADR-0032 is about escaping, since a new
-// operation then cost an edit here as well as server-side. gc_format_get_context now returns
-// _GC_FORMAT_OPERATION_CATALOG, so this page renders whatever the current deployment
-// defines and a sixth operation costs nothing on this side.
-// Each entry: {id, label, desc, rangeScoped} — `rangeScoped: true` marks the operations
-// contract §2 honors a `range` for; everything else always runs whole-document.
-let OPERATIONS = [];
+// The picker's rows/groups (gts-atpv.28, outcome-grouped variant B) are SERVED, not
+// hardcoded (gts-atpv.17/ADR-0032). This page used to carry its own hand-maintained
+// OPERATIONS list with a comment asking the next editor to keep it in sync with
+// src/GcFormatRules.js — the duplication ADR-0032 is about escaping. gc_format_get_context
+// now returns _GC_FORMAT_PICKER_ROWS/_GC_FORMAT_PICKER_GROUPS/_GC_FORMAT_RULE_LABELS, so
+// this page renders whatever the current deployment defines and a new row costs nothing here.
+// pickerRow: {id, group, operations, ruleIds, label, desc, locked?, scopeTag?, hazard?}.
+// `operations` is the set of engine ops (contract §2) a checked row contributes; the request
+// actually sent is the UNION of every checked row's `operations` — never picked directly.
+let PICKER_ROWS = [];
+let PICKER_GROUPS = [];
+let RULE_LABELS = {};
+function ruleLabel(id){ return RULE_LABELS[id] || ('rule ' + id); }
 
 const $buildBadge_ = document.getElementById('buildBadge');
 function applyVersionState_(clientBuild, serverVersion){
@@ -335,7 +352,9 @@ function loadContext(){
     action: 'gc_format_get_context', assertion: state.assertion, docId: state.docId
   })
     .then(res => {
-      OPERATIONS = res.operations || [];
+      PICKER_ROWS = res.pickerRows || [];
+      PICKER_GROUPS = res.pickerGroups || [];
+      RULE_LABELS = res.ruleLabels || {};
       state.tier = res.tier || 'NONE';
       state.docName = res.docName || '';
       state.docUrl = res.docUrl || '';
@@ -365,34 +384,67 @@ function render(){
   if (!canRun) return;
 
   const selCount = state.range ? state.range.elements.length : 0;
+  const scoped = PICKER_ROWS.filter(r => r.scopeTag && !r.locked).map(r => r.label);
+  const scopedText = scoped.length ? scoped.join(', ') : 'No row';
   $('scopeNote').textContent = state.range
-    ? ('Structure/Format will apply to your selection (' + selCount + ' item' + (selCount === 1 ? '' : 's') +
-       ', captured when you opened this page). Every other operation always applies to the whole document.')
-    : 'No selection was open when you launched this page — Structure/Format will apply to the whole document. Everything else always does.';
+    ? (scopedText + ' will apply to your selection (' + selCount + ' item' + (selCount === 1 ? '' : 's') +
+       ', captured when you opened this page). Everything else always applies to the whole document.')
+    : ('No selection was open when you launched this page — ' + scopedText.toLowerCase() +
+       ' will apply to the whole document. Everything else always does.');
 
-  opsListEl.innerHTML = OPERATIONS.map(op => {
-    const appliedLastRun = state.savedOperations.indexOf(op.id) !== -1;
-    const checked = appliedLastRun || !state.savedOperations.length;
-    const scopeTag = op.rangeScoped
-      ? ('<span class="scopeTag">' + (state.range ? 'selection' : 'whole doc') + '</span>')
-      : '';
-    return `
-    <div class="op">
-      <input type="checkbox" id="op_${op.id}" data-op="${op.id}" ${checked ? 'checked' : ''}>
-      <label for="op_${op.id}">${escape(op.label)}</label>
-      <span class="opdesc" title="${escape(op.desc)}">${escape(op.desc)}</span>
-      ${scopeTag}
-      ${appliedLastRun ? '<span class="appliedTag">Applied last run</span>' : ''}
-    </div>`;
+  opsListEl.innerHTML = PICKER_GROUPS.map(g => {
+    const rowsInGroup = PICKER_ROWS.filter(r => r.group === g.id);
+    if (!rowsInGroup.length) return '';
+    return `<div class="grp"><h2>${escape(g.label)}${g.note ? ' <span class="note">— ' + escape(g.note) + '</span>' : ''}</h2>` +
+      rowsInGroup.map(renderRow).join('') + '</div>';
   }).join('');
 }
 
+function renderRow(row){
+  // A row pre-checks as "applied last run" only when every operation it contributes was
+  // part of the document's last saved selection (a partially-run row is not honestly
+  // "applied"). With no run history, everything starts checked.
+  const appliedLastRun = !!row.operations.length &&
+    row.operations.every(op => state.savedOperations.indexOf(op) !== -1);
+  const checked = row.locked || appliedLastRun || !state.savedOperations.length;
+  const specText = (row.ruleIds || []).map(ruleLabel).join(' · ');
+  let tags = '';
+  if (row.scopeTag) tags += '<span class="scopeTag">' + (state.range ? 'selection' : 'whole doc') + '</span>';
+  if (row.locked) tags += '<span class="scopeTag">always on</span>';
+  if (row.hazard) tags += '<span class="hazardTag' + (row.hazard === 'deletes text' ? ' danger' : '') + '">' + escape(row.hazard) + '</span>';
+  if (appliedLastRun && !row.locked) tags += '<span class="appliedTag">Applied last run</span>';
+  return `
+    <div class="op${row.locked ? ' locked' : ''}">
+      <input type="checkbox" id="row_${row.id}" data-row="${row.id}" ${checked ? 'checked' : ''} ${row.locked ? 'disabled' : ''}>
+      <div class="body">
+        <label for="row_${row.id}">${escape(row.label)}</label>
+        ${row.desc ? '<div class="opdesc">' + escape(row.desc) + '</div>' : ''}
+        ${specText ? '<div class="spec">spec: ' + escape(specText) + '</div>' : ''}
+      </div>
+      <div class="tags">${tags}</div>
+    </div>`;
+}
+
+/**
+ * The request's `operations` are DERIVED (gts-atpv.28 AC2), never picked directly: the union
+ * of every checked row's own `operations`. A locked row (only 'strip' today) contributes
+ * nothing itself — its effect already rides inside 'format' via the rows that declare it.
+ */
 function checkedOperations(){
-  return OPERATIONS.map(op => op.id).filter(id => $('op_' + id) && $('op_' + id).checked);
+  const opSet = {};
+  PICKER_ROWS.forEach(row => {
+    if (row.locked) return;
+    const el = $('row_' + row.id);
+    if (el && el.checked) row.operations.forEach(op => { opSet[op] = true; });
+  });
+  return Object.keys(opSet);
 }
 
 $('allBox').addEventListener('change', (e) => {
-  OPERATIONS.forEach(op => { const el = $('op_' + op.id); if (el) el.checked = e.target.checked; });
+  PICKER_ROWS.forEach(row => { if (row.locked) return; const el = $('row_' + row.id); if (el) el.checked = e.target.checked; });
+});
+$('specBox').addEventListener('change', (e) => {
+  document.body.classList.toggle('showspec', e.target.checked);
 });
 
 // The stage PLAN (grouping/order) is no longer duplicated here (gts-atpv.18; open seam recorded
