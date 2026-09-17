@@ -16,13 +16,22 @@
 // findings" column below — this page's own read surface, `list_findings`/`resolve_finding`,
 // same "resolution is a write, but a narrow one this page's team-member gate already covers"
 // reasoning `page-resource.js`'s retire button uses.
+//
+// Stage 11 (`certify`, `NDocs-het`) adds the `#certify` panel — `get_certification`/
+// `certify_resources`. UC-9 step 3: "the page renders the whole inventory pre-confirmed" — every
+// row starts checked (`defaultOutcome: 'confirmed'`); unchecking one reveals a required
+// disposition (the `CertOutcomes.outcome` enum minus `confirmed`) plus an optional note, and
+// `superseded` additionally requires a successor Resource ID. A single submit sends every row in
+// one `certify_resources` call — no per-record link, per this stage's own "Must not: require
+// opening an individual record to confirm it".
 (function () {
   'use strict';
 
   var ui = NDocsUI;
-  var configEl, inventoryEl, findingsEl;
+  var configEl, inventoryEl, findingsEl, certifyEl;
   var currentTeamId;
   var FINDING_RESOLUTIONS = ['accept', 'reject', 'fixed', 'wont_fix'];
+  var CERT_DISPOSITIONS = ['superseded', 'archived', 'withdrawn'];
 
   function teamIdFromQuery() {
     var params = new URLSearchParams(window.location.search);
@@ -138,6 +147,115 @@
     findingsEl.appendChild(table);
   }
 
+  // The certify panel (UC-9). One row per current resource, pre-confirmed; unchecking a row
+  // requires a disposition (`superseded` additionally requires a successor id) before submit
+  // is allowed. `entries` is `get_certification`'s own shape — `{record, defaultOutcome,
+  // openFindings}` — so a row can also show whether the resource already carries an open
+  // finding, the same context `renderFindings` gives elsewhere on this page.
+  function renderCertify(cycle, entries) {
+    certifyEl.textContent = '';
+    if (cycle.state === 'certified_empty') {
+      certifyEl.appendChild(ui.el('p', { text: 'This team owns no resources — nothing to certify.' }));
+      return;
+    }
+    certifyEl.appendChild(ui.el('h2', { text: 'Certify this inventory' }));
+    certifyEl.appendChild(ui.el('p', {
+      text: 'Cycle ' + cycle.state + (cycle.due_at ? ' — due ' + new Date(cycle.due_at).toLocaleDateString() : '') +
+        '. Every resource below starts confirmed; uncheck one to record an exception instead.'
+    }));
+
+    var rows = [];
+    var table = ui.el('table', { class: 'ndocs-table' });
+    var thead = ui.el('thead', {}, [ui.el('tr', {}, [
+      ui.el('th', { text: 'Confirmed' }), ui.el('th', { text: 'Title' }), ui.el('th', { text: 'Doc ID' }),
+      ui.el('th', { text: 'Open findings' }), ui.el('th', { text: 'Disposition' }),
+      ui.el('th', { text: 'Successor / note' })
+    ])]);
+    var tbody = ui.el('tbody', {});
+
+    entries.forEach(function (entry) {
+      var record = entry.record;
+      var checkbox = ui.el('input', { type: 'checkbox', checked: 'checked' });
+      var select = ui.el('select', { disabled: 'disabled' });
+      select.appendChild(ui.el('option', { value: '', text: '—' }));
+      CERT_DISPOSITIONS.forEach(function (d) {
+        select.appendChild(ui.el('option', { value: d, text: d }));
+      });
+      var successor = ui.el('input', { type: 'text', placeholder: 'successor Resource ID', disabled: 'disabled' });
+      var note = ui.el('input', { type: 'text', placeholder: 'note', disabled: 'disabled' });
+
+      checkbox.addEventListener('change', function () {
+        var confirmed = checkbox.checked;
+        select.disabled = confirmed;
+        successor.disabled = confirmed;
+        note.disabled = confirmed;
+        if (confirmed) { select.value = ''; successor.value = ''; }
+      });
+
+      tbody.appendChild(ui.el('tr', {}, [
+        ui.el('td', {}, [checkbox]),
+        ui.el('td', { text: record.title }),
+        ui.el('td', { text: record.doc_id }),
+        ui.el('td', { text: String((entry.openFindings || []).length) }),
+        ui.el('td', {}, [select]),
+        ui.el('td', {}, [successor, note])
+      ]));
+
+      rows.push({ resourceId: record.resource_id, checkbox: checkbox, select: select, successor: successor, note: note });
+    });
+
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    certifyEl.appendChild(table);
+
+    var submit = ui.el('button', { type: 'button', text: 'Submit certification' });
+    submit.addEventListener('click', function () {
+      var confirmedIds = [];
+      var exceptions = [];
+      var invalid = false;
+
+      rows.forEach(function (row) {
+        if (row.checkbox.checked) {
+          confirmedIds.push(row.resourceId);
+          return;
+        }
+        if (!row.select.value) { invalid = true; return; }
+        if (row.select.value === 'superseded' && !row.successor.value) { invalid = true; return; }
+        exceptions.push({
+          resourceId: row.resourceId, disposition: row.select.value,
+          note: row.note.value || undefined, successorId: row.successor.value || undefined
+        });
+      });
+
+      if (invalid) {
+        ui.toast('Every unchecked resource needs a disposition (and a successor for "superseded").', 'warn');
+        return;
+      }
+
+      submit.disabled = true;
+      NDocsTransport.call('certify_resources', {
+        teamId: currentTeamId, cycleId: cycle.cycle_id, confirmedIds: confirmedIds, exceptions: exceptions
+      }).then(function () {
+        ui.toast('Certification submitted.', 'info');
+        load();
+      }).catch(function (err) {
+        submit.disabled = false;
+        ui.toast('Could not submit: ' + err.message, 'warn');
+      });
+    });
+    certifyEl.appendChild(submit);
+  }
+
+  function loadCertify() {
+    NDocsTransport.call('get_certification', { teamId: currentTeamId }).then(function (data) {
+      renderCertify(data.cycle, data.entries);
+    }).catch(function (err) {
+      certifyEl.textContent = '';
+      if (err.code !== 'not_found') return; // membership refusal already shown by the inventory panel
+      certifyEl.appendChild(ui.el('p', { text: 'No certification cycle is open for this team right now.' }));
+    });
+  }
+
   function load() {
     ui.setBusy(inventoryEl, true);
     NDocsTransport.call('list_team_inventory', { teamId: currentTeamId, groupBy: 'folder' }).then(function (data) {
@@ -163,12 +281,15 @@
       // shows on the config/inventory panel, so this call fails silently rather than
       // duplicating that message.
     });
+
+    loadCertify();
   }
 
   function init() {
     configEl = document.getElementById('ndocs-team-config');
     inventoryEl = document.getElementById('ndocs-team-inventory');
     findingsEl = document.getElementById('ndocs-team-findings');
+    certifyEl = document.getElementById('ndocs-team-certify');
 
     currentTeamId = teamIdFromQuery();
     if (!currentTeamId) {
