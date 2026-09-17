@@ -11,12 +11,18 @@
 // Stages 8/12/11, once `inspect_url`/`register_resource`, `scan_folders`/`admin_list_
 // candidates`, and `get_certification`/`certify_resources` exist to back them — adding their
 // markup ahead of that would be exactly this stage's own "Must not: offer any write UI."
+//
+// Stage 10 (`findings`, `NDocs-0ti`) adds the findings panel and the inventory's "Open
+// findings" column below — this page's own read surface, `list_findings`/`resolve_finding`,
+// same "resolution is a write, but a narrow one this page's team-member gate already covers"
+// reasoning `page-resource.js`'s retire button uses.
 (function () {
   'use strict';
 
   var ui = NDocsUI;
-  var configEl, inventoryEl;
+  var configEl, inventoryEl, findingsEl;
   var currentTeamId;
+  var FINDING_RESOLUTIONS = ['accept', 'reject', 'fixed', 'wont_fix'];
 
   function teamIdFromQuery() {
     var params = new URLSearchParams(window.location.search);
@@ -48,12 +54,18 @@
   // One heading + table per folder, unresolved last — it is the exception this view exists
   // to surface (this stage's own "Must not: hide it"), not the common case. `records.js`'s
   // resultsTable already hides the folder column inside a group, since the heading names it.
+  // `findingCounts` (Stage 10, `NDocs-0ti`) is `{resourceId: {open, blocking}}` from
+  // `list_team_inventory`; `records.js`'s column wants a plain count per id.
   function renderInventory(data) {
     inventoryEl.textContent = '';
     if (!data.records.length) {
       inventoryEl.appendChild(ui.el('p', { text: 'This team has no catalogued resources yet.' }));
       return;
     }
+    var openCounts = {};
+    Object.keys(data.findingCounts || {}).forEach(function (id) {
+      openCounts[id] = data.findingCounts[id].open;
+    });
     var byFolder = {};
     data.records.forEach(function (r) {
       var key = r.drive_folder_id || '';
@@ -74,8 +86,56 @@
         heading = ui.el('span', { class: 'ndocs-folder--unresolved', text: 'Unresolved folder (' + folder.count + ')' });
       }
       inventoryEl.appendChild(ui.el('h3', {}, [heading]));
-      inventoryEl.appendChild(NDocsRecords.resultsTable(records, { hideFolder: true }));
+      inventoryEl.appendChild(NDocsRecords.resultsTable(records, { hideFolder: true, findingCounts: openCounts }));
     });
+  }
+
+  // The team findings list (Stage 10, `NDocs-0ti`) — every open exception against this
+  // team, whatever kind produced it (ADR-0006). One resolution control per row: a
+  // resolution select plus a note, calling `resolve_finding` and reloading on success.
+  function renderFindings(findings) {
+    findingsEl.textContent = '';
+    findingsEl.appendChild(ui.el('h2', { text: 'Findings' }));
+    if (!findings.length) {
+      findingsEl.appendChild(ui.el('p', { text: 'No open findings.' }));
+      return;
+    }
+    var table = ui.el('table', { class: 'ndocs-table' });
+    var thead = ui.el('thead', {}, [ui.el('tr', {}, [
+      ui.el('th', { text: 'Kind' }), ui.el('th', { text: 'Resource' }),
+      ui.el('th', { text: 'Detected' }), ui.el('th', { text: 'Resolve' })
+    ])]);
+    var tbody = ui.el('tbody', {});
+    findings.forEach(function (f) {
+      var select = ui.el('select', {});
+      FINDING_RESOLUTIONS.forEach(function (r) {
+        select.appendChild(ui.el('option', { value: r, text: r }));
+      });
+      var note = ui.el('input', { type: 'text', placeholder: 'note (optional)' });
+      var button = ui.el('button', { type: 'button', text: 'Resolve' });
+      button.addEventListener('click', function () {
+        NDocsTransport.call('resolve_finding', {
+          findingId: f.finding_id, rev: f.rev, resolution: select.value, note: note.value || undefined
+        }).then(function () {
+          ui.toast('Finding resolved.', 'info');
+          load();
+        }).catch(function (err) {
+          ui.toast('Could not resolve: ' + err.message, 'warn');
+        });
+      });
+      var resourceLink = f.resource_id
+        ? ui.el('a', { href: 'resource.html?id=' + encodeURIComponent(f.resource_id), text: f.resource_id })
+        : ui.el('span', { text: '—' });
+      tbody.appendChild(ui.el('tr', {}, [
+        ui.el('td', { text: f.kind }),
+        ui.el('td', {}, [resourceLink]),
+        ui.el('td', { text: f.detected_at ? new Date(f.detected_at).toLocaleDateString() : '—' }),
+        ui.el('td', {}, [select, note, button])
+      ]));
+    });
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    findingsEl.appendChild(table);
   }
 
   function load() {
@@ -95,11 +155,20 @@
       }
       configEl.appendChild(ui.el('p', { text: 'Team not found.' }));
     });
+
+    NDocsTransport.call('list_findings', { teamId: currentTeamId, state: 'open' }).then(function (data) {
+      renderFindings(data.findings);
+    }).catch(function () {
+      // Same team-membership gate as list_team_inventory above; a refusal here already
+      // shows on the config/inventory panel, so this call fails silently rather than
+      // duplicating that message.
+    });
   }
 
   function init() {
     configEl = document.getElementById('ndocs-team-config');
     inventoryEl = document.getElementById('ndocs-team-inventory');
+    findingsEl = document.getElementById('ndocs-team-findings');
 
     currentTeamId = teamIdFromQuery();
     if (!currentTeamId) {

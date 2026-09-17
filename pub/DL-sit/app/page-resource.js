@@ -1,11 +1,14 @@
-// app/page-resource.js — resource.html controller. Full record, warnings, and — when
-// the viewer's team owns the record — retire. Calls get_resource, retire_resource.
+// app/page-resource.js — resource.html controller. Full record, warnings, "report a
+// problem", and — when the viewer's team owns the record — retire. Calls get_resource,
+// report_problem, retire_resource.
 //
-// The reader-facing "report a problem" workflow was pulled from this page's mockup
-// (2026-09-12, pre-NDocs-6sa) at the product owner's direction — the whole findings
-// capability may be retired, pending confirmation before that becomes permanent. The
-// mock-backend.js report_problem handler and its webapp-actions.md route are untouched;
-// only this page's entry point to it is gone.
+// The reader-facing "report a problem" entry point was pulled from this page's mockup
+// (2026-09-12, pre-NDocs-6sa) pending confirmation that the whole findings capability
+// would stay. ADR-0006 (accepted 2026-09-11) never lapsed, and Stage 10 (`findings`:
+// `NDocs-bj5`, `NDocs-0ti`) landed the real `FindingService.js`/`report_problem` route
+// against a bead the tracker never deferred — the confirmation this comment was waiting on.
+// Restored here against the real route (`FINDING_REPORT_KINDS`, `H_Findings.js`), not the
+// old mock-backend.js shape.
 (function () {
   'use strict';
 
@@ -25,6 +28,34 @@
       list.appendChild(ui.el('li', { text: f.kind + (f.note ? ': ' + f.note : '') }));
     });
     return ui.el('div', {}, [ui.el('h3', { text: 'Open findings' }), list]);
+  }
+
+  var REPORT_KINDS = [
+    ['link_broken', 'The link is broken'],
+    ['access_reported', "I can't access it"],
+    ['outdated_reported', "It's outdated"],
+    ['wrong_owner_reported', 'Wrong owning team'],
+    ['replaced_reported', 'It has been replaced']
+  ];
+
+  function renderReportProblem(resourceId) {
+    var select = ui.el('select', {});
+    REPORT_KINDS.forEach(function (pair) {
+      select.appendChild(ui.el('option', { value: pair[0], text: pair[1] }));
+    });
+    var note = ui.el('input', { type: 'text', placeholder: 'note (optional)' });
+    var button = ui.el('button', { type: 'button', text: 'Report a problem' });
+    button.addEventListener('click', function () {
+      NDocsTransport.call('report_problem', {
+        resourceId: resourceId, kind: select.value, note: note.value || undefined
+      }).then(function (data) {
+        ui.toast(data.attachedToExisting ? 'Added to an existing report.' : 'Problem reported.', 'info');
+        load();
+      }).catch(function (err) {
+        ui.toast('Could not report the problem: ' + err.message, 'warn');
+      });
+    });
+    return ui.el('div', { class: 'ndocs-report-problem' }, [select, note, button]);
   }
 
   function renderRetire(data) {
@@ -55,6 +86,7 @@
       detailEl.appendChild(NDocsRecords.detailCard(data.record));
       var findingsNode = renderFindings(data.openFindings);
       if (findingsNode) detailEl.appendChild(findingsNode);
+      detailEl.appendChild(renderReportProblem(data.record.resource_id));
       var retireButton = renderRetire(data);
       if (retireButton) detailEl.appendChild(retireButton);
     }).catch(function (err) {
