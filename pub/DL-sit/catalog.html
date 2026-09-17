@@ -31,9 +31,9 @@
 <main class="ndocs-page">
   <h1>NDocs — Catalog</h1>
   <p class="lede">
-    Search and browse Northlake's catalog of practices and guides. This is the Stage 6
-    (<code>catalog-read</code>) cutover: every result and every record here is read from the
-    real spreadsheet, not the mockup. Registration and editing land in a later stage.
+    Search and browse Northlake's catalog of practices and guides, and register a document
+    straight from Drive (Stage 8, <code>catalog-write</code>). Editing and retirement happen
+    from a resource's own page.
   </p>
 
   <!-- Signed out -->
@@ -51,6 +51,9 @@
   <!-- Signed in -->
   <section id="appView" class="hidden">
     <nav id="ndocs-my-teams" aria-label="My teams"></nav>
+
+    <button id="ndocs-drop-toggle" type="button" aria-expanded="false" aria-controls="ndocs-drop">Register a document</button>
+    <div id="ndocs-drop" class="card" hidden></div>
 
     <form id="ndocs-search-form" role="search">
       <label for="ndocs-search-q" class="hidden">Search</label>
@@ -72,7 +75,7 @@
 <script>
 // Build-time stamps — replaced by tools/static-pages.js (gas-static) immediately before
 // publish. Left null in the unbuilt source, same convention as static-src/index.html.
-var STATIC_BUILD_VERSION_ = "0.0.0.16";
+var STATIC_BUILD_VERSION_ = "0.0.0.17";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_BUILD_ENV_ = "test";
@@ -80,15 +83,17 @@ var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQW
 var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com";
 </script>
 <!-- Shared front-end modules, unchanged (this project's CLAUDE.md "reuse, do not
-     re-derive") — this is a THIRD consumer of them, not a second copy. No drop-register.js
-     and no mock-backend.js: Stage 6's own "Must not offer any write UI", and there is only
-     ever one backend per build (app/transport.js). -->
+     re-derive") — this is a THIRD consumer of them, not a second copy. No mock-backend.js:
+     there is only ever one backend per build (app/transport.js). Stage 8 (`NDocs-6o8`) adds
+     drop-register.js — Stage 6's "Must not offer any write UI" was this stage's own
+     constraint, not a later one's. -->
 <script src="app/config.js"></script>
 <script src="app/ui.js"></script>
 <script src="app/session.js"></script>
 <script src="app/transport.js"></script>
 <script src="app/vocab.js"></script>
 <script src="app/records.js"></script>
+<script src="app/drop-register.js"></script>
 <!-- page-search.js loads BEFORE the gate script below, which calls
      `window.NDocsPageSearch.start()` synchronously when a session is already resumed — a
      script tag loaded after that point would not have defined it yet. -->
