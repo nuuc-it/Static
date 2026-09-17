@@ -52,7 +52,11 @@
     });
     var typeSelect = ui.el('select', { id: 'ndocs-filter-type' });
     typeSelect.appendChild(ui.el('option', { value: '', text: 'All types' }));
-    (vocab.vocab.type || []).forEach(function (t) {
+    // `vocab.vocab` is `null` until a real controlled-vocabulary source exists
+    // (`get_bootstrap`'s own "this build cannot tell you" contract, Stage 15's job) — this
+    // build simply offers no type filter rather than throwing on `null.type` (found live on
+    // SIT during Stage 8; not something Stage 6/7 exercised end to end before now).
+    ((vocab.vocab && vocab.vocab.type) || []).forEach(function (t) {
       typeSelect.appendChild(ui.el('option', { value: t, text: t }));
     });
     teamSelect.addEventListener('change', runSearch);

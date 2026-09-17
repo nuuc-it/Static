@@ -258,11 +258,13 @@ var NDocsDropRegister = (function () {
       purposeInput.placeholder = 'The document has no Purpose section — say what it is for';
     }
     var typeSelect = ui.el('select', {});
-    (vocab.vocab.type || []).forEach(function (t) {
+    // `vocab.vocab` is `null` until a real controlled-vocabulary source exists (Stage 15) —
+    // same guard as `page-search.js`'s `renderFacets`, found live on SIT during this stage.
+    ((vocab.vocab && vocab.vocab.type) || []).forEach(function (t) {
       typeSelect.appendChild(ui.el('option', { value: t, text: t }));
     });
     var audienceSelect = ui.el('select', {});
-    (vocab.vocab.audience || []).forEach(function (a) {
+    ((vocab.vocab && vocab.vocab.audience) || []).forEach(function (a) {
       audienceSelect.appendChild(ui.el('option', { value: a, text: a }));
     });
     if (header.audience) audienceSelect.value = header.audience;
