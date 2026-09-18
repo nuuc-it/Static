@@ -182,7 +182,7 @@
           })
         ]);
         var details = ui.el('details', { class: 'disclosure' }, [summary, content]);
-        if (idx === 0) details.setAttribute('open', 'open');
+        if (idx === 0) details.open = true;
         body.appendChild(details);
       });
 

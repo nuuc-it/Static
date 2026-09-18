@@ -218,7 +218,7 @@ var NDocsRecords = (function () {
       ]);
       var cells = [];
       if (opts.selectable) {
-        var checkbox = ui.el('input', { type: 'checkbox' });
+        var checkbox = ui.el('input', { type: 'checkbox', 'aria-label': 'Select ' + (record.title || record.doc_id || record.resource_id) });
         checkbox.addEventListener('change', function () {
           if (!opts.selectedIds) return;
           if (checkbox.checked) opts.selectedIds.add(record.resource_id);

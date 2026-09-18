@@ -26,7 +26,7 @@
     if (opts.meta) summary.appendChild(ui.el('span', { class: 'summary-meta', text: opts.meta }));
     var body = ui.el('div', { class: 'disclosure-content' });
     var details = ui.el('details', { class: 'disclosure', id: id }, [summary, body]);
-    if (opts.open) details.setAttribute('open', 'open');
+    if (opts.open) details.open = true;
     return { details: details, body: body };
   }
 
@@ -386,7 +386,7 @@
       // link) should land on an OPEN section, not a collapsed one.
       if (window.location.hash) {
         var target = document.getElementById(window.location.hash.slice(1));
-        if (target && target.tagName === 'DETAILS') target.setAttribute('open', 'open');
+        if (target && target.tagName === 'DETAILS') target.open = true;
       }
     });
   }
