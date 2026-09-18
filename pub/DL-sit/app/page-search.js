@@ -1,113 +1,186 @@
-// app/page-search.js — the catalog listing controller (`catalog.html`, and the Stage 1
-// mockup's `ndocs/index.html`). Search box, facet filters, ranked results, browse-by
-// dimension. Calls get_bootstrap (via NDocsVocab), whoami, and search_resources (via
-// NDocsTransport).
-//
-// The drop-to-register panel (`#ndocs-drop-toggle`/`#ndocs-drop`) is Stage 8's write
-// capability (`NDocs-6o8`) — Stage 6's real published page omits those elements entirely
-// (its own "Must not: offer any write UI"), so `wireDropToggle`/the `NDocsDropRegister.mount`
-// call below are both no-ops when the elements/module aren't present, which is what lets this
-// same controller keep driving the Stage 1 mockup (`ndocs/index.html`, which still has them)
-// without a fork.
+// app/page-search.js — catalog.html's controller (NDocs-utv, Stage 15.5). Search box and
+// labeled filters are always visible (no page-level disclosure to expand first); results
+// render as list rows inside a section card, not a table, per
+// docs/interfaces/ux-components.md's catalog composition row. "+ Add document to the
+// catalog" expands an in-page panel (app/drop-register.js, unchanged — it already supports
+// both a drop target and a paste/type fallback) and moves focus to its URL field.
 (function () {
   'use strict';
 
   var ui = NDocsUI;
-  var resultsEl, facetsEl, formEl;
+  var resultsEl, statusEl, formEl, qInput;
+  var lastQuery = { q: '', teamId: '', type: '', audience: '', status: '' };
 
-  // The disclosure used to be a native <details>; a plain button reads more clearly as
-  // an action than a summary triangle, so the show/hide state is tracked here instead.
-  function wireDropToggle() {
-    var toggle = document.getElementById('ndocs-drop-toggle');
-    var panel = document.getElementById('ndocs-drop');
+  function wireAddPanel() {
+    var toggle = document.getElementById('ndocs-add-toggle');
+    var panel = document.getElementById('ndocs-add-panel');
+    var closeBtn = document.getElementById('ndocs-add-close');
     if (!toggle || !panel) return;
+
+    function open() {
+      panel.hidden = false;
+      toggle.setAttribute('aria-expanded', 'true');
+      var urlInput = panel.querySelector('.ndocs-drop-url');
+      if (urlInput) urlInput.focus();
+    }
+    function close() {
+      panel.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.focus();
+    }
     toggle.addEventListener('click', function () {
-      var showing = !panel.hidden;
-      panel.hidden = showing;
-      toggle.setAttribute('aria-expanded', String(!showing));
+      if (panel.hidden) open(); else close();
     });
+    if (closeBtn) closeBtn.addEventListener('click', close);
   }
 
   function renderFacets(vocab) {
-    facetsEl.textContent = '';
-    var teamSelect = ui.el('select', { id: 'ndocs-filter-team' });
+    var teamSelect = document.getElementById('ndocs-filter-team');
+    var typeSelect = document.getElementById('ndocs-filter-type');
+    var audienceSelect = document.getElementById('ndocs-filter-audience');
+
+    teamSelect.textContent = '';
     teamSelect.appendChild(ui.el('option', { value: '', text: 'All teams' }));
     (vocab.teams || []).forEach(function (t) {
       teamSelect.appendChild(ui.el('option', { value: t.teamId, text: t.name }));
     });
-    var typeSelect = ui.el('select', { id: 'ndocs-filter-type' });
+
+    typeSelect.textContent = '';
     typeSelect.appendChild(ui.el('option', { value: '', text: 'All types' }));
-    // `vocab.vocab` is `null` until a real controlled-vocabulary source exists
-    // (`get_bootstrap`'s own "this build cannot tell you" contract, Stage 15's job) — this
-    // build simply offers no type filter rather than throwing on `null.type` (found live on
-    // SIT during Stage 8; not something Stage 6/7 exercised end to end before now).
+    // `vocab.vocab` is `null` until a real controlled-vocabulary source exists — this build
+    // simply offers no type/audience options rather than throwing on `null.type`.
     ((vocab.vocab && vocab.vocab.type) || []).forEach(function (t) {
       typeSelect.appendChild(ui.el('option', { value: t, text: t }));
     });
-    teamSelect.addEventListener('change', runSearch);
-    typeSelect.addEventListener('change', runSearch);
-    facetsEl.appendChild(teamSelect);
-    facetsEl.appendChild(typeSelect);
+
+    audienceSelect.textContent = '';
+    audienceSelect.appendChild(ui.el('option', { value: '', text: 'All audiences' }));
+    ((vocab.vocab && vocab.vocab.audience) || []).forEach(function (a) {
+      audienceSelect.appendChild(ui.el('option', { value: a, text: a }));
+    });
+
+    [teamSelect, typeSelect, audienceSelect, document.getElementById('ndocs-filter-status')]
+      .forEach(function (sel) { sel.addEventListener('change', runSearch); });
+  }
+
+  function badgeForStatus(record) {
+    var status = NDocsRecords.displayStatus(record);
+    if (record.reachable === false) return { text: 'Unreachable', kind: 'danger' };
+    if (status === 'current') return { text: 'Current', kind: 'success' };
+    if (record.review_state === 'due' || record.review_state === 'overdue') return { text: 'Review due', kind: 'attention' };
+    if (status === '—') return null;
+    return { text: status, kind: 'info' };
+  }
+
+  function resultRow(record) {
+    var badges = ui.el('div', { class: 'badges' });
+    if (record.type) badges.appendChild(ui.el('span', { class: 'badge', text: record.type }));
+    var status = badgeForStatus(record);
+    if (status) badges.appendChild(ui.el('span', { class: 'badge badge--' + status.kind, text: status.text }));
+
+    var metaBits = [];
+    if (record.team_id) metaBits.push(record.team_id);
+    if (record.drive_modified_at) metaBits.push('updated ' + NDocsRecords.dateOrDash(record.drive_modified_at));
+    var body = [
+      ui.el('a', {
+        class: 'result-title', href: 'resource.html?id=' + encodeURIComponent(record.resource_id), text: record.title
+      }),
+      ui.el('p', { class: 'meta', text: metaBits.join(' · ') })
+    ];
+    if (record.purpose) body.push(ui.el('p', { text: record.purpose }));
+
+    return ui.el('li', { class: 'result-item' }, [
+      ui.el('div', { class: 'result-head' }, [
+        ui.el('div', {}, body),
+        badges
+      ])
+    ]);
+  }
+
+  function isDefaultQuery() {
+    return !lastQuery.q && !lastQuery.teamId && !lastQuery.type &&
+      !lastQuery.audience && (!lastQuery.status || lastQuery.status === '');
   }
 
   function renderResults(data) {
-    resultsEl.textContent = '';
-    resultsEl.appendChild(ui.el('p', { text: data.total + ' result' + (data.total === 1 ? '' : 's') }));
-    if (data.results.length) resultsEl.appendChild(NDocsRecords.resultsTable(data.results));
+    if (!data.results.length) {
+      var message = isDefaultQuery()
+        ? 'No resources have been registered in the catalog yet.'
+        : 'No results match these filters. Try a different search or clear a filter.';
+      NDocsShell.region(resultsEl, 'empty', { message: message });
+    } else {
+      var list = ui.el('ol', { class: 'result-list' });
+      data.results.forEach(function (record) { list.appendChild(resultRow(record)); });
+      NDocsShell.region(resultsEl, 'populated', { node: list });
+    }
+    var countText = data.total + ' result' + (data.total === 1 ? '' : 's');
+    statusEl.textContent = countText;
+    ui.announce(countText);
   }
 
   function runSearch() {
-    var q = document.getElementById('ndocs-search-q').value;
     var teamSelect = document.getElementById('ndocs-filter-team');
     var typeSelect = document.getElementById('ndocs-filter-type');
+    var audienceSelect = document.getElementById('ndocs-filter-audience');
+    var statusSelect = document.getElementById('ndocs-filter-status');
+
+    lastQuery = {
+      q: qInput.value,
+      teamId: teamSelect.value,
+      type: typeSelect.value,
+      audience: audienceSelect.value,
+      status: statusSelect.value
+    };
+
     var filters = {};
-    if (teamSelect && teamSelect.value) filters.teamId = teamSelect.value;
-    if (typeSelect && typeSelect.value) filters.type = typeSelect.value;
-    ui.setBusy(resultsEl, true);
-    NDocsTransport.call('search_resources', { q: q, filters: filters, page: 1, pageSize: 50 })
-      .then(function (data) {
-        ui.setBusy(resultsEl, false);
-        renderResults(data);
-      })
-      .catch(function (err) {
-        ui.setBusy(resultsEl, false);
-        ui.toast('Search failed: ' + err.message, 'warn');
+    if (lastQuery.teamId) filters.teamId = lastQuery.teamId;
+    if (lastQuery.type) filters.type = lastQuery.type;
+    if (lastQuery.audience) filters.audience = lastQuery.audience;
+    var includeRetired = false;
+    if (lastQuery.status === 'all') includeRetired = true;
+    if (lastQuery.status === 'retired') { filters.status = 'retired'; includeRetired = true; }
+
+    NDocsShell.region(resultsEl, 'loading', { loadingText: 'Searching…' });
+    NDocsTransport.call('search_resources', {
+      q: lastQuery.q, filters: filters, includeRetired: includeRetired, page: 1, pageSize: 50
+    }).then(renderResults).catch(function (err) {
+      NDocsShell.region(resultsEl, 'error', {
+        message: 'Search failed: ' + err.message,
+        onRetry: runSearch
       });
+    });
   }
 
-  function init() {
+  function start() {
     resultsEl = document.getElementById('ndocs-results');
-    facetsEl = document.getElementById('ndocs-facets');
+    statusEl = document.getElementById('ndocs-search-status');
     formEl = document.getElementById('ndocs-search-form');
+    qInput = document.getElementById('ndocs-search-q');
 
-    NDocsSession.resume();
     formEl.addEventListener('submit', function (e) { e.preventDefault(); runSearch(); });
-    wireDropToggle();
+    wireAddPanel();
 
-    // The drop target needs both the principal (for its team folders) and the vocabulary
-    // (for the prefilled entry's controlled values), so it mounts once both have answered.
-    Promise.all([
+    return Promise.all([
       NDocsTransport.call('whoami', {}),
       NDocsVocab.load()
     ]).then(function (both) {
       var principal = both[0];
       NDocsSession.setPrincipal(principal);
-      ui.renderNav(principal);
       renderFacets(both[1]);
-      var dropEl = document.getElementById('ndocs-drop');
-      if (dropEl && typeof NDocsDropRegister !== 'undefined') {
-        NDocsDropRegister.mount(dropEl, { principal: principal });
+      var addPanel = document.getElementById('ndocs-add-panel');
+      if (addPanel && typeof NDocsDropRegister !== 'undefined') {
+        NDocsDropRegister.mount(addPanel.querySelector('.add-document-panel__body'), {
+          principal: principal,
+          onRegistered: function (record) {
+            ui.announce('Registered ' + record.doc_id + '.');
+            window.location.href = 'resource.html?id=' + encodeURIComponent(record.resource_id);
+          }
+        });
       }
       runSearch();
-    }).catch(function (err) {
-      ui.toast('Could not load the catalog: ' + err.message, 'warn');
+      return principal;
     });
   }
 
-  // Stage 6 (`NDocs-2a9`): no `DOMContentLoaded` auto-run. `catalog.html` decides WHEN to
-  // start this controller — only once a session is confirmed (resumed or freshly signed in)
-  // — rather than firing unconditionally and hitting `whoami` before sign-in ever happens.
-  // The Stage 1 mockup this used to also serve (`ndocs/index.html`, always "signed in" against
-  // the retired `app/mock-backend.js`) is gone, so there is only the one caller to satisfy.
-  window.NDocsPageSearch = { start: init };
+  window.NDocsPageSearch = { start: start };
 })();
