@@ -63,19 +63,10 @@
       .forEach(function (sel) { sel.addEventListener('change', runSearch); });
   }
 
-  function badgeForStatus(record) {
-    var status = NDocsRecords.displayStatus(record);
-    if (record.reachable === false) return { text: 'Unreachable', kind: 'danger' };
-    if (status === 'current') return { text: 'Current', kind: 'success' };
-    if (record.review_state === 'due' || record.review_state === 'overdue') return { text: 'Review due', kind: 'attention' };
-    if (status === '—') return null;
-    return { text: status, kind: 'info' };
-  }
-
   function resultRow(record) {
     var badges = ui.el('div', { class: 'badges' });
     if (record.type) badges.appendChild(ui.el('span', { class: 'badge', text: record.type }));
-    var status = badgeForStatus(record);
+    var status = NDocsRecords.statusBadge(record);
     if (status) badges.appendChild(ui.el('span', { class: 'badge badge--' + status.kind, text: status.text }));
 
     // UC-22: a folder is named by its leaf, the full path carried whole as the tooltip

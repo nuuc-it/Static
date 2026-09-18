@@ -4,122 +4,48 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NDocs — Team</title>
+<link rel="stylesheet" href="app/style.css">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<style>
-  body { font: 15px/1.55 system-ui, sans-serif; margin: 0; padding: 2rem 1rem; color: #1a1a1a; background: #fbfbfa; }
-  main { max-width: 60rem; margin: 0 auto; }
-  h1 { font-size: 1.25rem; margin: 0 0 1rem; }
-  h3 { margin-top: 1.5rem; }
-  .hidden { display: none; }
-  .card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
-  .banner { background: #fdecea; border: 1px solid #f5c2bd; border-radius: 6px; padding: .75rem 1rem; margin: 1rem 0; }
-  table.ndocs-table { border-collapse: collapse; width: 100%; margin-top: .5rem; }
-  table.ndocs-table th, table.ndocs-table td { text-align: left; border-bottom: 1px solid #eee; padding: .35rem .5rem; vertical-align: top; }
-  .ndocs-chip { display: inline-block; font-size: .78em; padding: .1em .5em; border-radius: 999px; background: #eee; margin-right: .25em; }
-  .ndocs-chip--warn { background: #fdecea; color: #a33; }
-  .ndocs-chip--info { background: #eaf1fd; color: #345; }
-  .ndocs-folder--unresolved { color: #a33; font-style: italic; }
-  dl.ndocs-detail-fields { display: grid; grid-template-columns: 14rem 1fr; row-gap: .35rem; column-gap: 1rem; margin: 1rem 0; }
-  dl.ndocs-detail-fields dt { color: #666; }
-  dl.ndocs-detail-fields dd { margin: 0; }
-  a.ndocs-back { display: inline-block; margin-bottom: 1rem; }
-  .ndocs-candidate-list { display: grid; gap: 1rem; margin-top: 1rem; }
-  .ndocs-candidate-card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: .75rem 1rem; }
-  .ndocs-candidate-card label { display: block; font-size: .85em; color: #666; margin-top: .5rem; }
-  .ndocs-candidate-card input, .ndocs-candidate-card select { width: 100%; box-sizing: border-box; }
-  .ndocs-candidate-actions { display: flex; gap: .5rem; margin-top: .75rem; flex-wrap: wrap; }
-  .ndocs-admin-row { display: flex; gap: .5rem; align-items: flex-start; flex-wrap: wrap; margin: .5rem 0; }
-  .ndocs-admin-row input[type="text"], .ndocs-admin-row textarea, .ndocs-admin-row select { flex: 1 1 12rem; }
-  #ndocs-nav a { margin-right: .75rem; }
-</style>
 </head>
 <body>
-<main>
-  <a class="ndocs-back" href="catalog.html">&larr; Back to the catalog</a>
-  <h1>Team</h1>
+<main id="main">
+  <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="catalog.html">Catalog</a> / Team</nav>
 
-  <section id="signinView" class="card">
-    <p>Sign in with the Google account that belongs to your team's group.</p>
-    <div id="g_id_onload" data-callback="onGoogleSignIn" data-auto_select="false"></div>
-    <div class="g_id_signin" data-type="standard" data-shape="pill"></div>
-  </section>
-
-  <section id="launchView" class="card hidden"><strong>Signing you in…</strong></section>
-
-  <div id="errorBanner" class="banner hidden"></div>
-
-  <section id="appView" class="hidden">
-    <nav id="ndocs-nav" aria-label="Navigation"></nav>
-    <div id="ndocs-team-config"></div>
-    <section id="ndocs-team-certify" aria-label="Certify this team's inventory"></section>
-    <section id="ndocs-team-candidates" aria-label="Uncatalogued documents found by scanning"></section>
-    <section id="ndocs-team-inventory" aria-label="Team inventory, grouped by folder"></section>
-    <section id="ndocs-team-findings" aria-label="Team findings"></section>
-  </section>
+  <div id="ndocs-team-summary" aria-live="polite"></div>
+  <div id="ndocs-team-tasks"></div>
+  <div id="ndocs-team-candidates"></div>
+  <div id="ndocs-team-certify"></div>
+  <div id="ndocs-team-inventory" aria-busy="true"></div>
+  <div id="ndocs-team-findings"></div>
 </main>
 
 <script>
-var STATIC_BUILD_VERSION_ = "0.0.0.29";
+var STATIC_BUILD_VERSION_ = "0.0.0.30";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_BUILD_ENV_ = "test";
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
 var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com";
 </script>
-<!-- Shared front-end modules, unchanged (this project's CLAUDE.md "reuse, do not
-     re-derive") — this is a FOURTH consumer of them, not a second copy. -->
+<!-- Shared front-end modules (this project's CLAUDE.md "reuse, do not re-derive"). No
+     page-local <style> or scaffolding: app/shell.js owns the shell (ADR-0012, NDocs-3il). -->
 <script src="app/config.js"></script>
 <script src="app/ui.js"></script>
 <script src="app/session.js"></script>
 <script src="app/transport.js"></script>
+<script src="app/shell.js"></script>
 <script src="app/records.js"></script>
 <script src="app/vocab.js"></script>
-<!-- page-team.js loads BEFORE the gate script below, same reason as catalog.html/
-     resource.html. -->
+<!-- page-team.js defines window.NDocsPageTeam before the mount call below runs it. -->
 <script src="app/page-team.js"></script>
 <script>
 (function () {
   'use strict';
-  var $ = function (id) { return document.getElementById(id); };
-
-  if (NDOCS_CONFIG.GIS_CLIENT_ID.indexOf('.apps.googleusercontent.com') !== -1) {
-    $('g_id_onload').setAttribute('data-client_id', NDOCS_CONFIG.GIS_CLIENT_ID);
-  }
-
-  function show(view) {
-    ['signinView', 'launchView', 'appView'].forEach(function (id) {
-      $(id).classList.toggle('hidden', id !== view);
-    });
-  }
-
-  function showError(message) {
-    $('errorBanner').textContent = message;
-    $('errorBanner').classList.remove('hidden');
-  }
-
-  function startTeam() {
-    show('appView');
-    $('errorBanner').classList.add('hidden');
-    if (window.NDocsPageTeam && typeof window.NDocsPageTeam.start === 'function') {
-      window.NDocsPageTeam.start();
-    }
-  }
-
-  window.onGoogleSignIn = function (credentialResponse) {
-    show('launchView');
-    NDocsSession.signIn(credentialResponse && credentialResponse.credential)
-      .then(startTeam)
-      .catch(function (err) {
-        show('signinView');
-        showError((err && err.message) || String(err));
-      });
-  };
-
-  if (NDocsSession.resume()) {
-    startTeam();
-  } else {
-    show('signinView');
-  }
+  NDocsShell.mount({
+    activePage: 'team',
+    pageContent: document.getElementById('main'),
+    onEnter: window.NDocsPageTeam.start
+  });
 })();
 </script>
 </body>

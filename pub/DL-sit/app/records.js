@@ -58,6 +58,98 @@ var NDocsRecords = (function () {
     return chips;
   }
 
+  // statusBadge(record) -> {text, kind}|null — the one status→badge mapping shared by
+  // catalog.html's results, team.html's inventory, and resource.html's entity summary
+  // (Stage 15.6, `NDocs-jg1`/`NDocs-c71`). Extracted from app/page-search.js's own
+  // `badgeForStatus`, which this file's `resultsTable` never used — no behavior change, one
+  // fewer place a status→badge decision could drift from another page's.
+  function statusBadge(record) {
+    var status = displayStatus(record);
+    if (record.reachable === false) return { text: 'Unreachable', kind: 'danger' };
+    if (status === 'current') return { text: 'Current', kind: 'success' };
+    if (record.review_state === 'overdue') return { text: 'Review overdue', kind: 'danger' };
+    if (record.review_state === 'due') return { text: 'Review due', kind: 'attention' };
+    if (status === '—') return null;
+    return { text: status, kind: 'info' };
+  }
+
+  // ADR-0005's authority class per `Resources` field, mirrored here for the resource editor
+  // (Stage 15.6, `NDocs-jg1`) — `webapp-actions.md get_bootstrap`'s `fields` projection is
+  // `null` today (no wire projection of `Contract.js` exists yet, per that route's own
+  // Stage-15 note), so the editor's grouping is a client-side mirror of `src/Contract.js`'s
+  // Resources table, same "front-end mirrors a field list by convention" precedent this
+  // file's `detailCard`/`resultsTable` already set for field names. Keeping this list in
+  // step with `Contract.js` by hand is exactly `Contract.js`'s own header's accepted
+  // convention for `TeamRepo.js`'s `TEAM_HEADERS` — not a new kind of drift risk.
+  //
+  // Grouped into the labeled sections ux-components.md's resource composition row requires;
+  // `editable: true` fields are the ones `update_resource`'s `human`-intent patch may carry
+  // (ADR-0005) — every other field renders read-only and labeled, never omitted.
+  var RESOURCE_FIELD_GROUPS = [
+    {
+      title: 'Identity & classification',
+      fields: [
+        { name: 'title', label: 'Title', editable: true, control: 'text' },
+        { name: 'team_id', label: 'Owning team', editable: true, control: 'team' },
+        { name: 'type', label: 'Type', editable: true, control: 'vocab:type' },
+        { name: 'purpose', label: 'Purpose', editable: true, control: 'textarea' },
+        { name: 'audience', label: 'Audience', editable: true, control: 'vocab:audience' },
+        { name: 'discovery', label: 'Discovery', editable: true, control: 'vocab:discovery' },
+        { name: 'topics', label: 'Topics', editable: true, control: 'vocab-multi:topics' },
+        { name: 'provisions', label: 'Provisions', editable: true, control: 'provisions' }
+      ]
+    },
+    {
+      title: 'Lifecycle & governance',
+      fields: [
+        { name: 'status', label: 'Status', editable: true, control: 'status' },
+        { name: 'successor_id', label: 'Successor resource id', editable: true, control: 'text' },
+        { name: 'maintainer_email', label: 'Maintainer email', editable: true, control: 'text' },
+        { name: 'source_url', label: 'Source URL', editable: true, control: 'text' },
+        { name: 'placement_ack_by', label: 'Placement confirmed by', editable: true, control: 'text' }
+      ]
+    },
+    {
+      title: 'From the document header',
+      note: 'Proposed by scanning the document itself. A person accepts a change through the discrepancy panel above, not by editing here (ADR-0005).',
+      fields: [
+        { name: 'header_resource_id', label: 'Header: resource id', editable: false },
+        { name: 'header_status', label: 'Header: status', editable: false },
+        { name: 'header_last_reviewed', label: 'Header: last reviewed', editable: false }
+      ]
+    },
+    {
+      title: 'System-managed',
+      note: 'Set by the catalog itself — from the Drive file, from a scan, or on every write. Shown for completeness, not editable here.',
+      fields: [
+        { name: 'resource_id', label: 'Resource id', editable: false },
+        { name: 'doc_id', label: 'Doc id', editable: false },
+        { name: 'drive_file_id', label: 'Drive file id', editable: false },
+        { name: 'drive_filename', label: 'Drive file name', editable: false },
+        { name: 'drive_folder_id', label: 'Folder id', editable: false },
+        { name: 'drive_folder_name', label: 'Folder name', editable: false },
+        { name: 'drive_folder_path', label: 'Folder path', editable: false },
+        { name: 'location_kind', label: 'Location kind', editable: false },
+        { name: 'mime_type', label: 'Mime type', editable: false },
+        { name: 'drive_modified_at', label: 'File last modified', editable: false, format: 'date' },
+        { name: 'reachable', label: 'Reachable', editable: false, format: 'bool' },
+        { name: 'last_checked_at', label: 'Last checked', editable: false, format: 'date' },
+        { name: 'consecutive_check_failures', label: 'Consecutive check failures', editable: false },
+        { name: 'last_certified_at', label: 'Last certified', editable: false, format: 'date' },
+        { name: 'last_certified_by', label: 'Certified by', editable: false },
+        { name: 'next_review_at', label: 'Next review due', editable: false, format: 'date' },
+        { name: 'review_state', label: 'Review state', editable: false },
+        { name: 'created_at', label: 'Registered', editable: false, format: 'date' },
+        { name: 'created_by', label: 'Registered by', editable: false },
+        { name: 'updated_at', label: 'Last updated', editable: false, format: 'date' },
+        { name: 'updated_by', label: 'Last updated by', editable: false },
+        { name: 'rev', label: 'Revision', editable: false }
+      ]
+    }
+  ];
+
+  var RESOURCE_STATUS_VALUES = ['current', 'superseded', 'archived', 'withdrawn'];
+
   // dateOrDash(iso) -> string — a human date, or an em dash for null/undefined.
   function dateOrDash(iso) {
     if (!iso) return '—';
@@ -206,9 +298,12 @@ var NDocsRecords = (function () {
     warningChips: warningChips,
     modifiedSinceCertified: modifiedSinceCertified,
     displayStatus: displayStatus,
+    statusBadge: statusBadge,
     folderCell: folderCell,
     dateOrDash: dateOrDash,
     resultsTable: resultsTable,
-    detailCard: detailCard
+    detailCard: detailCard,
+    RESOURCE_FIELD_GROUPS: RESOURCE_FIELD_GROUPS,
+    RESOURCE_STATUS_VALUES: RESOURCE_STATUS_VALUES
   };
 })();

@@ -479,11 +479,14 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .hidden { display: none !important; }
 
 /* ==========================================================================
-   Legacy component classes — used by app/drop-register.js and app/records.js,
-   which are shared with resource.html/team.html (Stage 15.6, not yet rebuilt).
-   Themed with this stage's tokens so a page that links this stylesheet
-   (index.html, catalog.html) renders them consistently; team.html/resource.html
-   do not link this file, so they are unaffected.
+   Legacy component classes — still used by app/drop-register.js (the add-document
+   panel embedded in catalog.html) and by a handful of markup fragments
+   (`.ndocs-table`, `.ndocs-chip*`, `.ndocs-folder*`) that team.html/tools.html's
+   controllers render for genuinely tabular content (inventory rows inside a
+   folder disclosure, job/audit tables). All five pages now link this one
+   stylesheet (Stage 15.6, `NDocs-jg1`/`NDocs-c71` rebuilt resource.html/
+   team.html/tools.html onto it) — these classes are themed with this file's
+   tokens, not a second design system.
    ========================================================================== */
 
 .ndocs-chips { display: inline-flex; gap: .4rem; flex-wrap: wrap; }

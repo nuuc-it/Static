@@ -1,50 +1,23 @@
-// app/page-team.js — team.html controller (Stage 7 `team-read`, `NDocs-6hk`). Team
-// configuration and its resources grouped by containing folder (UC-22), read-only. Calls
-// whoami, list_team_inventory.
-//
-// This file used to drive the Stage 1 mockup's team.html: drop-to-register, the candidate
-// queue, and the certification sheet, all against `app/mock-backend.js` (retired at Stage 6,
-// `NDocs-2a9`) and field names (`membershipGroup`, `notifyAddress`) the real `Contract.js`
-// (Stage 5) never had. Rewritten in place for the real cutover rather than kept alongside a
-// second copy — the same "delete the mock, don't half-serve it" discipline `page-resource.js`
-// and `page-search.js` already went through. Register/candidates/certify panels return in
-// Stages 8/12/11, once `inspect_url`/`register_resource`, `scan_folders`/`admin_list_
-// candidates`, and `get_certification`/`certify_resources` exist to back them — adding their
-// markup ahead of that would be exactly this stage's own "Must not: offer any write UI."
-//
-// Stage 10 (`findings`, `NDocs-0ti`) adds the findings panel and the inventory's "Open
-// findings" column below — this page's own read surface, `list_findings`/`resolve_finding`,
-// same "resolution is a write, but a narrow one this page's team-member gate already covers"
-// reasoning `page-resource.js`'s retire button uses.
-//
-// Stage 11 (`certify`, `NDocs-het`) adds the `#certify` panel — `get_certification`/
-// `certify_resources`. UC-9 step 3: "the page renders the whole inventory pre-confirmed" — every
-// row starts checked (`defaultOutcome: 'confirmed'`); unchecking one reveals a required
-// disposition (the `CertOutcomes.outcome` enum minus `confirmed`) plus an optional note, and
-// `superseded` additionally requires a successor Resource ID. A single submit sends every row in
-// one `certify_resources` call — no per-record link, per this stage's own "Must not: require
-// opening an individual record to confirm it".
-//
-// Stage 12 (`scan-manual`, `NDocs-hw6`) adds the `#candidates` panel — `scan_folders`/
-// `admin_list_candidates`/`dismiss_candidate`/`register_resource`'s `fromCandidateId`. A "Scan
-// now" button calls `scan_folders` over every tracked folder (no `folderIds` narrowing from
-// this control — that is an advanced/API-only option, per §12's own scope) and reloads the
-// queue; each `proposed` candidate shows its `reason`, a promote form seeded from
-// `proposed_fields` (title/purpose, editable — a proposal under ADR-0005, never saved silently),
-// and two dismiss buttons (`file`/`folder` scope, per UC-20/21).
+// app/page-team.js — team.html controller (Stage 15.6, `NDocs-c71`). Rebuilt onto the shared
+// UI system (ADR-0012): team entity summary panel; "Needs your attention" task cards (open
+// certification, waiting scan candidates) ordered by urgency and absent entirely when there is
+// no work — not shown empty; inventory-by-folder as the dominant section card, folder
+// disclosures carrying counts in their summary; open findings as a separate maintenance
+// section; scan job state announced via `NDocsUI.announce`. Calls whoami, list_team_inventory,
+// list_findings, get_certification, certify_resources, admin_list_candidates, scan_folders,
+// dismiss_candidate, register_resource, admin_set_team_state, admin_reassign_resources.
 (function () {
   'use strict';
 
   var ui = NDocsUI;
-  var configEl, inventoryEl, findingsEl, certifyEl, candidatesEl;
+  var summaryEl, tasksEl, inventoryEl, certifyEl, candidatesEl, findingsEl;
   var currentTeamId, currentPrincipal;
   var FINDING_RESOLUTIONS = ['accept', 'reject', 'fixed', 'wont_fix'];
   var CERT_DISPOSITIONS = ['superseded', 'archived', 'withdrawn'];
   var TEAM_STATES = ['active', 'inactive', 'merged'];
-  // Bulk-reassign selection persists across every per-folder table `renderInventory` draws —
-  // one Set shared by every `resultsTable({selectable:true, selectedIds})` call, admin-UI-
-  // restructure addendum (post-Stage-15, 2026-09-17): `admin_reassign_resources` moved here
-  // from the retired `admin.html`'s free-form resource-id list.
+  var latestCycle = null;
+  var latestCandidateCount = 0;
+  // Bulk-reassign selection persists across every per-folder table `renderInventory` draws.
   var reassignSelection = new Set();
 
   function teamIdFromQuery() {
@@ -52,46 +25,51 @@
     return params.get('team');
   }
 
-  // The team's own configuration (UC-22) — every field a team lead would check against
-  // what they expect, `Contract.js`'s own field names (`_teamFullConfigView`,
-  // `TeamService.js`), not the mockup's draft ones.
-  //
-  // Admin-only state/successor control (admin-UI-restructure addendum, post-Stage-15,
-  // 2026-09-17): `admin_set_team_state` moved inline here from the retired `admin.html` — it
-  // is always about the one team already on screen. UI-gated on `principal.isAdmin` only;
-  // `Routes.js`'s `admin` gate re-decides server-side on the call regardless.
-  function renderConfig(team, principal) {
-    var fields = [
-      ['Name', team.name], ['State', team.state], ['Doc ID prefix', team.docIdPrefix],
-      ['Review cadence (months)', team.reviewCadenceMonths],
-      ['Member group', team.member_group], ['Notify addresses', team.notify_emails],
-      ['Scan consent', team.scan_consent ? 'on' : 'off'],
-      ['Configuration state', team.configState],
-      ['Excluded folders', (team.excludedFolders || []).join(', ') || '—']
+  // ---- team entity summary panel ----
+
+  function renderSummary(team) {
+    var badges = ui.el('div', { class: 'badges' }, [
+      ui.el('span', { class: 'badge ' + (team.state === 'active' ? 'badge--success' : 'badge--info'), text: team.state })
+    ]);
+    if (team.configState && team.configState !== 'ok') {
+      badges.appendChild(ui.el('span', { class: 'badge badge--danger', text: 'Configuration: ' + team.configState }));
+    }
+    var top = ui.el('div', { class: 'entity-summary-top' }, [
+      ui.el('div', {}, [
+        ui.el('div', { class: 'eyebrow', text: 'Team · ' + (team.docIdPrefix || '—') }),
+        ui.el('h1', { text: team.name }),
+        badges
+      ])
+    ]);
+    var metaPairs = [
+      ['Member group', team.member_group || '—'],
+      ['Notify addresses', team.notify_emails || '—'],
+      ['Review cadence', team.reviewCadenceMonths ? team.reviewCadenceMonths + ' months' : '—']
     ];
-    var dl = ui.el('dl', { class: 'ndocs-detail-fields' });
-    fields.forEach(function (pair) {
-      dl.appendChild(ui.el('dt', { text: pair[0] }));
-      dl.appendChild(ui.el('dd', {
-        text: (pair[1] === undefined || pair[1] === null || pair[1] === '') ? '—' : String(pair[1])
-      }));
+    var meta = ui.el('div', { class: 'entity-summary-meta' });
+    metaPairs.forEach(function (pair) {
+      meta.appendChild(ui.el('div', {}, [
+        ui.el('span', { class: 'hero-meta-label', text: pair[0] }),
+        ui.el('span', { class: 'hero-meta-value', text: pair[1] })
+      ]));
     });
-    var children = [ui.el('h2', { text: team.name }), dl];
-    if (principal && principal.isAdmin) {
+    var children = [ui.el('div', { class: 'entity-summary' }, [top, meta])];
+    if (currentPrincipal && currentPrincipal.isAdmin) {
       children.push(renderTeamStateControl(team));
     }
-    return ui.el('div', { class: 'ndocs-detail-card' }, children);
+    summaryEl.textContent = '';
+    children.forEach(function (n) { summaryEl.appendChild(n); });
   }
 
   function renderTeamStateControl(team) {
-    var stateSelect = ui.el('select', {});
+    var stateSelect = ui.el('select', { id: 'ndocs-team-state' });
     TEAM_STATES.forEach(function (s) {
       var opt = ui.el('option', { value: s, text: s });
       if (s === team.state) opt.setAttribute('selected', 'selected');
       stateSelect.appendChild(opt);
     });
-    var successorInput = ui.el('input', { type: 'text', placeholder: 'successor team id (if merged)' });
-    var apply = ui.el('button', { type: 'button', text: 'Apply' });
+    var successorInput = ui.el('input', { type: 'text', placeholder: 'Successor team id (if merged)' });
+    var apply = ui.el('button', { type: 'button', class: 'button', text: 'Apply' });
     apply.addEventListener('click', function () {
       apply.disabled = true;
       NDocsTransport.call('admin_set_team_state', {
@@ -104,159 +82,215 @@
         ui.toast('Could not update: ' + err.message, 'warn');
       });
     });
-    return ui.el('div', { class: 'ndocs-admin-row' }, [
-      ui.el('h3', { text: 'Team state (administrator)' }), stateSelect, successorInput, apply
+    return ui.el('div', { class: 'surface' }, [
+      ui.el('div', { class: 'section-kicker', text: 'Administrator' }),
+      ui.el('h3', { class: 'section-title', text: 'Team state' }),
+      ui.el('div', { class: 'form-grid' }, [
+        ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-team-state', text: 'State' }), stateSelect]),
+        ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Successor team' }), successorInput])
+      ]),
+      ui.el('div', { class: 'button-row' }, [apply])
     ]);
   }
 
-  // One heading + table per folder, unresolved last — it is the exception this view exists
-  // to surface (this stage's own "Must not: hide it"), not the common case. `records.js`'s
-  // resultsTable already hides the folder column inside a group, since the heading names it.
-  // `findingCounts` (Stage 10, `NDocs-0ti`) is `{resourceId: {open, blocking}}` from
-  // `list_team_inventory`; `records.js`'s column wants a plain count per id.
-  //
-  // Admin-only bulk reassign (admin-UI-restructure addendum, post-Stage-15, 2026-09-17):
-  // `admin_reassign_resources`'s multi-resource case moved here from the retired
-  // `admin.html`'s free-form resource-id list, onto the resources already in view — every
-  // per-folder table below shares one selection Set (`reassignSelection`).
+  // ---- "Needs your attention" task cards, urgency-ordered, absent when empty ----
+
+  function renderTasks() {
+    var cards = [];
+    var hasCertTask = latestCycle && latestCycle.state !== 'certified_empty' && latestCycle.state !== 'certified';
+    var overdue = false;
+    if (hasCertTask) {
+      var dueAt = latestCycle.due_at ? new Date(latestCycle.due_at) : null;
+      overdue = !!(dueAt && dueAt.getTime() < Date.now());
+      var card = ui.el('div', { class: 'task-card ' + (overdue ? 'task-card--attention' : 'task-card--info') }, [
+        ui.el('div', { class: 'task-icon', 'aria-hidden': 'true', text: overdue ? '!' : '✓' }),
+        ui.el('div', {}, [
+          ui.el('p', { class: 'task-title', text: overdue ? 'Certification overdue' : 'Certification due' }),
+          ui.el('p', { class: 'task-copy', text: dueAt ? 'Due ' + dueAt.toLocaleDateString() : 'Open cycle, no due date recorded.' })
+        ])
+      ]);
+      var certifyBtn = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Certify now' });
+      certifyBtn.addEventListener('click', function () { focusSection(certifyEl); });
+      card.appendChild(certifyBtn);
+      // Urgency ordering: overdue certification is the most urgent thing on the page —
+      // it always sorts first, ahead of a merely-due certification and candidates alike.
+      if (overdue) cards.unshift(card); else cards.push(card);
+    }
+    if (latestCandidateCount > 0) {
+      var cCard = ui.el('div', { class: 'task-card task-card--info' }, [
+        ui.el('div', { class: 'task-icon', 'aria-hidden': 'true', text: String(latestCandidateCount) }),
+        ui.el('div', {}, [
+          ui.el('p', { class: 'task-title', text: latestCandidateCount + ' scan candidate' + (latestCandidateCount === 1 ? '' : 's') + ' waiting' }),
+          ui.el('p', { class: 'task-copy', text: 'Found in tracked folders, not yet catalogued.' })
+        ])
+      ]);
+      var reviewBtn = ui.el('button', { type: 'button', class: 'button', text: 'Review' });
+      reviewBtn.addEventListener('click', function () { focusSection(candidatesEl); });
+      cCard.appendChild(reviewBtn);
+      cards.push(cCard);
+    }
+
+    tasksEl.textContent = '';
+    if (!cards.length) return; // absent entirely when there is no work — never shown empty
+    tasksEl.appendChild(ui.el('div', { class: 'section-kicker', text: 'Needs your attention' }));
+    tasksEl.appendChild(ui.el('div', { class: 'task-grid' }, cards));
+  }
+
+  function focusSection(el) {
+    if (!el) return;
+    el.setAttribute('tabindex', '-1');
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.focus();
+  }
+
+  // ---- inventory by folder (dominant section card) ----
+
   function renderInventory(data, principal) {
     inventoryEl.textContent = '';
     reassignSelection.clear();
+    var body = ui.el('div', {});
     if (!data.records.length) {
-      inventoryEl.appendChild(ui.el('p', { text: 'This team has no catalogued resources yet.' }));
-      return;
-    }
-    var isAdmin = !!(principal && principal.isAdmin);
-    var openCounts = {};
-    Object.keys(data.findingCounts || {}).forEach(function (id) {
-      openCounts[id] = data.findingCounts[id].open;
-    });
-    var byFolder = {};
-    data.records.forEach(function (r) {
-      var key = r.drive_folder_id || '';
-      (byFolder[key] = byFolder[key] || []).push(r);
-    });
-    var resolvedFolders = data.folders.filter(function (f) { return f.folderId; });
-    var unresolvedFolder = data.folders.filter(function (f) { return !f.folderId; })[0];
-    var ordered = unresolvedFolder ? resolvedFolders.concat([unresolvedFolder]) : resolvedFolders;
+      body.appendChild(ui.el('div', { class: 'empty-state' }, [
+        ui.el('p', { text: 'This team has no catalogued resources yet.' })
+      ]));
+    } else {
+      var isAdmin = !!(principal && principal.isAdmin);
+      var openCounts = {};
+      Object.keys(data.findingCounts || {}).forEach(function (id) {
+        openCounts[id] = data.findingCounts[id].open;
+      });
+      var byFolder = {};
+      data.records.forEach(function (r) {
+        var key = r.drive_folder_id || '';
+        (byFolder[key] = byFolder[key] || []).push(r);
+      });
+      var resolvedFolders = data.folders.filter(function (f) { return f.folderId; });
+      var unresolvedFolder = data.folders.filter(function (f) { return !f.folderId; })[0];
+      var ordered = unresolvedFolder ? resolvedFolders.concat([unresolvedFolder]) : resolvedFolders;
 
-    ordered.forEach(function (folder) {
-      var records = byFolder[folder.folderId || ''] || [];
-      var heading;
-      if (folder.folderId) {
-        heading = folder.url
-          ? ui.el('a', { href: folder.url, target: '_blank', rel: 'noopener', text: (folder.name || folder.folderId) + ' (' + folder.count + ')' })
-          : ui.el('span', { text: (folder.name || folder.folderId) + ' (' + folder.count + ')' });
-      } else {
-        heading = ui.el('span', { class: 'ndocs-folder--unresolved', text: 'Unresolved folder (' + folder.count + ')' });
-      }
-      inventoryEl.appendChild(ui.el('h3', {}, [heading]));
-      inventoryEl.appendChild(NDocsRecords.resultsTable(records, {
-        hideFolder: true, findingCounts: openCounts,
-        selectable: isAdmin, selectedIds: isAdmin ? reassignSelection : undefined
-      }));
-    });
+      ordered.forEach(function (folder, idx) {
+        var records = byFolder[folder.folderId || ''] || [];
+        var label = folder.folderId ? (folder.name || folder.folderId) : 'Unresolved folder';
+        var summary = ui.el('summary', {}, [
+          document.createTextNode(label),
+          ui.el('span', { class: 'summary-meta', text: folder.count + ' resource' + (folder.count === 1 ? '' : 's') })
+        ]);
+        var content = ui.el('div', { class: 'disclosure-content' }, [
+          NDocsRecords.resultsTable(records, {
+            hideFolder: true, findingCounts: openCounts,
+            selectable: isAdmin, selectedIds: isAdmin ? reassignSelection : undefined
+          })
+        ]);
+        var details = ui.el('details', { class: 'disclosure' }, [summary, content]);
+        if (idx === 0) details.setAttribute('open', 'open');
+        body.appendChild(details);
+      });
 
-    if (isAdmin) {
-      inventoryEl.appendChild(renderBulkReassign());
+      if (isAdmin) body.appendChild(renderBulkReassign());
     }
+
+    inventoryEl.appendChild(ui.el('div', { class: 'section-card' }, [
+      ui.el('div', { class: 'section-card-header' }, [
+        ui.el('div', {}, [ui.el('div', { class: 'section-kicker', text: 'Inventory' }), ui.el('h2', { text: 'Resources by folder' })])
+      ]),
+      ui.el('div', { class: 'section-card-body' }, [body])
+    ]));
   }
 
-  // The bulk-reassign control (administrator only) — every checkbox above this point in the
-  // DOM shares `reassignSelection`, so this reads it at submit time rather than being told
-  // which rows are checked.
   function renderBulkReassign() {
-    var toTeamSelect = ui.el('select', {});
+    var toTeamSelect = ui.el('select', { id: 'ndocs-bulk-reassign-team' });
     toTeamSelect.appendChild(ui.el('option', { value: '', text: '(unresolved queue)' }));
     var vocabData = NDocsVocab.current();
     (vocabData && vocabData.teams || []).forEach(function (t) {
       toTeamSelect.appendChild(ui.el('option', { value: t.teamId, text: t.name }));
     });
-    var reassign = ui.el('button', { type: 'button', text: 'Reassign selected' });
+    var reassign = ui.el('button', { type: 'button', class: 'button', text: 'Reassign selected' });
     reassign.addEventListener('click', function () {
       var ids = Array.from(reassignSelection);
       if (!ids.length) { ui.toast('Select at least one resource.', 'warn'); return; }
-      reassign.disabled = true;
-      NDocsTransport.call('admin_reassign_resources', { resourceIds: ids, toTeamId: toTeamSelect.value || undefined })
-        .then(function (result) {
-          reassign.disabled = false;
-          ui.toast('Applied: ' + result.applied.length + ', skipped: ' + result.skipped.length + '.', 'info');
-          load();
-        }).catch(function (err) {
-          reassign.disabled = false;
-          ui.toast('Could not reassign: ' + err.message, 'warn');
-        });
+      var destName = toTeamSelect.options[toTeamSelect.selectedIndex] ? toTeamSelect.options[toTeamSelect.selectedIndex].text : '(unresolved queue)';
+      ui.confirm({
+        title: 'Reassign resources',
+        body: 'Move ' + ids.length + ' resource(s) to ' + destName + '.',
+        confirmLabel: 'Reassign'
+      }).then(function (confirmed) {
+        if (!confirmed) return;
+        reassign.disabled = true;
+        NDocsTransport.call('admin_reassign_resources', { resourceIds: ids, toTeamId: toTeamSelect.value || undefined })
+          .then(function (result) {
+            reassign.disabled = false;
+            ui.toast('Applied: ' + result.applied.length + ', skipped: ' + result.skipped.length + '.', 'info');
+            load();
+          }).catch(function (err) {
+            reassign.disabled = false;
+            ui.toast('Could not reassign: ' + err.message, 'warn');
+          });
+      });
     });
-    return ui.el('div', { class: 'ndocs-admin-row' }, [
-      ui.el('h3', { text: 'Reassign selected resources (administrator)' }), toTeamSelect, reassign
+    return ui.el('div', { class: 'surface' }, [
+      ui.el('div', { class: 'field' }, [
+        ui.el('label', { for: 'ndocs-bulk-reassign-team', text: 'Reassign selected resources (administrator)' }),
+        toTeamSelect
+      ]),
+      ui.el('div', { class: 'button-row' }, [reassign])
     ]);
   }
 
-  // The team findings list (Stage 10, `NDocs-0ti`) — every open exception against this
-  // team, whatever kind produced it (ADR-0006). One resolution control per row: a
-  // resolution select plus a note, calling `resolve_finding` and reloading on success.
+  // ---- findings — separate maintenance section ----
+
   function renderFindings(findings) {
     findingsEl.textContent = '';
-    findingsEl.appendChild(ui.el('h2', { text: 'Findings' }));
+    var summary = ui.el('summary', {}, [
+      document.createTextNode('Open findings'),
+      ui.el('span', { class: 'summary-meta', text: findings.length + ' open' })
+    ]);
+    var body;
     if (!findings.length) {
-      findingsEl.appendChild(ui.el('p', { text: 'No open findings.' }));
-      return;
-    }
-    var table = ui.el('table', { class: 'ndocs-table' });
-    var thead = ui.el('thead', {}, [ui.el('tr', {}, [
-      ui.el('th', { text: 'Kind' }), ui.el('th', { text: 'Resource' }),
-      ui.el('th', { text: 'Detected' }), ui.el('th', { text: 'Resolve' })
-    ])]);
-    var tbody = ui.el('tbody', {});
-    findings.forEach(function (f) {
-      var select = ui.el('select', {});
-      FINDING_RESOLUTIONS.forEach(function (r) {
-        select.appendChild(ui.el('option', { value: r, text: r }));
-      });
-      var note = ui.el('input', { type: 'text', placeholder: 'note (optional)' });
-      var button = ui.el('button', { type: 'button', text: 'Resolve' });
-      button.addEventListener('click', function () {
-        NDocsTransport.call('resolve_finding', {
-          findingId: f.finding_id, rev: f.rev, resolution: select.value, note: note.value || undefined
-        }).then(function () {
-          ui.toast('Finding resolved.', 'info');
-          load();
-        }).catch(function (err) {
-          ui.toast('Could not resolve: ' + err.message, 'warn');
+      body = ui.el('div', { class: 'disclosure-content' }, [
+        ui.el('div', { class: 'empty-state' }, [ui.el('p', { text: 'No open findings.' })])
+      ]);
+    } else {
+      var list = ui.el('div', {});
+      findings.forEach(function (f) {
+        var select = ui.el('select', { 'aria-label': 'Resolution for ' + f.kind });
+        FINDING_RESOLUTIONS.forEach(function (r) { select.appendChild(ui.el('option', { value: r, text: r })); });
+        var note = ui.el('input', { type: 'text', placeholder: 'Note (optional)', 'aria-label': 'Resolution note' });
+        var button = ui.el('button', { type: 'button', class: 'button', text: 'Resolve' });
+        button.addEventListener('click', function () {
+          NDocsTransport.call('resolve_finding', {
+            findingId: f.finding_id, rev: f.rev, resolution: select.value, note: note.value || undefined
+          }).then(function () {
+            ui.announce('Finding resolved.');
+            ui.toast('Finding resolved.', 'info');
+            load();
+          }).catch(function (err) { ui.toast('Could not resolve: ' + err.message, 'warn'); });
         });
+        var resourceLink = f.resource_id
+          ? ui.el('a', { href: 'resource.html?id=' + encodeURIComponent(f.resource_id), text: f.resource_id })
+          : ui.el('span', { text: '—' });
+        list.appendChild(ui.el('div', { class: 'status-panel status-panel--danger' }, [
+          ui.el('div', {}, [
+            ui.el('strong', { text: f.kind }),
+            ui.el('p', {}, [document.createTextNode('Resource: '), resourceLink, document.createTextNode(' · detected ' + NDocsRecords.dateOrDash(f.detected_at))])
+          ]),
+          ui.el('div', { class: 'button-row' }, [select, note, button])
+        ]));
       });
-      var resourceLink = f.resource_id
-        ? ui.el('a', { href: 'resource.html?id=' + encodeURIComponent(f.resource_id), text: f.resource_id })
-        : ui.el('span', { text: '—' });
-      tbody.appendChild(ui.el('tr', {}, [
-        ui.el('td', { text: f.kind }),
-        ui.el('td', {}, [resourceLink]),
-        ui.el('td', { text: f.detected_at ? new Date(f.detected_at).toLocaleDateString() : '—' }),
-        ui.el('td', {}, [select, note, button])
-      ]));
-    });
-    table.appendChild(thead);
-    table.appendChild(tbody);
-    findingsEl.appendChild(table);
+      body = ui.el('div', { class: 'disclosure-content' }, [list]);
+    }
+    var details = ui.el('details', { class: 'disclosure', id: 'findings' }, [summary, body]);
+    findingsEl.appendChild(details);
   }
 
-  // The certify panel (UC-9). One row per current resource, pre-confirmed; unchecking a row
-  // requires a disposition (`superseded` additionally requires a successor id) before submit
-  // is allowed. `entries` is `get_certification`'s own shape — `{record, defaultOutcome,
-  // openFindings}` — so a row can also show whether the resource already carries an open
-  // finding, the same context `renderFindings` gives elsewhere on this page.
+  // ---- certify panel ----
+
   function renderCertify(cycle, entries) {
     certifyEl.textContent = '';
+    latestCycle = cycle;
     if (cycle.state === 'certified_empty') {
-      certifyEl.appendChild(ui.el('p', { text: 'This team owns no resources — nothing to certify.' }));
+      renderTasks();
       return;
     }
-    certifyEl.appendChild(ui.el('h2', { text: 'Certify this inventory' }));
-    certifyEl.appendChild(ui.el('p', {
-      text: 'Cycle ' + cycle.state + (cycle.due_at ? ' — due ' + new Date(cycle.due_at).toLocaleDateString() : '') +
-        '. Every resource below starts confirmed; uncheck one to record an exception instead.'
-    }));
-
     var rows = [];
     var table = ui.el('table', { class: 'ndocs-table' });
     var thead = ui.el('thead', {}, [ui.el('tr', {}, [
@@ -268,14 +302,12 @@
 
     entries.forEach(function (entry) {
       var record = entry.record;
-      var checkbox = ui.el('input', { type: 'checkbox', checked: 'checked' });
-      var select = ui.el('select', { disabled: 'disabled' });
+      var checkbox = ui.el('input', { type: 'checkbox', checked: 'checked', 'aria-label': 'Confirm ' + record.title });
+      var select = ui.el('select', { disabled: 'disabled', 'aria-label': 'Disposition for ' + record.title });
       select.appendChild(ui.el('option', { value: '', text: '—' }));
-      CERT_DISPOSITIONS.forEach(function (d) {
-        select.appendChild(ui.el('option', { value: d, text: d }));
-      });
-      var successor = ui.el('input', { type: 'text', placeholder: 'successor Resource ID', disabled: 'disabled' });
-      var note = ui.el('input', { type: 'text', placeholder: 'note', disabled: 'disabled' });
+      CERT_DISPOSITIONS.forEach(function (d) { select.appendChild(ui.el('option', { value: d, text: d })); });
+      var successor = ui.el('input', { type: 'text', placeholder: 'Successor resource id', disabled: 'disabled' });
+      var note = ui.el('input', { type: 'text', placeholder: 'Note', disabled: 'disabled' });
 
       checkbox.addEventListener('change', function () {
         var confirmed = checkbox.checked;
@@ -299,19 +331,15 @@
 
     table.appendChild(thead);
     table.appendChild(tbody);
-    certifyEl.appendChild(table);
 
-    var submit = ui.el('button', { type: 'button', text: 'Submit certification' });
+    var submit = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Submit certification' });
     submit.addEventListener('click', function () {
       var confirmedIds = [];
       var exceptions = [];
       var invalid = false;
 
       rows.forEach(function (row) {
-        if (row.checkbox.checked) {
-          confirmedIds.push(row.resourceId);
-          return;
-        }
+        if (row.checkbox.checked) { confirmedIds.push(row.resourceId); return; }
         if (!row.select.value) { invalid = true; return; }
         if (row.select.value === 'superseded' && !row.successor.value) { invalid = true; return; }
         exceptions.push({
@@ -329,6 +357,7 @@
       NDocsTransport.call('certify_resources', {
         teamId: currentTeamId, cycleId: cycle.cycle_id, confirmedIds: confirmedIds, exceptions: exceptions
       }).then(function () {
+        ui.announce('Certification submitted.');
         ui.toast('Certification submitted.', 'info');
         load();
       }).catch(function (err) {
@@ -336,99 +365,123 @@
         ui.toast('Could not submit: ' + err.message, 'warn');
       });
     });
-    certifyEl.appendChild(submit);
+
+    certifyEl.appendChild(ui.el('div', { class: 'section-card' }, [
+      ui.el('div', { class: 'section-card-header' }, [
+        ui.el('div', {}, [ui.el('div', { class: 'section-kicker', text: 'Certification' }), ui.el('h2', { text: 'Certify this inventory' })]),
+      ]),
+      ui.el('div', { class: 'section-card-body' }, [
+        ui.el('p', { text: 'Cycle ' + cycle.state + (cycle.due_at ? ' — due ' + new Date(cycle.due_at).toLocaleDateString() : '') + '. Every resource below starts confirmed; uncheck one to record an exception instead.' }),
+        table,
+        ui.el('div', { class: 'button-row' }, [submit])
+      ])
+    ]));
+    renderTasks();
   }
 
-  // The candidate queue (UC-20/21, Stage 12). `data.candidates` is `admin_list_candidates`'s
-  // own shape — already ranked and capped server-side (§12 point 5), so this renders in the
-  // order it arrives rather than re-sorting.
+  // ---- scan candidates panel ----
+
   function renderCandidates(candidates) {
     candidatesEl.textContent = '';
-    candidatesEl.appendChild(ui.el('h2', { text: 'Uncatalogued documents found by scanning' }));
+    latestCandidateCount = candidates.length;
 
-    var scanButton = ui.el('button', { type: 'button', text: 'Scan now' });
+    var scanButton = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Scan for new' });
     scanButton.addEventListener('click', function () {
       scanButton.disabled = true;
       NDocsTransport.call('scan_folders', { teamId: currentTeamId }).then(function (result) {
         scanButton.disabled = false;
-        ui.toast(
-          'Scanned ' + result.scanned + ' — ' + result.proposed + ' new, ' +
-          result.ignored + ' ignored, ' + result.skippedUnchanged + ' unchanged.', 'info'
-        );
+        var msg = 'Scanned ' + result.scanned + ' — ' + result.proposed + ' new, ' +
+          result.ignored + ' ignored, ' + result.skippedUnchanged + ' unchanged.';
+        ui.announce(msg);
+        ui.toast(msg, 'info');
         loadCandidates();
       }).catch(function (err) {
         scanButton.disabled = false;
         ui.toast('Could not scan: ' + err.message, 'warn');
       });
     });
-    candidatesEl.appendChild(scanButton);
 
+    var body;
     if (!candidates.length) {
-      candidatesEl.appendChild(ui.el('p', { text: 'Nothing waiting for review. Scan to look for new documents.' }));
-      return;
+      body = ui.el('div', { class: 'empty-state' }, [
+        ui.el('p', { text: 'Nothing waiting for review. Scan to look for new documents.' })
+      ]);
+    } else {
+      var vocab = (NDocsVocab.current() && NDocsVocab.current().vocab) || {};
+      var list = ui.el('div', {});
+      candidates.forEach(function (c) {
+        var proposed = c.proposed_fields || {};
+        var titleInput = ui.el('input', { type: 'text', value: proposed.title || '', 'aria-label': 'Title for ' + c.drive_filename });
+        if (!proposed.title) titleInput.placeholder = 'No title found — give it one';
+        var purposeInput = ui.el('input', { type: 'text', value: proposed.purpose || '', 'aria-label': 'Purpose for ' + c.drive_filename });
+        var typeSelect = ui.el('select', { 'aria-label': 'Type for ' + c.drive_filename });
+        (vocab.type || []).forEach(function (t) { typeSelect.appendChild(ui.el('option', { value: t, text: t })); });
+        var audienceSelect = ui.el('select', { 'aria-label': 'Audience for ' + c.drive_filename });
+        (vocab.audience || []).forEach(function (a) { audienceSelect.appendChild(ui.el('option', { value: a, text: a })); });
+
+        var promote = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Register' });
+        promote.addEventListener('click', function () {
+          if (!titleInput.value) { ui.toast('Title is required.', 'warn'); return; }
+          promote.disabled = true;
+          NDocsTransport.call('register_resource', {
+            teamId: currentTeamId, fromCandidateId: c.candidate_id,
+            fields: { title: titleInput.value, purpose: purposeInput.value, type: typeSelect.value, audience: audienceSelect.value },
+            derived: {}
+          }).then(function (result) {
+            ui.announce('Registered ' + result.record.doc_id + '.');
+            ui.toast('Registered ' + result.record.doc_id + '.', 'info');
+            loadCandidates();
+          }).catch(function (err) {
+            promote.disabled = false;
+            if (err.code === 'validation_failed') {
+              ui.toast('Fix these fields: ' + ((err.data && err.data.fields) || []).join(', '), 'warn');
+              return;
+            }
+            ui.toast('Could not register: ' + err.message, 'warn');
+          });
+        });
+
+        var dismissFile = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss this file' });
+        dismissFile.addEventListener('click', function () { dismiss(c, 'file', dismissFile); });
+        var dismissFolder = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss everything in this folder' });
+        dismissFolder.addEventListener('click', function () {
+          ui.confirm({
+            title: 'Dismiss this folder', danger: true,
+            body: 'Stop scanning "' + (c.drive_folder_name || c.drive_folder_id) + '" for this team entirely?',
+            confirmLabel: 'Dismiss folder'
+          }).then(function (confirmed) { if (confirmed) dismiss(c, 'folder', dismissFolder); });
+        });
+
+        list.appendChild(ui.el('div', { class: 'surface' }, [
+          ui.el('h3', { class: 'section-title', text: c.drive_filename }),
+          ui.el('p', { class: 'field-help', text: c.reason }),
+          ui.el('p', { class: 'field-help', text: 'Found in ' + (c.drive_folder_path || c.drive_folder_name || 'an unresolved folder') }),
+          ui.el('div', { class: 'form-grid' }, [
+            ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Title' }), titleInput]),
+            ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Purpose' }), purposeInput]),
+            ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Type' }), typeSelect]),
+            ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Audience' }), audienceSelect])
+          ]),
+          ui.el('div', { class: 'button-row' }, [promote, dismissFile, dismissFolder])
+        ]));
+      });
+      body = list;
     }
 
-    var vocab = (NDocsVocab.current() && NDocsVocab.current().vocab) || {};
-    var list = ui.el('div', { class: 'ndocs-candidate-list' });
-
-    candidates.forEach(function (c) {
-      var proposed = c.proposed_fields || {};
-      var titleInput = ui.el('input', { type: 'text', value: proposed.title || '' });
-      if (!proposed.title) titleInput.placeholder = 'No title found — give it one';
-      var purposeInput = ui.el('input', { type: 'text', value: proposed.purpose || '' });
-      var typeSelect = ui.el('select', {});
-      (vocab.type || []).forEach(function (t) { typeSelect.appendChild(ui.el('option', { value: t, text: t })); });
-      var audienceSelect = ui.el('select', {});
-      (vocab.audience || []).forEach(function (a) { audienceSelect.appendChild(ui.el('option', { value: a, text: a })); });
-
-      var promote = ui.el('button', { type: 'button', text: 'Register' });
-      promote.addEventListener('click', function () {
-        if (!titleInput.value) { ui.toast('Title is required.', 'warn'); return; }
-        promote.disabled = true;
-        NDocsTransport.call('register_resource', {
-          teamId: currentTeamId, fromCandidateId: c.candidate_id,
-          fields: { title: titleInput.value, purpose: purposeInput.value, type: typeSelect.value, audience: audienceSelect.value },
-          derived: {}
-        }).then(function (result) {
-          ui.toast('Registered ' + result.record.doc_id + '.', 'info');
-          loadCandidates();
-        }).catch(function (err) {
-          promote.disabled = false;
-          if (err.code === 'validation_failed') {
-            ui.toast('Fix these fields: ' + ((err.data && err.data.fields) || []).join(', '), 'warn');
-            return;
-          }
-          ui.toast('Could not register: ' + err.message, 'warn');
-        });
-      });
-
-      var dismissFile = ui.el('button', { type: 'button', text: 'Dismiss this file' });
-      dismissFile.addEventListener('click', function () { dismiss(c, 'file', dismissFile); });
-      var dismissFolder = ui.el('button', { type: 'button', text: 'Dismiss everything in this folder' });
-      dismissFolder.addEventListener('click', function () {
-        if (!window.confirm('Stop scanning "' + (c.drive_folder_name || c.drive_folder_id) + '" for this team entirely?')) return;
-        dismiss(c, 'folder', dismissFolder);
-      });
-
-      var card = ui.el('div', { class: 'ndocs-candidate-card' }, [
-        ui.el('h3', { text: c.drive_filename }),
-        ui.el('p', { class: 'ndocs-dropzone__hint', text: c.reason }),
-        ui.el('p', { class: 'ndocs-dropzone__hint', text: 'Found in ' + (c.drive_folder_path || c.drive_folder_name || 'an unresolved folder') }),
-        ui.el('label', { text: 'Title' }), titleInput,
-        ui.el('label', { text: 'Purpose' }), purposeInput,
-        ui.el('label', { text: 'Type' }), typeSelect,
-        ui.el('label', { text: 'Audience' }), audienceSelect,
-        ui.el('div', { class: 'ndocs-candidate-actions' }, [promote, dismissFile, dismissFolder])
-      ]);
-      list.appendChild(card);
-    });
-
-    candidatesEl.appendChild(list);
+    candidatesEl.appendChild(ui.el('div', { class: 'section-card' }, [
+      ui.el('div', { class: 'section-card-header' }, [
+        ui.el('div', {}, [ui.el('div', { class: 'section-kicker', text: 'Scanning' }), ui.el('h2', { text: 'Uncatalogued documents found by scanning' })]),
+        ui.el('div', { class: 'button-row' }, [scanButton])
+      ]),
+      ui.el('div', { class: 'section-card-body' }, [body])
+    ]));
+    renderTasks();
   }
 
   function dismiss(candidate, scope, button) {
     button.disabled = true;
     NDocsTransport.call('dismiss_candidate', { candidateId: candidate.candidate_id, rev: candidate.rev, scope: scope }).then(function () {
+      ui.announce('Dismissed.');
       ui.toast('Dismissed.', 'info');
       loadCandidates();
     }).catch(function (err) {
@@ -438,10 +491,11 @@
   }
 
   function loadCandidates() {
+    NDocsShell.region(candidatesEl, 'loading', { loadingText: 'Loading scan candidates…' });
     NDocsTransport.call('admin_list_candidates', { teamId: currentTeamId }).then(function (data) {
       renderCandidates(data.candidates);
     }).catch(function () {
-      // Same team-membership gate as list_team_inventory — a refusal there already shows.
+      candidatesEl.textContent = ''; // same team-membership gate as list_team_inventory — a refusal there already shows.
     });
   }
 
@@ -450,35 +504,30 @@
       renderCertify(data.cycle, data.entries);
     }).catch(function (err) {
       certifyEl.textContent = '';
+      latestCycle = null;
       if (err.code !== 'not_found') return; // membership refusal already shown by the inventory panel
-      certifyEl.appendChild(ui.el('p', { text: 'No certification cycle is open for this team right now.' }));
+      renderTasks();
     });
   }
 
   function load() {
-    ui.setBusy(inventoryEl, true);
+    NDocsShell.region(inventoryEl, 'loading', { loadingText: 'Loading inventory…' });
     NDocsTransport.call('list_team_inventory', { teamId: currentTeamId, groupBy: 'folder' }).then(function (data) {
-      ui.setBusy(inventoryEl, false);
-      configEl.textContent = '';
-      configEl.appendChild(renderConfig(data.team, currentPrincipal));
+      renderSummary(data.team);
       renderInventory(data, currentPrincipal);
     }).catch(function (err) {
-      ui.setBusy(inventoryEl, false);
-      configEl.textContent = '';
-      inventoryEl.textContent = '';
+      summaryEl.textContent = '';
       if (err.name === 'NotAuthorized') {
-        configEl.appendChild(ui.el('p', { text: 'You are not a member of this team.' }));
+        NDocsShell.region(inventoryEl, 'permission-denied', { message: 'You are not a member of this team.' });
         return;
       }
-      configEl.appendChild(ui.el('p', { text: 'Team not found.' }));
+      NDocsShell.region(inventoryEl, 'error', { message: 'Team not found or could not be loaded.', onRetry: load });
     });
 
     NDocsTransport.call('list_findings', { teamId: currentTeamId, state: 'open' }).then(function (data) {
       renderFindings(data.findings);
     }).catch(function () {
-      // Same team-membership gate as list_team_inventory above; a refusal here already
-      // shows on the config/inventory panel, so this call fails silently rather than
-      // duplicating that message.
+      // Same team-membership gate as list_team_inventory above; a refusal already shows there.
     });
 
     loadCertify();
@@ -486,7 +535,8 @@
   }
 
   function init() {
-    configEl = document.getElementById('ndocs-team-config');
+    summaryEl = document.getElementById('ndocs-team-summary');
+    tasksEl = document.getElementById('ndocs-team-tasks');
     inventoryEl = document.getElementById('ndocs-team-inventory');
     findingsEl = document.getElementById('ndocs-team-findings');
     certifyEl = document.getElementById('ndocs-team-certify');
@@ -494,29 +544,24 @@
 
     currentTeamId = teamIdFromQuery();
     if (!currentTeamId) {
-      ui.toast('No team in the link.', 'warn');
-      return;
+      NDocsShell.region(inventoryEl, 'error', { message: 'No team in the link.' });
+      return Promise.resolve();
     }
 
-    NDocsTransport.call('whoami', {}).then(function (principal) {
-      NDocsSession.setPrincipal(principal);
-      currentPrincipal = principal;
-      ui.renderNav(principal);
-      // The config/inventory panels' admin-only controls need `currentPrincipal` — re-render
-      // if `load()` already ran and drew them without it (whoami and list_team_inventory race).
-      load();
-    }).catch(function () { /* the caller is already known-signed-in by the time start() runs */ });
-
     // The candidate promote form's type/audience selects, and the bulk-reassign destination
-    // select, need the vocabulary — loaded once here rather than per-use, same "load() once
-    // per session" contract `page-search.js` already follows.
+    // select, need the vocabulary — loaded once here, same "load() once per session" contract
+    // page-search.js/page-resource.js already follow.
     NDocsVocab.load().catch(function () { /* degrades to empty selects */ });
 
-    load();
+    return NDocsTransport.call('whoami', {}).then(function (principal) {
+      NDocsSession.setPrincipal(principal);
+      currentPrincipal = principal;
+      load();
+      return principal;
+    });
   }
 
   // Same "the page decides when a session exists" contract as page-search.js/
-  // page-resource.js (Stage 6, `NDocs-2a9`) — team.html calls NDocsPageTeam.start() only
-  // once a session is confirmed, never on a bare DOMContentLoaded.
+  // page-resource.js (Stage 6, `NDocs-2a9`).
   window.NDocsPageTeam = { start: init };
 })();
