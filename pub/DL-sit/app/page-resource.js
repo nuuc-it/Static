@@ -167,7 +167,7 @@
   function renderDetail(data) {
     var record = data.record;
     var pairs = [
-      ['Audience', record.audience || '—'],
+      ['Primary Audience', record.audience || '—'],
       ['Topics', (record.topics && record.topics.length) ? [].concat(record.topics).join(', ') : '—'],
       ['Maintainer', record.maintainer_email || '—'],
       ['Source URL', record.source_url ? ui.el('a', { href: record.source_url, target: '_blank', rel: 'noopener', text: record.source_url }) : '—']
@@ -354,10 +354,13 @@
     }
     if (field.control && field.control.indexOf('vocab:') === 0) {
       var kind = field.control.split(':')[1];
-      var sel = ui.el('select', { id: 'rf-' + field.name });
+      var descOf = vocabDescriptions(kind);
+      var sel = ui.el('select', { id: 'rf-' + field.name, class: 'field-select--vocab' });
       sel.appendChild(ui.el('option', { value: '', text: '—' }));
       (vocab[kind] || []).forEach(function (v) {
-        var opt = ui.el('option', { value: v, text: v });
+        var d = descOf[v];
+        var opt = ui.el('option', { value: v, text: d ? v + ' — ' + d : v });
+        if (d) opt.setAttribute('title', d);
         if (v === value) opt.setAttribute('selected', 'selected');
         sel.appendChild(opt);
       });
@@ -365,13 +368,18 @@
     }
     if (field.control && field.control.indexOf('vocab-multi:') === 0) {
       var mkind = field.control.split(':')[1];
+      var mdescOf = vocabDescriptions(mkind);
       var current = [].concat(value || []);
-      var group = ui.el('div', { id: 'rf-' + field.name, class: 'field', role: 'group', 'aria-label': field.label });
+      var group = ui.el('div', { id: 'rf-' + field.name, class: 'field vocab-checklist', role: 'group', 'aria-label': field.label });
       (vocab[mkind] || []).forEach(function (v) {
         var cb = ui.el('input', { type: 'checkbox', value: v, id: 'rf-' + field.name + '-' + v });
         if (current.indexOf(v) !== -1) cb.checked = true;
-        var label = ui.el('label', { for: 'rf-' + field.name + '-' + v }, [cb, ' ' + v]);
-        group.appendChild(label);
+        var d = mdescOf[v];
+        var textChildren = [ui.el('span', { class: 'vocab-checklist-value', text: v })];
+        if (d) textChildren.push(ui.el('span', { class: 'vocab-checklist-desc', text: d }));
+        var row = ui.el('label', { for: 'rf-' + field.name + '-' + v, class: 'vocab-checklist-row' }, [cb].concat(textChildren));
+        if (d) row.setAttribute('title', d);
+        group.appendChild(row);
       });
       return group;
     }
@@ -391,6 +399,18 @@
     return ui.el('input', { type: 'text', id: 'rf-' + field.name, value: value || '' });
   }
 
+  // vocabDescriptions(kind) -> { value: definition } — `get_bootstrap`'s `vocabDefinitions`
+  // (`VocabService_getDefinitions`), keyed for the field controls above to look up a
+  // value's description in O(1). `{}` until vocabDefinitions is loaded or a kind has none.
+  function vocabDescriptions(kind) {
+    var defs = (NDocsVocab.current() && NDocsVocab.current().vocabDefinitions) || [];
+    var out = {};
+    defs.forEach(function (d) {
+      if (d.kind === kind && d.value) out[d.value] = d.definition;
+    });
+    return out;
+  }
+
   function readFieldValue(field) {
     if (field.control && field.control.indexOf('vocab-multi:') === 0) {
       var group = document.getElementById('rf-' + field.name);
@@ -404,19 +424,24 @@
     return el ? el.value : undefined;
   }
 
-  // Team and every vocab-backed control here draw from administrator-owned lists (`Teams`,
+  // Team and every vocab-backed control draw from administrator-owned lists (`Teams`,
   // `Config`'s `vocab.*` rows) — a value missing from the list is not something editing this
-  // record can fix, so the field says where to ask rather than leaving a person to wonder
-  // whether the blank dropdown is broken. Same wording/destinations as
-  // `drop-register.js`'s `renderAdminHint` — one instruction, not two copies to drift apart.
-  function fieldAdminHint(field) {
-    if (field.control === 'team') {
-      return ui.el('p', { class: 'field-help', text: "Don't see the right team? Ask an administrator to add it." });
-    }
-    if (field.control && (field.control.indexOf('vocab:') === 0 || field.control.indexOf('vocab-multi:') === 0)) {
-      return ui.el('p', { class: 'field-help', text: "Don't see the value you need? Ask an administrator to add it under Tools → Controlled values." });
-    }
-    return null;
+  // record can fix. Rather than repeating that instruction beside every such field, one note
+  // covers the whole editor (`editorMissingValueNote`, appended once at the bottom).
+  function anyEditableVocabOrTeamField() {
+    return NDocsRecords.RESOURCE_FIELD_GROUPS.some(function (group) {
+      return group.fields.some(function (field) {
+        return field.editable && (field.control === 'team'
+          || (field.control && (field.control.indexOf('vocab:') === 0 || field.control.indexOf('vocab-multi:') === 0)));
+      });
+    });
+  }
+
+  function editorMissingValueNote() {
+    return ui.el('p', {
+      class: 'field-help',
+      text: "Don't see the team or value you need? Ask an administrator to add it under Tools → Controlled values."
+    });
   }
 
   function renderEditor(data) {
@@ -428,11 +453,9 @@
         var control = fieldControl(field, record);
         var labelText = field.label + (field.editable ? '' : ' (read-only)');
         var isGroupControl = field.control === 'provisions' || (field.control && field.control.indexOf('vocab-multi:') === 0);
-        var hint = field.editable ? fieldAdminHint(field) : null;
         var wrapChildren = isGroupControl
           ? [ui.el('legend', { text: labelText }), control]
           : [ui.el('label', { for: 'rf-' + field.name, text: labelText }), control];
-        if (hint) wrapChildren.push(hint);
         var wrap = isGroupControl
           ? ui.el('fieldset', { class: 'field' }, wrapChildren)
           : ui.el('div', { class: 'field' }, wrapChildren);
@@ -443,6 +466,7 @@
       sectionChildren.push(grid);
       sections.push(ui.el('div', { class: 'surface' }, sectionChildren));
     });
+    if (anyEditableVocabOrTeamField()) sections.push(editorMissingValueNote());
 
     var saveBtn = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Save changes' });
     var cancelBtn = ui.el('button', { type: 'button', class: 'button', text: 'Cancel' });
@@ -478,7 +502,7 @@
       bodyChildren.unshift(ui.el('div', { class: 'status-panel status-panel--attention' }, [
         ui.el('div', {}, [
           ui.el('strong', { text: 'Document added.' }),
-          ui.el('p', { text: 'Only the title (and purpose, if the document named one) came in automatically. Review Type, Audience, Discovery, Topics, and Maintainer below before saving.' })
+          ui.el('p', { text: 'Only the title (and purpose, if the document named one) came in automatically. Review Type, Primary Audience, Discovery, Topics, and Maintainer below before saving.' })
         ])
       ]));
       justAdded = false; // one showing per registration — a later re-open of the editor is an ordinary edit

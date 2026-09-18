@@ -364,13 +364,39 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 /* ---- form field ---- */
 .field { display: grid; gap: .35rem; }
 .field label, legend { font-weight: 650; }
-.field input, .field select, .field textarea, .search-form input {
+.field input:not([type="checkbox"]), .field select, .field textarea, .search-form input {
   min-height: 44px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
   background: var(--surface); color: var(--ink); padding: .6rem .72rem;
 }
 .field-help { color: var(--ink-muted); font-size: var(--text-sm); }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
 .field--full { grid-column: 1 / -1; }
+/* A single-value vocabulary select (e.g. Primary Audience) holds one short word — stretching
+   it across the full grid column the way a text input needs is what made it read oversized. */
+.field-select--vocab { max-width: 22rem; width: 100%; text-overflow: ellipsis; }
+
+/* ---- vocabulary checklist (Topics and other vocab-multi controls) ---- */
+/* Checkbox + label used to land on separate lines because the universal `.field input` rule
+   above gave the checkbox the same padded, 44px-tall box as a text input, pushing the label
+   text below it. `.vocab-checklist-row` keeps the box and its text on one line, one value
+   per row, truncated with a tooltip rather than wrapping or claiming a second line. */
+.vocab-checklist { gap: .15rem; }
+.vocab-checklist-row {
+  display: flex; align-items: center; gap: .4rem; font-weight: normal;
+  min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap;
+}
+.vocab-checklist-row input[type="checkbox"] { flex: none; }
+.vocab-checklist-value { flex: none; }
+.vocab-checklist-desc {
+  display: none; flex: 1 1 auto; color: var(--ink-muted); font-size: var(--text-sm);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+/* Mobile-first: hidden by default (narrow and two-column layouts have no room beside the
+   value). A wide enough viewport has room for both — the row's `title` still carries the
+   full description as a tooltip either way. */
+@media (min-width: 900px) {
+  .vocab-checklist-desc { display: inline; }
+}
 /* A field the viewer cannot edit here reads as plain text, not a box waiting for input —
    the border/background/padding that say "type here" are exactly what must not appear on a
    value nothing here will save (system-derived or document-derived fields, ADR-0005). */

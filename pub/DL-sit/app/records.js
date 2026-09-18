@@ -93,7 +93,7 @@ var NDocsRecords = (function () {
         { name: 'team_id', label: 'Owning team', editable: true, control: 'team' },
         { name: 'type', label: 'Type', editable: true, control: 'vocab:type' },
         { name: 'purpose', label: 'Purpose', editable: true, control: 'textarea' },
-        { name: 'audience', label: 'Audience', editable: true, control: 'vocab:audience' },
+        { name: 'audience', label: 'Primary Audience', editable: true, control: 'vocab:audience' },
         { name: 'topics', label: 'Topics', editable: true, control: 'vocab-multi:topics' },
         { name: 'provisions', label: 'Provisions', editable: true, control: 'provisions' }
       ]
@@ -267,7 +267,7 @@ var NDocsRecords = (function () {
       ['Title', record.title],
       ['Purpose', record.purpose],
       ['Type', record.type],
-      ['Audience', record.audience],
+      ['Primary Audience', record.audience],
       ['Owning team', record.team_id],
       ['Folder', folderNode],
       ['Status', displayStatus(record)],
