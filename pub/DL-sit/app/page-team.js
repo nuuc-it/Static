@@ -24,11 +24,19 @@
 // `superseded` additionally requires a successor Resource ID. A single submit sends every row in
 // one `certify_resources` call — no per-record link, per this stage's own "Must not: require
 // opening an individual record to confirm it".
+//
+// Stage 12 (`scan-manual`, `NDocs-hw6`) adds the `#candidates` panel — `scan_folders`/
+// `admin_list_candidates`/`dismiss_candidate`/`register_resource`'s `fromCandidateId`. A "Scan
+// now" button calls `scan_folders` over every tracked folder (no `folderIds` narrowing from
+// this control — that is an advanced/API-only option, per §12's own scope) and reloads the
+// queue; each `proposed` candidate shows its `reason`, a promote form seeded from
+// `proposed_fields` (title/purpose, editable — a proposal under ADR-0005, never saved silently),
+// and two dismiss buttons (`file`/`folder` scope, per UC-20/21).
 (function () {
   'use strict';
 
   var ui = NDocsUI;
-  var configEl, inventoryEl, findingsEl, certifyEl;
+  var configEl, inventoryEl, findingsEl, certifyEl, candidatesEl;
   var currentTeamId;
   var FINDING_RESOLUTIONS = ['accept', 'reject', 'fixed', 'wont_fix'];
   var CERT_DISPOSITIONS = ['superseded', 'archived', 'withdrawn'];
@@ -246,6 +254,112 @@
     certifyEl.appendChild(submit);
   }
 
+  // The candidate queue (UC-20/21, Stage 12). `data.candidates` is `admin_list_candidates`'s
+  // own shape — already ranked and capped server-side (§12 point 5), so this renders in the
+  // order it arrives rather than re-sorting.
+  function renderCandidates(candidates) {
+    candidatesEl.textContent = '';
+    candidatesEl.appendChild(ui.el('h2', { text: 'Uncatalogued documents found by scanning' }));
+
+    var scanButton = ui.el('button', { type: 'button', text: 'Scan now' });
+    scanButton.addEventListener('click', function () {
+      scanButton.disabled = true;
+      NDocsTransport.call('scan_folders', { teamId: currentTeamId }).then(function (result) {
+        scanButton.disabled = false;
+        ui.toast(
+          'Scanned ' + result.scanned + ' — ' + result.proposed + ' new, ' +
+          result.ignored + ' ignored, ' + result.skippedUnchanged + ' unchanged.', 'info'
+        );
+        loadCandidates();
+      }).catch(function (err) {
+        scanButton.disabled = false;
+        ui.toast('Could not scan: ' + err.message, 'warn');
+      });
+    });
+    candidatesEl.appendChild(scanButton);
+
+    if (!candidates.length) {
+      candidatesEl.appendChild(ui.el('p', { text: 'Nothing waiting for review. Scan to look for new documents.' }));
+      return;
+    }
+
+    var vocab = (NDocsVocab.current() && NDocsVocab.current().vocab) || {};
+    var list = ui.el('div', { class: 'ndocs-candidate-list' });
+
+    candidates.forEach(function (c) {
+      var proposed = c.proposed_fields || {};
+      var titleInput = ui.el('input', { type: 'text', value: proposed.title || '' });
+      if (!proposed.title) titleInput.placeholder = 'No title found — give it one';
+      var purposeInput = ui.el('input', { type: 'text', value: proposed.purpose || '' });
+      var typeSelect = ui.el('select', {});
+      (vocab.type || []).forEach(function (t) { typeSelect.appendChild(ui.el('option', { value: t, text: t })); });
+      var audienceSelect = ui.el('select', {});
+      (vocab.audience || []).forEach(function (a) { audienceSelect.appendChild(ui.el('option', { value: a, text: a })); });
+
+      var promote = ui.el('button', { type: 'button', text: 'Register' });
+      promote.addEventListener('click', function () {
+        if (!titleInput.value) { ui.toast('Title is required.', 'warn'); return; }
+        promote.disabled = true;
+        NDocsTransport.call('register_resource', {
+          teamId: currentTeamId, fromCandidateId: c.candidate_id,
+          fields: { title: titleInput.value, purpose: purposeInput.value, type: typeSelect.value, audience: audienceSelect.value },
+          derived: {}
+        }).then(function (result) {
+          ui.toast('Registered ' + result.record.doc_id + '.', 'info');
+          loadCandidates();
+        }).catch(function (err) {
+          promote.disabled = false;
+          if (err.code === 'validation_failed') {
+            ui.toast('Fix these fields: ' + ((err.data && err.data.fields) || []).join(', '), 'warn');
+            return;
+          }
+          ui.toast('Could not register: ' + err.message, 'warn');
+        });
+      });
+
+      var dismissFile = ui.el('button', { type: 'button', text: 'Dismiss this file' });
+      dismissFile.addEventListener('click', function () { dismiss(c, 'file', dismissFile); });
+      var dismissFolder = ui.el('button', { type: 'button', text: 'Dismiss everything in this folder' });
+      dismissFolder.addEventListener('click', function () {
+        if (!window.confirm('Stop scanning "' + (c.drive_folder_name || c.drive_folder_id) + '" for this team entirely?')) return;
+        dismiss(c, 'folder', dismissFolder);
+      });
+
+      var card = ui.el('div', { class: 'ndocs-candidate-card' }, [
+        ui.el('h3', { text: c.drive_filename }),
+        ui.el('p', { class: 'ndocs-dropzone__hint', text: c.reason }),
+        ui.el('p', { class: 'ndocs-dropzone__hint', text: 'Found in ' + (c.drive_folder_path || c.drive_folder_name || 'an unresolved folder') }),
+        ui.el('label', { text: 'Title' }), titleInput,
+        ui.el('label', { text: 'Purpose' }), purposeInput,
+        ui.el('label', { text: 'Type' }), typeSelect,
+        ui.el('label', { text: 'Audience' }), audienceSelect,
+        ui.el('div', { class: 'ndocs-candidate-actions' }, [promote, dismissFile, dismissFolder])
+      ]);
+      list.appendChild(card);
+    });
+
+    candidatesEl.appendChild(list);
+  }
+
+  function dismiss(candidate, scope, button) {
+    button.disabled = true;
+    NDocsTransport.call('dismiss_candidate', { candidateId: candidate.candidate_id, rev: candidate.rev, scope: scope }).then(function () {
+      ui.toast('Dismissed.', 'info');
+      loadCandidates();
+    }).catch(function (err) {
+      button.disabled = false;
+      ui.toast('Could not dismiss: ' + err.message, 'warn');
+    });
+  }
+
+  function loadCandidates() {
+    NDocsTransport.call('admin_list_candidates', { teamId: currentTeamId }).then(function (data) {
+      renderCandidates(data.candidates);
+    }).catch(function () {
+      // Same team-membership gate as list_team_inventory — a refusal there already shows.
+    });
+  }
+
   function loadCertify() {
     NDocsTransport.call('get_certification', { teamId: currentTeamId }).then(function (data) {
       renderCertify(data.cycle, data.entries);
@@ -283,6 +397,7 @@
     });
 
     loadCertify();
+    loadCandidates();
   }
 
   function init() {
@@ -290,6 +405,7 @@
     inventoryEl = document.getElementById('ndocs-team-inventory');
     findingsEl = document.getElementById('ndocs-team-findings');
     certifyEl = document.getElementById('ndocs-team-certify');
+    candidatesEl = document.getElementById('ndocs-team-candidates');
 
     currentTeamId = teamIdFromQuery();
     if (!currentTeamId) {
@@ -300,6 +416,11 @@
     NDocsTransport.call('whoami', {}).then(function (principal) {
       NDocsSession.setPrincipal(principal);
     }).catch(function () { /* the caller is already known-signed-in by the time start() runs */ });
+
+    // The candidate promote form's type/audience selects need the vocabulary — loaded once
+    // here rather than per-candidate, same "load() once per session" contract `page-search.js`
+    // already follows.
+    NDocsVocab.load().catch(function () { /* renderCandidates degrades to empty selects */ });
 
     load();
   }
