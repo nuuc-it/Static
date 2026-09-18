@@ -84,7 +84,10 @@
     });
     return ui.el('div', { class: 'surface' }, [
       ui.el('div', { class: 'section-kicker', text: 'Administrator' }),
-      ui.el('h3', { class: 'section-title', text: 'Team state' }),
+      // h2, not h3 — this renders directly after the entity summary's h1, before any of the
+      // page's h2 section cards, so it must not skip a level (ux-components.md "logical
+      // heading order").
+      ui.el('h2', { class: 'section-title', text: 'Team state' }),
       ui.el('div', { class: 'form-grid' }, [
         ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-team-state', text: 'State' }), stateSelect]),
         ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Successor team' }), successorInput])
@@ -494,8 +497,12 @@
     NDocsShell.region(candidatesEl, 'loading', { loadingText: 'Loading scan candidates…' });
     NDocsTransport.call('admin_list_candidates', { teamId: currentTeamId }).then(function (data) {
       renderCandidates(data.candidates);
-    }).catch(function () {
-      candidatesEl.textContent = ''; // same team-membership gate as list_team_inventory — a refusal there already shows.
+    }).catch(function (err) {
+      if (err.name === 'NotAuthorized') {
+        candidatesEl.textContent = ''; // same team-membership gate as list_team_inventory — a refusal there already shows.
+        return;
+      }
+      NDocsShell.region(candidatesEl, 'error', { message: 'Could not load scan candidates: ' + err.message, onRetry: loadCandidates });
     });
   }
 
@@ -505,8 +512,9 @@
     }).catch(function (err) {
       certifyEl.textContent = '';
       latestCycle = null;
-      if (err.code !== 'not_found') return; // membership refusal already shown by the inventory panel
-      renderTasks();
+      if (err.code === 'not_found') { renderTasks(); return; } // no open cycle — a quiet, expected state
+      if (err.name === 'NotAuthorized') { renderTasks(); return; } // membership refusal already shown by the inventory panel
+      NDocsShell.region(certifyEl, 'error', { message: 'Could not load certification: ' + err.message, onRetry: loadCertify });
     });
   }
 

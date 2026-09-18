@@ -20,6 +20,20 @@
     return NDocsTransport.call(action, payload || {});
   }
 
+  // Inline error state for a disclosure section's body — used wherever a section's own load
+  // call can fail independently of `loadSummary()` (ux-components.md "Async surface states":
+  // error needs a summary plus a retry path, not a silent toast that leaves the section blank).
+  function sectionError(body, message, onRetry) {
+    body.textContent = '';
+    var box = ui.el('div', { class: 'region-error', role: 'alert' }, [ui.el('p', { text: message })]);
+    if (typeof onRetry === 'function') {
+      var btn = ui.el('button', { type: 'button', class: 'button', text: 'Retry' });
+      btn.addEventListener('click', onRetry);
+      box.appendChild(btn);
+    }
+    body.appendChild(box);
+  }
+
   function disclosureSection(id, title, opts) {
     opts = opts || {};
     var summary = ui.el('summary', {}, [document.createTextNode(title)]);
@@ -65,7 +79,9 @@
       (summary.integrityIssueCount === 0 || summary.integrityIssueCount === null);
     summaryEl.appendChild(ui.el('div', { class: 'entity-summary' }, [
       ui.el('div', { class: 'section-kicker', text: 'Needs attention' }),
-      ui.el('h1', { text: nothingUrgent ? 'Nothing needs you right now' : 'Some sections need review' }),
+      // h2, not h1 — tools.html's page header already carries the page's one <h1> ("Admin
+      // tools"); this is a section heading (ux-components.md "One h1 per page").
+      ui.el('h2', { class: 'section-title', text: nothingUrgent ? 'Nothing needs you right now' : 'Some sections need review' }),
       ui.el('div', { class: 'priority-grid' }, metrics)
     ]));
   }
@@ -108,7 +124,9 @@
 
   function loadQueue(body) {
     call('admin_list_findings', {}).then(function (data) { renderQueue(data.findings, body); })
-      .catch(function (err) { ui.toast('Could not load the queue: ' + err.message, 'warn'); });
+      .catch(function (err) {
+        sectionError(body, 'Could not load the findings queue: ' + err.message, function () { loadQueue(body); });
+      });
   }
 
   // ---- (c) controlled values ----
@@ -184,7 +202,9 @@
 
   function loadProvisions(body) {
     call('list_provisions', {}).then(function (data) { renderProvisions(data.provisions, body); })
-      .catch(function (err) { ui.toast('Could not load provisions: ' + err.message, 'warn'); });
+      .catch(function (err) {
+        sectionError(body, 'Could not load provisions: ' + err.message, function () { loadProvisions(body); });
+      });
   }
 
   // ---- (e) bulk import — explicit review step before commit ----
@@ -319,7 +339,9 @@
 
   function loadJobs(body) {
     call('admin_job_status', {}).then(function (data) { renderJobStatus(data.jobs, body); })
-      .catch(function (err) { ui.toast('Could not load job status: ' + err.message, 'warn'); });
+      .catch(function (err) {
+        sectionError(body, 'Could not load job status: ' + err.message, function () { loadJobs(body); });
+      });
   }
 
   // ---- (h) integrity check ----
