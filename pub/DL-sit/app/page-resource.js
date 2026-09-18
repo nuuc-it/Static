@@ -168,7 +168,6 @@
     var record = data.record;
     var pairs = [
       ['Audience', record.audience || '—'],
-      ['Discovery', record.discovery || '—'],
       ['Topics', (record.topics && record.topics.length) ? [].concat(record.topics).join(', ') : '—'],
       ['Maintainer', record.maintainer_email || '—'],
       ['Source URL', record.source_url ? ui.el('a', { href: record.source_url, target: '_blank', rel: 'noopener', text: record.source_url }) : '—']

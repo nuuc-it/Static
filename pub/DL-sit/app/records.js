@@ -94,7 +94,6 @@ var NDocsRecords = (function () {
         { name: 'type', label: 'Type', editable: true, control: 'vocab:type' },
         { name: 'purpose', label: 'Purpose', editable: true, control: 'textarea' },
         { name: 'audience', label: 'Audience', editable: true, control: 'vocab:audience' },
-        { name: 'discovery', label: 'Discovery', editable: true, control: 'vocab:discovery' },
         { name: 'topics', label: 'Topics', editable: true, control: 'vocab-multi:topics' },
         { name: 'provisions', label: 'Provisions', editable: true, control: 'provisions' }
       ]

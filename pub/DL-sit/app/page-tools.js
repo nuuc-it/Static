@@ -131,9 +131,32 @@
 
   // ---- (c) controlled values ----
 
-  function renderVocab(vocab, body) {
+  // `definitions` is `get_bootstrap`'s `vocabDefinitions` — `[{kind, value, definition}]`,
+  // `value: ''` naming a kind's own purpose (`Vocabulary` sheet, `Contract.js`'s own note).
+  function renderVocab(vocab, definitions, body) {
     body.textContent = '';
-    var kindInput = ui.el('input', { type: 'text', id: 'ndocs-vocab-kind', placeholder: 'e.g. type, audience, topics, discovery' });
+    var byKind = {};
+    (definitions || []).forEach(function (d) {
+      byKind[d.kind] = byKind[d.kind] || {};
+      byKind[d.kind][d.value || ''] = d.definition;
+    });
+
+    var reference = ui.el('div', {});
+    Object.keys(vocab).forEach(function (kind) {
+      var kindDesc = (byKind[kind] && byKind[kind]['']) || null;
+      var rows = [ui.el('dt', { text: kind }), ui.el('dd', { text: kindDesc || 'No description yet.' })];
+      (vocab[kind] || []).forEach(function (v) {
+        rows.push(ui.el('dt', { text: ' ' + v }));
+        rows.push(ui.el('dd', { text: (byKind[kind] && byKind[kind][v]) || 'No definition yet.' }));
+      });
+      reference.appendChild(ui.el('dl', { class: 'detail-list' }, rows));
+    });
+    if (!Object.keys(vocab).length) {
+      reference.appendChild(ui.el('p', { class: 'empty-state', text: 'No controlled values configured yet.' }));
+    }
+    body.appendChild(reference);
+
+    var kindInput = ui.el('input', { type: 'text', id: 'ndocs-vocab-kind', placeholder: 'e.g. type, audience, topics' });
     var valuesInput = ui.el('textarea', { id: 'ndocs-vocab-values', rows: 4 });
     var loadKindButton = ui.el('button', { type: 'button', class: 'button', text: 'Load' });
     loadKindButton.addEventListener('click', function () {
@@ -161,6 +184,31 @@
       ui.el('div', { class: 'field field--full' }, [ui.el('label', { for: 'ndocs-vocab-values', text: 'Values, one per line' }), valuesInput])
     ]));
     body.appendChild(ui.el('div', { class: 'button-row' }, [loadKindButton, save]));
+
+    var defKindInput = ui.el('input', { type: 'text', id: 'ndocs-vocabdef-kind', placeholder: 'e.g. type' });
+    var defValueInput = ui.el('input', { type: 'text', id: 'ndocs-vocabdef-value', placeholder: "e.g. guide — leave blank for the kind's own purpose" });
+    var defTextInput = ui.el('textarea', { id: 'ndocs-vocabdef-text', rows: 2 });
+    var defSave = ui.el('button', { type: 'button', class: 'button', text: 'Save definition' });
+    defSave.addEventListener('click', function () {
+      if (!defKindInput.value) { ui.toast('Kind is required.', 'warn'); return; }
+      defSave.disabled = true;
+      call('admin_upsert_vocab_definition', {
+        kind: defKindInput.value, value: defValueInput.value || undefined, definition: defTextInput.value
+      }).then(function () {
+        defSave.disabled = false;
+        ui.toast('Saved.', 'info');
+        try { sessionStorage.clear(); } catch (e) { /* ignore */ }
+      }).catch(function (err) {
+        defSave.disabled = false;
+        ui.toast('Could not save: ' + err.message, 'warn');
+      });
+    });
+    body.appendChild(ui.el('div', { class: 'form-grid' }, [
+      ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-vocabdef-kind', text: 'Kind to describe' }), defKindInput]),
+      ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-vocabdef-value', text: 'Value (blank = the kind itself)' }), defValueInput]),
+      ui.el('div', { class: 'field field--full' }, [ui.el('label', { for: 'ndocs-vocabdef-text', text: 'Definition' }), defTextInput])
+    ]));
+    body.appendChild(ui.el('div', { class: 'button-row' }, [defSave]));
   }
 
   // ---- (d) provisions ----
@@ -400,7 +448,7 @@
       renderAuditQuery(audit.body);
       loadProvisions(provisions.body);
       NDocsVocab.load().then(function (data) {
-        renderVocab(data.vocab || {}, vocabulary.body);
+        renderVocab(data.vocab || {}, data.vocabDefinitions || [], vocabulary.body);
         renderImport(data.teams || [], bulkImport.body);
       });
 
