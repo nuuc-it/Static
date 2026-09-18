@@ -1,18 +1,20 @@
-// app/page-admin.js — admin.html controller (Stage 15 `admin-governance`, `NDocs-zrg`).
-// Rebuilt from scratch — the deleted `ndocs/admin.html`/mockup-era `app/page-admin.js` were
-// retired in the `static-src/` migration (Stage 6-era) and never recreated; this file follows
-// `static-src/app/page-team.js`'s conventions (thin section renderers, `NDocsTransport.call`
-// per action, reload-the-panel-on-success), not the deleted mockup's field names or shape.
+// app/page-tools.js — tools.html controller. Renamed from `app/page-admin.js`
+// (admin-UI-restructure addendum, post-Stage-15, 2026-09-17): `admin.html` was a walled-off
+// console an admin got funneled into, with its own team picker and every cross-cutting tool.
+// The owner rejected that shape — team-state/successor (`admin_set_team_state`) and resource
+// reassignment (`admin_reassign_resources`) moved inline onto `team.html`/`resource.html`,
+// where the entity they're about is already on screen (see `app/page-team.js`/
+// `app/page-resource.js`). What's left here is only what has no single-team/single-resource
+// home: cross-team findings queue, controlled values, provisions, bulk import, audit query,
+// job status, catalog integrity — reached as an ordinary "Tools" nav link
+// (`NDocsUI.renderNav`), not a forced console.
 //
-// Sections, one per `knowledge-base/staging/ndocs-build.md` §15 point 6: (a) cross-team queue
-// (`admin_list_findings` — the one cross-team view this stage builds; no cross-team candidate
-// route exists in webapp-actions.md, so a per-team candidate check stays `team.html`'s job,
-// per that section's own judgment call); (b) team administration (`admin_set_team_state`,
-// `admin_reassign_resources`); (c) controlled values (`admin_upsert_vocab`); (d) provisions
-// (`list_provisions`, `admin_mark_provision_revised`); (e) bulk import
-// (`admin_import_candidates`, both source kinds); (f) audit query (`admin_query_audit`);
-// (g) job status (`admin_job_status`, read-only — no run buttons, Stage 14 owns triggering
-// real jobs); (h) "Verify Catalog Integrity" (`admin_verify_integrity`).
+// Sections, one per `knowledge-base/staging/ndocs-build.md` §15 point 6, minus (b) team
+// administration: (a) cross-team queue (`admin_list_findings`); (c) controlled values
+// (`admin_upsert_vocab`); (d) provisions (`list_provisions`, `admin_mark_provision_revised`);
+// (e) bulk import (`admin_import_candidates`, both source kinds); (f) audit query
+// (`admin_query_audit`); (g) job status (`admin_job_status`, read-only); (h) "Verify Catalog
+// Integrity" (`admin_verify_integrity`).
 (function () {
   'use strict';
 
@@ -55,69 +57,6 @@
   function loadQueue() {
     call('admin_list_findings', {}).then(function (data) { renderQueue(data.findings); })
       .catch(function (err) { ui.toast('Could not load the queue: ' + err.message, 'warn'); });
-  }
-
-  // ---- (b) team administration ----
-
-  function renderTeamAdmin(teams) {
-    els.teams.textContent = '';
-    els.teams.appendChild(ui.el('h2', { text: 'Teams' }));
-    var table = ui.el('table', { class: 'ndocs-table' });
-    var tbody = ui.el('tbody', {});
-    teams.forEach(function (t) {
-      var stateSelect = ui.el('select', {});
-      ['active', 'inactive', 'merged'].forEach(function (s) {
-        var opt = ui.el('option', { value: s, text: s });
-        if (s === t.state) opt.setAttribute('selected', 'selected');
-        stateSelect.appendChild(opt);
-      });
-      var successorInput = ui.el('input', { type: 'text', placeholder: 'successor team id (if merged)' });
-      var apply = ui.el('button', { type: 'button', text: 'Apply' });
-      apply.addEventListener('click', function () {
-        apply.disabled = true;
-        call('admin_set_team_state', {
-          teamId: t.teamId, state: stateSelect.value, successorTeamId: successorInput.value || undefined
-        }).then(function (result) {
-          ui.toast('Updated. ' + result.affectedResources + ' resource(s) still assigned to this team.', 'info');
-          loadTeams();
-        }).catch(function (err) {
-          apply.disabled = false;
-          ui.toast('Could not update: ' + err.message, 'warn');
-        });
-      });
-      tbody.appendChild(ui.el('tr', {}, [
-        ui.el('td', { text: t.name + ' (' + t.teamId + ')' }),
-        ui.el('td', {}, [stateSelect]),
-        ui.el('td', {}, [successorInput]),
-        ui.el('td', {}, [apply])
-      ]));
-    });
-    table.appendChild(tbody);
-    els.teams.appendChild(table);
-
-    // Reassignment — a free-form resource-id list plus a destination team, per
-    // `admin_reassign_resources`'s own payload shape.
-    var idsInput = ui.el('input', { type: 'text', placeholder: 'Resource IDs, comma-separated' });
-    var toTeamSelect = ui.el('select', {});
-    toTeamSelect.appendChild(ui.el('option', { value: '', text: '(unresolved queue)' }));
-    teams.forEach(function (t) { toTeamSelect.appendChild(ui.el('option', { value: t.teamId, text: t.name })); });
-    var reassign = ui.el('button', { type: 'button', text: 'Reassign' });
-    reassign.addEventListener('click', function () {
-      var ids = idsInput.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-      if (!ids.length) { ui.toast('Name at least one Resource ID.', 'warn'); return; }
-      call('admin_reassign_resources', { resourceIds: ids, toTeamId: toTeamSelect.value || undefined })
-        .then(function (result) {
-          ui.toast('Applied: ' + result.applied.length + ', skipped: ' + result.skipped.length + '.', 'info');
-        }).catch(function (err) { ui.toast('Could not reassign: ' + err.message, 'warn'); });
-    });
-    els.teams.appendChild(ui.el('div', { class: 'ndocs-admin-row' }, [
-      ui.el('h3', { text: 'Reassign resources' }), idsInput, toTeamSelect, reassign
-    ]));
-  }
-
-  function loadTeams() {
-    NDocsVocab.load().then(function (data) { renderTeamAdmin(data.teams || []); })
-      .catch(function (err) { ui.toast('Could not load teams: ' + err.message, 'warn'); });
   }
 
   // ---- (c) controlled values ----
@@ -323,7 +262,6 @@
 
   function load() {
     loadQueue();
-    loadTeams();
     loadProvisions();
     loadJobs();
     renderAuditQuery();
@@ -335,17 +273,17 @@
   }
 
   function init() {
-    els.queue = document.getElementById('ndocs-admin-queue');
-    els.teams = document.getElementById('ndocs-admin-teams');
-    els.vocab = document.getElementById('ndocs-admin-vocab');
-    els.provisions = document.getElementById('ndocs-admin-provisions');
-    els.importSection = document.getElementById('ndocs-admin-import');
-    els.audit = document.getElementById('ndocs-admin-audit');
-    els.jobs = document.getElementById('ndocs-admin-jobs');
-    els.integrity = document.getElementById('ndocs-admin-integrity');
+    els.queue = document.getElementById('ndocs-tools-queue');
+    els.vocab = document.getElementById('ndocs-tools-vocab');
+    els.provisions = document.getElementById('ndocs-tools-provisions');
+    els.importSection = document.getElementById('ndocs-tools-import');
+    els.audit = document.getElementById('ndocs-tools-audit');
+    els.jobs = document.getElementById('ndocs-tools-jobs');
+    els.integrity = document.getElementById('ndocs-tools-integrity');
 
     NDocsTransport.call('whoami', {}).then(function (principal) {
       NDocsSession.setPrincipal(principal);
+      ui.renderNav(principal);
       if (!principal.isAdmin) {
         ui.toast('You are not an administrator.', 'warn');
         return;
@@ -355,5 +293,5 @@
   }
 
   // Same "the page decides when a session exists" contract as page-team.js/page-resource.js.
-  window.NDocsPageAdmin = { start: init };
+  window.NDocsPageTools = { start: init };
 })();

@@ -13,7 +13,7 @@
   'use strict';
 
   var ui = NDocsUI;
-  var resultsEl, facetsEl, myTeamsEl, formEl;
+  var resultsEl, facetsEl, formEl;
 
   // The disclosure used to be a native <details>; a plain button reads more clearly as
   // an action than a summary triangle, so the show/hide state is tracked here instead.
@@ -25,21 +25,6 @@
       var showing = !panel.hidden;
       panel.hidden = showing;
       toggle.setAttribute('aria-expanded', String(!showing));
-    });
-  }
-
-  function renderMyTeams(principal) {
-    myTeamsEl.textContent = '';
-    if (!principal) return;
-    principal.teams.forEach(function (t) {
-      // No role suffix — teamMember is the only gate a team confers (2026-09-14
-      // decision: certification needs no lead role; see ADR-0003 amendment).
-      var link = ui.el('a', {
-        href: 'team.html?team=' + encodeURIComponent(t.teamId),
-        text: t.name
-      });
-      myTeamsEl.appendChild(link);
-      myTeamsEl.appendChild(document.createTextNode(' '));
     });
   }
 
@@ -93,7 +78,6 @@
   function init() {
     resultsEl = document.getElementById('ndocs-results');
     facetsEl = document.getElementById('ndocs-facets');
-    myTeamsEl = document.getElementById('ndocs-my-teams');
     formEl = document.getElementById('ndocs-search-form');
 
     NDocsSession.resume();
@@ -108,7 +92,7 @@
     ]).then(function (both) {
       var principal = both[0];
       NDocsSession.setPrincipal(principal);
-      renderMyTeams(principal);
+      ui.renderNav(principal);
       renderFacets(both[1]);
       var dropEl = document.getElementById('ndocs-drop');
       if (dropEl && typeof NDocsDropRegister !== 'undefined') {

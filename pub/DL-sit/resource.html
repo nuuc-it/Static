@@ -19,6 +19,9 @@
   dl.ndocs-detail-fields dt { color: #666; }
   dl.ndocs-detail-fields dd { margin: 0; }
   a.ndocs-back { display: inline-block; margin-bottom: 1rem; }
+  .ndocs-admin-row { display: flex; gap: .5rem; align-items: flex-start; flex-wrap: wrap; margin: .5rem 0; }
+  .ndocs-admin-row input[type="text"], .ndocs-admin-row textarea, .ndocs-admin-row select { flex: 1 1 12rem; }
+  #ndocs-nav a { margin-right: .75rem; }
 </style>
 </head>
 <body>
@@ -37,12 +40,13 @@
   <div id="errorBanner" class="banner hidden"></div>
 
   <section id="appView" class="hidden">
+    <nav id="ndocs-nav" aria-label="Navigation"></nav>
     <div id="ndocs-resource-detail"></div>
   </section>
 </main>
 
 <script>
-var STATIC_BUILD_VERSION_ = "0.0.0.25";
+var STATIC_BUILD_VERSION_ = "0.0.0.26";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_BUILD_ENV_ = "test";
@@ -54,6 +58,9 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
 <script src="app/session.js"></script>
 <script src="app/transport.js"></script>
 <script src="app/records.js"></script>
+<!-- app/vocab.js (admin-UI-restructure addendum, post-Stage-15, 2026-09-17): the admin-only
+     reassign-to-team control needs the team directory. -->
+<script src="app/vocab.js"></script>
 <!-- page-resource.js loads BEFORE the gate script below, same reason as catalog.html. -->
 <script src="app/page-resource.js"></script>
 <script>

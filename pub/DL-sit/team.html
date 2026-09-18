@@ -28,6 +28,9 @@
   .ndocs-candidate-card label { display: block; font-size: .85em; color: #666; margin-top: .5rem; }
   .ndocs-candidate-card input, .ndocs-candidate-card select { width: 100%; box-sizing: border-box; }
   .ndocs-candidate-actions { display: flex; gap: .5rem; margin-top: .75rem; flex-wrap: wrap; }
+  .ndocs-admin-row { display: flex; gap: .5rem; align-items: flex-start; flex-wrap: wrap; margin: .5rem 0; }
+  .ndocs-admin-row input[type="text"], .ndocs-admin-row textarea, .ndocs-admin-row select { flex: 1 1 12rem; }
+  #ndocs-nav a { margin-right: .75rem; }
 </style>
 </head>
 <body>
@@ -46,6 +49,7 @@
   <div id="errorBanner" class="banner hidden"></div>
 
   <section id="appView" class="hidden">
+    <nav id="ndocs-nav" aria-label="Navigation"></nav>
     <div id="ndocs-team-config"></div>
     <section id="ndocs-team-certify" aria-label="Certify this team's inventory"></section>
     <section id="ndocs-team-candidates" aria-label="Uncatalogued documents found by scanning"></section>
@@ -55,7 +59,7 @@
 </main>
 
 <script>
-var STATIC_BUILD_VERSION_ = "0.0.0.25";
+var STATIC_BUILD_VERSION_ = "0.0.0.26";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_BUILD_ENV_ = "test";

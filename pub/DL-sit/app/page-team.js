@@ -37,9 +37,15 @@
 
   var ui = NDocsUI;
   var configEl, inventoryEl, findingsEl, certifyEl, candidatesEl;
-  var currentTeamId;
+  var currentTeamId, currentPrincipal;
   var FINDING_RESOLUTIONS = ['accept', 'reject', 'fixed', 'wont_fix'];
   var CERT_DISPOSITIONS = ['superseded', 'archived', 'withdrawn'];
+  var TEAM_STATES = ['active', 'inactive', 'merged'];
+  // Bulk-reassign selection persists across every per-folder table `renderInventory` draws —
+  // one Set shared by every `resultsTable({selectable:true, selectedIds})` call, admin-UI-
+  // restructure addendum (post-Stage-15, 2026-09-17): `admin_reassign_resources` moved here
+  // from the retired `admin.html`'s free-form resource-id list.
+  var reassignSelection = new Set();
 
   function teamIdFromQuery() {
     var params = new URLSearchParams(window.location.search);
@@ -49,7 +55,12 @@
   // The team's own configuration (UC-22) — every field a team lead would check against
   // what they expect, `Contract.js`'s own field names (`_teamFullConfigView`,
   // `TeamService.js`), not the mockup's draft ones.
-  function renderConfig(team) {
+  //
+  // Admin-only state/successor control (admin-UI-restructure addendum, post-Stage-15,
+  // 2026-09-17): `admin_set_team_state` moved inline here from the retired `admin.html` — it
+  // is always about the one team already on screen. UI-gated on `principal.isAdmin` only;
+  // `Routes.js`'s `admin` gate re-decides server-side on the call regardless.
+  function renderConfig(team, principal) {
     var fields = [
       ['Name', team.name], ['State', team.state], ['Doc ID prefix', team.docIdPrefix],
       ['Review cadence (months)', team.reviewCadenceMonths],
@@ -65,7 +76,37 @@
         text: (pair[1] === undefined || pair[1] === null || pair[1] === '') ? '—' : String(pair[1])
       }));
     });
-    return ui.el('div', { class: 'ndocs-detail-card' }, [ui.el('h2', { text: team.name }), dl]);
+    var children = [ui.el('h2', { text: team.name }), dl];
+    if (principal && principal.isAdmin) {
+      children.push(renderTeamStateControl(team));
+    }
+    return ui.el('div', { class: 'ndocs-detail-card' }, children);
+  }
+
+  function renderTeamStateControl(team) {
+    var stateSelect = ui.el('select', {});
+    TEAM_STATES.forEach(function (s) {
+      var opt = ui.el('option', { value: s, text: s });
+      if (s === team.state) opt.setAttribute('selected', 'selected');
+      stateSelect.appendChild(opt);
+    });
+    var successorInput = ui.el('input', { type: 'text', placeholder: 'successor team id (if merged)' });
+    var apply = ui.el('button', { type: 'button', text: 'Apply' });
+    apply.addEventListener('click', function () {
+      apply.disabled = true;
+      NDocsTransport.call('admin_set_team_state', {
+        teamId: team.teamId, state: stateSelect.value, successorTeamId: successorInput.value || undefined
+      }).then(function (result) {
+        ui.toast('Updated. ' + result.affectedResources + ' resource(s) still assigned to this team.', 'info');
+        load();
+      }).catch(function (err) {
+        apply.disabled = false;
+        ui.toast('Could not update: ' + err.message, 'warn');
+      });
+    });
+    return ui.el('div', { class: 'ndocs-admin-row' }, [
+      ui.el('h3', { text: 'Team state (administrator)' }), stateSelect, successorInput, apply
+    ]);
   }
 
   // One heading + table per folder, unresolved last — it is the exception this view exists
@@ -73,12 +114,19 @@
   // resultsTable already hides the folder column inside a group, since the heading names it.
   // `findingCounts` (Stage 10, `NDocs-0ti`) is `{resourceId: {open, blocking}}` from
   // `list_team_inventory`; `records.js`'s column wants a plain count per id.
-  function renderInventory(data) {
+  //
+  // Admin-only bulk reassign (admin-UI-restructure addendum, post-Stage-15, 2026-09-17):
+  // `admin_reassign_resources`'s multi-resource case moved here from the retired
+  // `admin.html`'s free-form resource-id list, onto the resources already in view — every
+  // per-folder table below shares one selection Set (`reassignSelection`).
+  function renderInventory(data, principal) {
     inventoryEl.textContent = '';
+    reassignSelection.clear();
     if (!data.records.length) {
       inventoryEl.appendChild(ui.el('p', { text: 'This team has no catalogued resources yet.' }));
       return;
     }
+    var isAdmin = !!(principal && principal.isAdmin);
     var openCounts = {};
     Object.keys(data.findingCounts || {}).forEach(function (id) {
       openCounts[id] = data.findingCounts[id].open;
@@ -103,8 +151,45 @@
         heading = ui.el('span', { class: 'ndocs-folder--unresolved', text: 'Unresolved folder (' + folder.count + ')' });
       }
       inventoryEl.appendChild(ui.el('h3', {}, [heading]));
-      inventoryEl.appendChild(NDocsRecords.resultsTable(records, { hideFolder: true, findingCounts: openCounts }));
+      inventoryEl.appendChild(NDocsRecords.resultsTable(records, {
+        hideFolder: true, findingCounts: openCounts,
+        selectable: isAdmin, selectedIds: isAdmin ? reassignSelection : undefined
+      }));
     });
+
+    if (isAdmin) {
+      inventoryEl.appendChild(renderBulkReassign());
+    }
+  }
+
+  // The bulk-reassign control (administrator only) — every checkbox above this point in the
+  // DOM shares `reassignSelection`, so this reads it at submit time rather than being told
+  // which rows are checked.
+  function renderBulkReassign() {
+    var toTeamSelect = ui.el('select', {});
+    toTeamSelect.appendChild(ui.el('option', { value: '', text: '(unresolved queue)' }));
+    var vocabData = NDocsVocab.current();
+    (vocabData && vocabData.teams || []).forEach(function (t) {
+      toTeamSelect.appendChild(ui.el('option', { value: t.teamId, text: t.name }));
+    });
+    var reassign = ui.el('button', { type: 'button', text: 'Reassign selected' });
+    reassign.addEventListener('click', function () {
+      var ids = Array.from(reassignSelection);
+      if (!ids.length) { ui.toast('Select at least one resource.', 'warn'); return; }
+      reassign.disabled = true;
+      NDocsTransport.call('admin_reassign_resources', { resourceIds: ids, toTeamId: toTeamSelect.value || undefined })
+        .then(function (result) {
+          reassign.disabled = false;
+          ui.toast('Applied: ' + result.applied.length + ', skipped: ' + result.skipped.length + '.', 'info');
+          load();
+        }).catch(function (err) {
+          reassign.disabled = false;
+          ui.toast('Could not reassign: ' + err.message, 'warn');
+        });
+    });
+    return ui.el('div', { class: 'ndocs-admin-row' }, [
+      ui.el('h3', { text: 'Reassign selected resources (administrator)' }), toTeamSelect, reassign
+    ]);
   }
 
   // The team findings list (Stage 10, `NDocs-0ti`) — every open exception against this
@@ -375,8 +460,8 @@
     NDocsTransport.call('list_team_inventory', { teamId: currentTeamId, groupBy: 'folder' }).then(function (data) {
       ui.setBusy(inventoryEl, false);
       configEl.textContent = '';
-      configEl.appendChild(renderConfig(data.team));
-      renderInventory(data);
+      configEl.appendChild(renderConfig(data.team, currentPrincipal));
+      renderInventory(data, currentPrincipal);
     }).catch(function (err) {
       ui.setBusy(inventoryEl, false);
       configEl.textContent = '';
@@ -415,12 +500,17 @@
 
     NDocsTransport.call('whoami', {}).then(function (principal) {
       NDocsSession.setPrincipal(principal);
+      currentPrincipal = principal;
+      ui.renderNav(principal);
+      // The config/inventory panels' admin-only controls need `currentPrincipal` — re-render
+      // if `load()` already ran and drew them without it (whoami and list_team_inventory race).
+      load();
     }).catch(function () { /* the caller is already known-signed-in by the time start() runs */ });
 
-    // The candidate promote form's type/audience selects need the vocabulary — loaded once
-    // here rather than per-candidate, same "load() once per session" contract `page-search.js`
-    // already follows.
-    NDocsVocab.load().catch(function () { /* renderCandidates degrades to empty selects */ });
+    // The candidate promote form's type/audience selects, and the bulk-reassign destination
+    // select, need the vocabulary — loaded once here rather than per-use, same "load() once
+    // per session" contract `page-search.js` already follows.
+    NDocsVocab.load().catch(function () { /* degrades to empty selects */ });
 
     load();
   }

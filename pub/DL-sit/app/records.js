@@ -94,13 +94,21 @@ var NDocsRecords = (function () {
   // opts.findingCounts: { [resource_id]: count } adds an Open findings column.
   // opts.hideFolder: true inside a folder-grouped inventory, where the group heading
   // already names the folder and repeating it in every row is noise.
+  // opts.selectable: true adds a leading checkbox column, admin-UI-restructure addendum
+  // (post-Stage-15, 2026-09-17) — team.html's bulk-reassign control, admin-only, wired
+  // straight into this table rather than a second listing. opts.selectedIds is the Set a
+  // checkbox's change toggles membership in; the caller owns the Set and reads it back when
+  // the bulk action runs. Off by default, so `catalog.html`'s and `team.html`'s read-only
+  // uses of this table are unaffected.
   function resultsTable(records, opts) {
     opts = opts || {};
     var showFolder = !opts.hideFolder;
-    var headCells = [
+    var headCells = [];
+    if (opts.selectable) headCells.push(ui.el('th', { text: '' }));
+    headCells.push(
       ui.el('th', { text: 'Doc ID' }), ui.el('th', { text: 'Title' }),
       ui.el('th', { text: 'Type' })
-    ];
+    );
     if (showFolder) headCells.push(ui.el('th', { text: 'Folder' }));
     headCells.push(ui.el('th', { text: 'Updated' }));
     headCells.push(ui.el('th', { text: 'Status' }));
@@ -116,11 +124,21 @@ var NDocsRecords = (function () {
         ui.el('span', { text: displayStatus(record) + ' ' }),
         ui.el('span', { class: 'ndocs-chips' }, warningChips(record))
       ]);
-      var cells = [
+      var cells = [];
+      if (opts.selectable) {
+        var checkbox = ui.el('input', { type: 'checkbox' });
+        checkbox.addEventListener('change', function () {
+          if (!opts.selectedIds) return;
+          if (checkbox.checked) opts.selectedIds.add(record.resource_id);
+          else opts.selectedIds.delete(record.resource_id);
+        });
+        cells.push(ui.el('td', {}, [checkbox]));
+      }
+      cells.push(
         ui.el('td', { text: record.doc_id || '—' }),
         ui.el('td', {}, [link]),
         ui.el('td', { text: record.type || '—' })
-      ];
+      );
       if (showFolder) cells.push(ui.el('td', {}, [folderCell(record)]));
       cells.push(ui.el('td', { text: dateOrDash(record.drive_modified_at) }));
       cells.push(statusCell);

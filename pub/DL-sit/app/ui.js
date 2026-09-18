@@ -57,11 +57,48 @@ var NDocsUI = (function () {
     return Promise.resolve(window.confirm(message)); // eslint-disable-line no-alert
   }
 
+  // renderNav(principal) — the one consistent header row across all four pages
+  // (catalog.html/team.html/resource.html/tools.html), admin-UI-restructure addendum
+  // (post-Stage-15, 2026-09-17). Replaces each page's own hand-rolled `#ndocs-my-teams`.
+  // Renders into `#ndocs-nav` (every page markup declares this container); a page missing it
+  // is a no-op rather than a throw, same defensive shape `wireDropToggle` (page-search.js)
+  // already uses for an optional element.
+  //
+  // `principal` is `whoami`'s own response shape — the caller's teams, `isAdmin`, and, for an
+  // admin only, `spreadsheetUrl` (omitted entirely for a non-admin, enforced server-side in
+  // `H_Meta_whoami`). "Tools" and "Open spreadsheet" render only when `isAdmin` is true, and
+  // the spreadsheet link only when `spreadsheetUrl` is actually present — never a disabled
+  // control, per the design: an admin-only link that simply isn't there for anyone else.
+  function renderNav(principal) {
+    var host = document.getElementById('ndocs-nav');
+    if (!host) return;
+    host.textContent = '';
+    if (!principal) return;
+
+    (principal.teams || []).forEach(function (t) {
+      // No role suffix — every team member carries the same permissions (2026-09-14
+      // decision, ADR-0003 amended).
+      host.appendChild(el('a', { href: 'team.html?team=' + encodeURIComponent(t.teamId), text: t.name }));
+      host.appendChild(document.createTextNode(' '));
+    });
+
+    if (principal.isAdmin) {
+      host.appendChild(el('a', { href: 'tools.html', text: 'Tools' }));
+      host.appendChild(document.createTextNode(' '));
+      if (principal.spreadsheetUrl) {
+        host.appendChild(el('a', {
+          href: principal.spreadsheetUrl, target: '_blank', rel: 'noopener', text: 'Open spreadsheet'
+        }));
+      }
+    }
+  }
+
   return {
     escapeHtml: escapeHtml,
     el: el,
     toast: toast,
     setBusy: setBusy,
-    confirmDialog: confirmDialog
+    confirmDialog: confirmDialog,
+    renderNav: renderNav
   };
 })();

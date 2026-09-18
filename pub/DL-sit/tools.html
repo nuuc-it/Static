@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NDocs — Administration</title>
+<title>NDocs — Tools</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   body { font: 15px/1.55 system-ui, sans-serif; margin: 0; padding: 2rem 1rem; color: #1a1a1a; background: #fbfbfa; }
@@ -22,12 +22,13 @@
   .ndocs-admin-row input[type="text"], .ndocs-admin-row textarea, .ndocs-admin-row select { flex: 1 1 12rem; }
   a.ndocs-back { display: inline-block; margin-bottom: 1rem; }
   section.ndocs-admin-section { margin-bottom: 2rem; }
+  #ndocs-nav a { margin-right: .75rem; }
 </style>
 </head>
 <body>
 <main>
   <a class="ndocs-back" href="catalog.html">&larr; Back to the catalog</a>
-  <h1>Administration</h1>
+  <h1>Tools</h1>
 
   <section id="signinView" class="card">
     <p>Sign in with an administrator account.</p>
@@ -40,19 +41,19 @@
   <div id="errorBanner" class="banner hidden"></div>
 
   <section id="appView" class="hidden">
-    <section id="ndocs-admin-queue" class="ndocs-admin-section" aria-label="Cross-team findings queue"></section>
-    <section id="ndocs-admin-teams" class="ndocs-admin-section" aria-label="Team administration"></section>
-    <section id="ndocs-admin-vocab" class="ndocs-admin-section" aria-label="Controlled values"></section>
-    <section id="ndocs-admin-provisions" class="ndocs-admin-section" aria-label="Provisions"></section>
-    <section id="ndocs-admin-import" class="ndocs-admin-section" aria-label="Bulk import"></section>
-    <section id="ndocs-admin-audit" class="ndocs-admin-section" aria-label="Audit query"></section>
-    <section id="ndocs-admin-jobs" class="ndocs-admin-section" aria-label="Job status"></section>
-    <section id="ndocs-admin-integrity" class="ndocs-admin-section" aria-label="Catalog integrity"></section>
+    <nav id="ndocs-nav" aria-label="Navigation"></nav>
+    <section id="ndocs-tools-queue" class="ndocs-admin-section" aria-label="Cross-team findings queue"></section>
+    <section id="ndocs-tools-vocab" class="ndocs-admin-section" aria-label="Controlled values"></section>
+    <section id="ndocs-tools-provisions" class="ndocs-admin-section" aria-label="Provisions"></section>
+    <section id="ndocs-tools-import" class="ndocs-admin-section" aria-label="Bulk import"></section>
+    <section id="ndocs-tools-audit" class="ndocs-admin-section" aria-label="Audit query"></section>
+    <section id="ndocs-tools-jobs" class="ndocs-admin-section" aria-label="Job status"></section>
+    <section id="ndocs-tools-integrity" class="ndocs-admin-section" aria-label="Catalog integrity"></section>
   </section>
 </main>
 
 <script>
-var STATIC_BUILD_VERSION_ = "0.0.0.25";
+var STATIC_BUILD_VERSION_ = "0.0.0.26";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_BUILD_ENV_ = "test";
@@ -67,9 +68,9 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
 <script src="app/transport.js"></script>
 <script src="app/records.js"></script>
 <script src="app/vocab.js"></script>
-<!-- page-admin.js loads BEFORE the gate script below, same reason as team.html/catalog.html/
+<!-- page-tools.js loads BEFORE the gate script below, same reason as team.html/catalog.html/
      resource.html. -->
-<script src="app/page-admin.js"></script>
+<script src="app/page-tools.js"></script>
 <script>
 (function () {
   'use strict';
@@ -90,18 +91,18 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
     $('errorBanner').classList.remove('hidden');
   }
 
-  function startAdmin() {
+  function startTools() {
     show('appView');
     $('errorBanner').classList.add('hidden');
-    if (window.NDocsPageAdmin && typeof window.NDocsPageAdmin.start === 'function') {
-      window.NDocsPageAdmin.start();
+    if (window.NDocsPageTools && typeof window.NDocsPageTools.start === 'function') {
+      window.NDocsPageTools.start();
     }
   }
 
   window.onGoogleSignIn = function (credentialResponse) {
     show('launchView');
     NDocsSession.signIn(credentialResponse && credentialResponse.credential)
-      .then(startAdmin)
+      .then(startTools)
       .catch(function (err) {
         show('signinView');
         showError((err && err.message) || String(err));
@@ -109,7 +110,7 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
   };
 
   if (NDocsSession.resume()) {
-    startAdmin();
+    startTools();
   } else {
     show('signinView');
   }

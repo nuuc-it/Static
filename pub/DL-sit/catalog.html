@@ -23,7 +23,7 @@
   form#ndocs-search-form input { flex: 1; padding: .4rem .6rem; }
   button { font: inherit; padding: .35rem .8rem; border-radius: 4px; border: 1px solid #bbb; background: #fff; cursor: pointer; }
   #ndocs-facets select { margin-right: .5rem; }
-  #ndocs-my-teams a { margin-right: .75rem; }
+  #ndocs-nav a { margin-right: .75rem; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; color: #666; font-size: .85em; }
 </style>
 </head>
@@ -50,7 +50,7 @@
 
   <!-- Signed in -->
   <section id="appView" class="hidden">
-    <nav id="ndocs-my-teams" aria-label="My teams"></nav>
+    <nav id="ndocs-nav" aria-label="Navigation"></nav>
 
     <button id="ndocs-drop-toggle" type="button" aria-expanded="false" aria-controls="ndocs-drop">Register a document</button>
     <div id="ndocs-drop" class="card" hidden></div>
@@ -75,7 +75,7 @@
 <script>
 // Build-time stamps — replaced by tools/static-pages.js (gas-static) immediately before
 // publish. Left null in the unbuilt source, same convention as static-src/index.html.
-var STATIC_BUILD_VERSION_ = "0.0.0.25";
+var STATIC_BUILD_VERSION_ = "0.0.0.26";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_BUILD_ENV_ = "test";

@@ -15,6 +15,7 @@
   var ui = NDocsUI;
   var detailEl;
   var currentResourceId;
+  var currentPrincipal;
 
   function resourceIdFromQuery() {
     var params = new URLSearchParams(window.location.search);
@@ -58,6 +59,38 @@
     return ui.el('div', { class: 'ndocs-report-problem' }, [select, note, button]);
   }
 
+  // Admin-only single-resource reassign-to-team control (admin-UI-restructure addendum,
+  // post-Stage-15, 2026-09-17): `admin_reassign_resources`'s single-resource case moved here
+  // from the retired `admin.html` — always about the one resource already on screen.
+  function renderReassign(record) {
+    if (!currentPrincipal || !currentPrincipal.isAdmin) return null;
+    var teamSelect = ui.el('select', {});
+    teamSelect.appendChild(ui.el('option', { value: '', text: '(unresolved queue)' }));
+    var vocabData = NDocsVocab.current();
+    (vocabData && vocabData.teams || []).forEach(function (t) {
+      var opt = ui.el('option', { value: t.teamId, text: t.name });
+      if (t.teamId === record.team_id) opt.setAttribute('selected', 'selected');
+      teamSelect.appendChild(opt);
+    });
+    var button = ui.el('button', { type: 'button', text: 'Reassign' });
+    button.addEventListener('click', function () {
+      button.disabled = true;
+      NDocsTransport.call('admin_reassign_resources', {
+        resourceIds: [record.resource_id], toTeamId: teamSelect.value || undefined
+      }).then(function (result) {
+        button.disabled = false;
+        ui.toast('Applied: ' + result.applied.length + ', skipped: ' + result.skipped.length + '.', 'info');
+        load();
+      }).catch(function (err) {
+        button.disabled = false;
+        ui.toast('Could not reassign: ' + err.message, 'warn');
+      });
+    });
+    return ui.el('div', { class: 'ndocs-admin-row' }, [
+      ui.el('h3', { text: 'Reassign to team (administrator)' }), teamSelect, button
+    ]);
+  }
+
   function renderRetire(data) {
     if (!data.canRetire) return null;
     var button = ui.el('button', { type: 'button', text: 'Retire this resource' });
@@ -89,6 +122,8 @@
       detailEl.appendChild(renderReportProblem(data.record.resource_id));
       var retireButton = renderRetire(data);
       if (retireButton) detailEl.appendChild(retireButton);
+      var reassignControl = renderReassign(data.record);
+      if (reassignControl) detailEl.appendChild(reassignControl);
     }).catch(function (err) {
       ui.setBusy(detailEl, false);
       if (err.name === 'NotAuthorized') {
@@ -110,8 +145,16 @@
       return;
     }
 
+    // The admin-only reassign control needs the team directory (`NDocsVocab`) and
+    // `principal.isAdmin` before it can decide whether to render — both loaded once here,
+    // and `load()` re-run once they answer so a first-paint viewer who happens to be an
+    // admin still sees the control without a manual refresh.
+    NDocsVocab.load().catch(function () { /* renderReassign degrades to no control */ });
     NDocsTransport.call('whoami', {}).then(function (principal) {
       NDocsSession.setPrincipal(principal);
+      currentPrincipal = principal;
+      ui.renderNav(principal);
+      load();
     }).catch(function () { /* the caller is already known-signed-in by the time start() runs */ });
 
     load();
