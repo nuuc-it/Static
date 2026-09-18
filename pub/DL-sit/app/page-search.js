@@ -78,14 +78,20 @@
     var status = badgeForStatus(record);
     if (status) badges.appendChild(ui.el('span', { class: 'badge badge--' + status.kind, text: status.text }));
 
-    var metaBits = [];
-    if (record.team_id) metaBits.push(record.team_id);
-    if (record.drive_modified_at) metaBits.push('updated ' + NDocsRecords.dateOrDash(record.drive_modified_at));
+    // UC-22: a folder is named by its leaf, the full path carried whole as the tooltip
+    // (never truncated into ambiguity) — the same folderCell() every listing uses, so a
+    // result row and team.html's inventory table read identically for the same record.
+    var metaLine = ui.el('p', { class: 'meta' });
+    if (record.team_id) { metaLine.appendChild(document.createTextNode(record.team_id + ' · ')); }
+    metaLine.appendChild(NDocsRecords.folderCell(record));
+    if (record.drive_modified_at) {
+      metaLine.appendChild(document.createTextNode(' · updated ' + NDocsRecords.dateOrDash(record.drive_modified_at)));
+    }
     var body = [
       ui.el('a', {
         class: 'result-title', href: 'resource.html?id=' + encodeURIComponent(record.resource_id), text: record.title
       }),
-      ui.el('p', { class: 'meta', text: metaBits.join(' · ') })
+      metaLine
     ];
     if (record.purpose) body.push(ui.el('p', { text: record.purpose }));
 
