@@ -169,8 +169,8 @@
         NDocsDropRegister.mount(addPanel.querySelector('.add-document-panel__body'), {
           principal: principal,
           onRegistered: function (record) {
-            ui.announce('Registered ' + record.doc_id + '.');
-            window.location.href = 'resource.html?id=' + encodeURIComponent(record.resource_id);
+            ui.announce('Added ' + record.doc_id + '.');
+            window.location.href = 'resource.html?id=' + encodeURIComponent(record.resource_id) + '&edit=1&new=1';
           }
         });
       }

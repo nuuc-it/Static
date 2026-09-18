@@ -371,6 +371,13 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .field-help { color: var(--ink-muted); font-size: var(--text-sm); }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
 .field--full { grid-column: 1 / -1; }
+/* A field the viewer cannot edit here reads as plain text, not a box waiting for input —
+   the border/background/padding that say "type here" are exactly what must not appear on a
+   value nothing here will save (system-derived or document-derived fields, ADR-0005). */
+.field input[readonly], .field textarea[readonly] {
+  border-color: transparent; background: transparent; padding-inline: 0; min-height: auto;
+  color: var(--ink-muted); cursor: default;
+}
 
 /* ---- search shell ---- */
 .search-shell { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); padding: 1.1rem 1.15rem; margin-bottom: .9rem; }
@@ -525,10 +532,6 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .ndocs-drop-result--info, .ndocs-drop-result--ok { border-left-color: var(--action); background: var(--info-bg); }
 .ndocs-drop-question { margin: .6rem 0; }
 .ndocs-ack { display: block; margin: .3rem 0; }
-
-.ndocs-register-form { display: grid; grid-template-columns: 10rem 1fr; gap: .4rem .8rem; align-items: center; margin: .6rem 0; }
-.ndocs-register-form button { grid-column: 2; justify-self: start; }
-.ndocs-register-form input, .ndocs-register-form select { min-height: 40px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: .4rem .6rem; }
 
 .ndocs-candidate { border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem var(--space-4); margin: .75rem 0; }
 .ndocs-candidate h3 { margin: 0 0 .2rem; font-size: 1em; }

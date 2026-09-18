@@ -19,10 +19,19 @@
   var currentPrincipal;
   var currentData; // last get_resource response
   var editing = false;
+  var justAdded = false; // captured from ?new=1 before init() strips the query string
 
   function resourceIdFromQuery() {
     var params = new URLSearchParams(window.location.search);
     return params.get('id');
+  }
+
+  // `drop-register.js` lands here with `?edit=1` right after registering (its preview screen
+  // asks only the owning team, nothing else — everything from Type down is filled in here,
+  // the one editor every path through this app uses) and `&new=1` on top of that so this page
+  // can say why the editor is already open instead of leaving a person to wonder.
+  function queryFlag(name) {
+    return new URLSearchParams(window.location.search).get(name) === '1';
   }
 
   // ---- entity summary panel ----
@@ -396,6 +405,21 @@
     return el ? el.value : undefined;
   }
 
+  // Team and every vocab-backed control here draw from administrator-owned lists (`Teams`,
+  // `Config`'s `vocab.*` rows) — a value missing from the list is not something editing this
+  // record can fix, so the field says where to ask rather than leaving a person to wonder
+  // whether the blank dropdown is broken. Same wording/destinations as
+  // `drop-register.js`'s `renderAdminHint` — one instruction, not two copies to drift apart.
+  function fieldAdminHint(field) {
+    if (field.control === 'team') {
+      return ui.el('p', { class: 'field-help', text: "Don't see the right team? Ask an administrator to add it." });
+    }
+    if (field.control && (field.control.indexOf('vocab:') === 0 || field.control.indexOf('vocab-multi:') === 0)) {
+      return ui.el('p', { class: 'field-help', text: "Don't see the value you need? Ask an administrator to add it under Tools → Controlled values." });
+    }
+    return null;
+  }
+
   function renderEditor(data) {
     var record = data.record;
     var sections = [];
@@ -405,9 +429,14 @@
         var control = fieldControl(field, record);
         var labelText = field.label + (field.editable ? '' : ' (read-only)');
         var isGroupControl = field.control === 'provisions' || (field.control && field.control.indexOf('vocab-multi:') === 0);
+        var hint = field.editable ? fieldAdminHint(field) : null;
+        var wrapChildren = isGroupControl
+          ? [ui.el('legend', { text: labelText }), control]
+          : [ui.el('label', { for: 'rf-' + field.name, text: labelText }), control];
+        if (hint) wrapChildren.push(hint);
         var wrap = isGroupControl
-          ? ui.el('fieldset', { class: 'field' }, [ui.el('legend', { text: labelText }), control])
-          : ui.el('div', { class: 'field' }, [ui.el('label', { for: 'rf-' + field.name, text: labelText }), control]);
+          ? ui.el('fieldset', { class: 'field' }, wrapChildren)
+          : ui.el('div', { class: 'field' }, wrapChildren);
         grid.appendChild(wrap);
       });
       var sectionChildren = [ui.el('h3', { class: 'section-title', text: group.title })];
@@ -445,14 +474,23 @@
     });
     cancelBtn.addEventListener('click', function () { setEditing(false); });
 
+    var bodyChildren = sections.concat([ui.el('div', { class: 'button-row' }, [cancelBtn, saveBtn])]);
+    if (justAdded) {
+      bodyChildren.unshift(ui.el('div', { class: 'status-panel status-panel--attention' }, [
+        ui.el('div', {}, [
+          ui.el('strong', { text: 'Document added.' }),
+          ui.el('p', { text: 'Only the title (and purpose, if the document named one) came in automatically. Review Type, Audience, Discovery, Topics, and Maintainer below before saving.' })
+        ])
+      ]));
+      justAdded = false; // one showing per registration — a later re-open of the editor is an ordinary edit
+    }
+
     editorEl.textContent = '';
     editorEl.appendChild(ui.el('div', { class: 'section-card' }, [
       ui.el('div', { class: 'section-card-header' }, [
         ui.el('div', {}, [ui.el('div', { class: 'section-kicker', text: 'Edit' }), ui.el('h2', { text: 'Edit this record' })])
       ]),
-      ui.el('div', { class: 'section-card-body' }, sections.concat([
-        ui.el('div', { class: 'button-row' }, [cancelBtn, saveBtn])
-      ]))
+      ui.el('div', { class: 'section-card-body' }, bodyChildren)
     ]));
   }
 
@@ -503,6 +541,17 @@
     editorEl.classList.add('hidden');
 
     currentResourceId = resourceIdFromQuery();
+    if (queryFlag('edit')) {
+      justAdded = queryFlag('new');
+      setEditing(true);
+      // One-shot: a later reload of this same URL should show the ordinary read view, not
+      // reopen the editor and re-show the "just added" banner forever.
+      var cleanParams = new URLSearchParams(window.location.search);
+      cleanParams.delete('edit');
+      cleanParams.delete('new');
+      var cleanUrl = window.location.pathname + (cleanParams.toString() ? '?' + cleanParams.toString() : '');
+      window.history.replaceState(null, '', cleanUrl);
+    }
     if (!currentResourceId) {
       NDocsShell.region(detailEl, 'error', { message: 'No resource id in the link.' });
       return Promise.resolve();

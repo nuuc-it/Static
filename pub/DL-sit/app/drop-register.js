@@ -1,7 +1,8 @@
-// app/drop-register.js — the drop-to-register surface (UC-19), shared by the catalog
-// listing (index.html) and the team page's Register panel (team.html). One module because
-// it is one interaction reached from two places, and DESIGN.md §Register by dropping a
-// Drive link fixes the sequence precisely enough that two copies would drift.
+// app/drop-register.js — the drop-to-register surface (UC-19), mounted from catalog.html's
+// "Add document to the catalog" panel (page-search.js). DESIGN.md §Register by dropping a
+// Drive link fixes the sequence precisely enough that a second copy would drift — team.html
+// has no drop-to-register surface of its own to share this with (found live 2026-09-18
+// correcting this file's own stale "shared by index.html and team.html" claim).
 //
 // What the browser gets on a drop from Drive is a text/uri-list — a link, not a file. This
 // module reads only that: a drop carrying dataTransfer.files is a local upload and is
@@ -82,6 +83,21 @@ var NDocsDropRegister = (function () {
       wrap.appendChild(list);
     });
     return wrap;
+  }
+
+  // The team list and every vocab select here are administrator-controlled (`Teams` sheet,
+  // `Config`'s `vocab.*` rows via `admin_upsert_vocab`) — a member who needs a new team or a
+  // new controlled value cannot add one from this form, and previously had no way to know
+  // that was even the right next step rather than a bug. `admin_upsert_vocab` has a real
+  // destination (tools.html's "Controlled values" panel), so that hint names it; team
+  // creation (`admin_upsert_team`) has no page anywhere in this app yet (`NDocs-<pending>`,
+  // found live during this same pass) — naming a page that does not exist would just move
+  // the confusion, so that hint asks the administrator directly instead.
+  function renderAdminHint(missingWhat) {
+    var text = missingWhat === 'team'
+      ? "Don't see your team? Ask an administrator to add it."
+      : "Don't see the " + missingWhat + " you need? Ask an administrator to add it under Tools → Controlled values.";
+    return ui.el('p', { class: 'field-help', text: text });
   }
 
   function renderLinkFallback(onSubmit) {
@@ -206,80 +222,76 @@ var NDocsDropRegister = (function () {
     renderMessage(outcome, 'warn', headline, detail, extras);
   }
 
-  // Everything the document declares arrives as a proposal and is presented for
-  // confirmation, never saved silently (ADR-0005). The team is preselected only on an
-  // unambiguous folder match: none leaves it empty (UC-19 A2), several ask (A3).
+  function formatDate(iso) {
+    if (!iso) return null;
+    try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
+  }
+
+  // One round-trip already told us everything a person needs to recognize the document and
+  // decide it's the right one — there is nothing left to type in most cases (`inspect_url`'s
+  // `header.title` is now always populated: real heading, bold text, or the Drive filename as
+  // last resort, `NDocs-jtn`). So this is a preview to confirm, not a form to fill in: the
+  // only genuinely open question is the owning team, and only when the folder doesn't answer
+  // it unambiguously. Everything else — Purpose, Type, Audience, Discovery, Topics,
+  // Maintainer — is filled in a moment later on the record's own page (`renderEditor` in
+  // `page-resource.js`), the one editor every path through this app uses.
   function renderEntry(outcome, url, inspect, opts) {
     var principal = opts.principal || {};
     var teams = principal.teams || [];
     var matches = inspect.teamMatches || [];
     var derived = inspect.derived || {};
     var placement = inspect.placement || {};
-    var vocab = NDocsVocab.current() || { vocab: {} };
+    var header = inspect.header || {};
 
     outcome.textContent = '';
     var box = ui.el('div', { class: 'ndocs-drop-result ndocs-drop-result--ok' });
-    box.appendChild(ui.el('h3', { text: 'Confirm this entry' }));
+    box.appendChild(ui.el('h3', { text: 'Add this document' }));
 
     var folderText = derived.folderPath || derived.folderName || 'unresolved';
-    var folderLine = ui.el('p', { class: 'ndocs-dropzone__hint' }, [
-      document.createTextNode('Found in ')
-    ]);
-    folderLine.appendChild(derived.folderUrl
+    var folderValue = derived.folderUrl
       ? ui.el('a', { href: derived.folderUrl, target: '_blank', rel: 'noopener', text: folderText })
-      : ui.el('span', { text: folderText }));
-    box.appendChild(folderLine);
+      : ui.el('span', { text: folderText });
 
-    var teamSelect = ui.el('select', {});
-    teamSelect.appendChild(ui.el('option', { value: '', text: matches.length > 1 ? 'Choose a team' : 'Choose a team' }));
-    teams.forEach(function (t) {
-      teamSelect.appendChild(ui.el('option', { value: t.teamId, text: t.name }));
+    var previewPairs = [
+      ['Title', header.title || derived.filename],
+      ['Purpose', header.purpose || null],
+      ['Folder', folderValue],
+      ['File name', derived.filename],
+      ['Last modified', formatDate(derived.modifiedAt)],
+      ['Last modified by', derived.lastModifyingUserName ||
+        derived.lastModifyingUserEmail || null]
+    ];
+    var dl = ui.el('dl', { class: 'detail-list' });
+    previewPairs.forEach(function (pair) {
+      if (pair[1] === null || pair[1] === undefined || pair[1] === '') return;
+      dl.appendChild(ui.el('dt', { text: pair[0] }));
+      if (typeof pair[1] === 'object') dl.appendChild(ui.el('dd', {}, [pair[1]]));
+      else dl.appendChild(ui.el('dd', { text: pair[1] }));
     });
-    var preselect = opts.teamId || (matches.length === 1 ? matches[0] : '');
-    if (preselect) teamSelect.value = preselect;
-    if (matches.length > 1) {
-      box.appendChild(ui.el('p', { class: 'ndocs-dropzone__hint', text: 'More than one team uses this folder — choose which one owns the document.' }));
-    } else if (!matches.length) {
-      box.appendChild(ui.el('p', { class: 'ndocs-dropzone__hint', text: 'No team claims this folder, so the owning team is yours to choose.' }));
-    }
-
-    var header = inspect.header || {};
-    // Title comes from the document's own first heading, purpose from the first paragraph
-    // under its Purpose heading. Where the document supplies neither, the input is left
-    // empty and editable rather than seeded from the Drive filename — a filename is not a
-    // title, and prefilling one as though it were is how a whole catalog ends up with
-    // titles nobody chose.
-    var titleInput = ui.el('input', { type: 'text', value: header.title || '' });
-    var purposeInput = ui.el('input', { type: 'text', value: header.purpose || '' });
-    if (!header.title) {
-      titleInput.placeholder = 'The document has no heading — give it a title';
-    }
+    box.appendChild(dl);
     if (!header.purpose) {
-      purposeInput.placeholder = 'The document has no Purpose section — say what it is for';
+      box.appendChild(ui.el('p', { class: 'ndocs-dropzone__hint', text: 'The document names no purpose yet — you\'ll be asked for one on the next screen.' }));
     }
-    var typeSelect = ui.el('select', {});
-    // `vocab.vocab` is `null` until a real controlled-vocabulary source exists (Stage 15) —
-    // same guard as `page-search.js`'s `renderFacets`, found live on SIT during this stage.
-    ((vocab.vocab && vocab.vocab.type) || []).forEach(function (t) {
-      typeSelect.appendChild(ui.el('option', { value: t, text: t }));
-    });
-    var audienceSelect = ui.el('select', {});
-    ((vocab.vocab && vocab.vocab.audience) || []).forEach(function (a) {
-      audienceSelect.appendChild(ui.el('option', { value: a, text: a }));
-    });
-    if (header.audience) audienceSelect.value = header.audience;
 
-    var form = ui.el('div', { class: 'ndocs-register-form' }, [
-      ui.el('label', { text: 'Owning team' }), teamSelect,
-      ui.el('label', { text: 'Title' }), titleInput,
-      ui.el('label', { text: 'Purpose' }), purposeInput,
-      ui.el('label', { text: 'Type' }), typeSelect,
-      ui.el('label', { text: 'Audience' }), audienceSelect
-    ]);
-    box.appendChild(form);
-
-    if (Object.keys(header).length) {
-      box.appendChild(ui.el('p', { class: 'ndocs-dropzone__hint', text: 'Values in bold came from the document\'s own header and are proposals — check them before saving.' }));
+    // The team is preselected only on an unambiguous folder match: none leaves it to choose
+    // (UC-19 A2), several ask which one owns it (A3) — either way the person picks it here
+    // because nothing later in the flow has a better answer than they do.
+    var teamSelect = null;
+    if (matches.length === 1 && !opts.teamId) {
+      var onlyTeam = teams.filter(function (t) { return t.teamId === matches[0]; })[0];
+      dl.appendChild(ui.el('dt', { text: 'Owning team' }));
+      dl.appendChild(ui.el('dd', { text: (onlyTeam && onlyTeam.name) || matches[0] }));
+    } else if (!opts.teamId) {
+      teamSelect = ui.el('select', {});
+      teamSelect.appendChild(ui.el('option', { value: '', text: 'Choose a team' }));
+      teams.forEach(function (t) {
+        teamSelect.appendChild(ui.el('option', { value: t.teamId, text: t.name }));
+      });
+      box.appendChild(ui.el('div', { class: 'field' }, [
+        ui.el('label', { text: matches.length > 1 ? 'More than one team uses this folder — which one owns it?' : 'No team claims this folder — choose the owning team' }),
+        teamSelect,
+        renderAdminHint('team')
+      ]));
     }
 
     // A folder placement that is merely unusual is a question, not a refusal (UC-19 A7).
@@ -296,30 +308,29 @@ var NDocsDropRegister = (function () {
       ]));
     }
 
-    var submit = ui.el('button', { type: 'button', text: 'Register' });
+    var submit = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Add & edit details' });
     submit.addEventListener('click', function () {
-      if (!teamSelect.value) { ui.toast('Choose the owning team.', 'warn'); return; }
-      if (!titleInput.value) { ui.toast('Title is required.', 'warn'); return; }
+      var teamId = opts.teamId || (teamSelect ? teamSelect.value : matches[0]);
+      if (!teamId) { ui.toast('Choose the owning team.', 'warn'); return; }
       if (ackBox && !ackBox.checked) { ui.toast('Confirm the folder placement first.', 'warn'); return; }
+      submit.disabled = true;
+      var fields = { title: header.title || derived.filename, source_url: url };
+      // `Contract.js`'s `Resources` field names, verbatim — `source_url`, not `url`. Nothing
+      // else from this preview is sent: type/audience/discovery/topics/maintainer are all
+      // optional at registration (`RegistryService_register` requires only `title`) and are
+      // filled in immediately after on resource.html, not duplicated into a second form here.
+      if (header.purpose) fields.purpose = header.purpose;
       NDocsTransport.call('register_resource', {
-        teamId: teamSelect.value,
-        // `Contract.js`'s `Resources` field names, verbatim — `source_url`, not `url`; no
-        // `topic`/`provision` sent from this quick-entry form at all (the collection's real
-        // names are the plural, comma-separated `topics`/`provisions`, and
-        // `Validate_authorizeWrite` throws for a key `Contract.js` does not declare, `null`
-        // value or not, so an unrecognized key here would fail the whole registration).
-        fields: {
-          title: titleInput.value, purpose: purposeInput.value,
-          type: typeSelect.value, audience: audienceSelect.value,
-          source_url: url
-        },
+        teamId: teamId,
+        fields: fields,
         derived: derived,
         placementAck: ackBox ? !!ackBox.checked : undefined
       }).then(function (result) {
-        ui.toast('Registered ' + result.record.doc_id + ' (' + result.record.resource_id + ').', 'info');
+        ui.toast('Added ' + result.record.doc_id + ' (' + result.record.resource_id + ').', 'info');
         if (opts.onRegistered) opts.onRegistered(result.record);
-        else window.location.href = 'resource.html?id=' + encodeURIComponent(result.record.resource_id);
+        else window.location.href = 'resource.html?id=' + encodeURIComponent(result.record.resource_id) + '&edit=1&new=1';
       }).catch(function (err) {
+        submit.disabled = false;
         // The same refusals, re-derived on the write path — the UI is never trusted with
         // them, so a stale page gets the same answer as a fresh one.
         if (err.data && err.data.reason === 'placement_refused') {
