@@ -252,8 +252,8 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 /* ---- page shell ---- */
 .container { max-width: 75rem; margin: 0 auto; padding: 1.55rem var(--space-4) 3rem; }
 .breadcrumbs { font-size: var(--text-sm); color: var(--ink-muted); margin-bottom: .9rem; }
-.breadcrumbs a { color: var(--ink-muted-strong); text-decoration: none; }
-.breadcrumbs a:hover { text-decoration: underline; }
+.breadcrumbs a { color: var(--ink-muted-strong); text-decoration: underline; text-underline-offset: .16em; }
+.breadcrumbs a:hover { color: var(--action); }
 .page-header { display: flex; justify-content: space-between; gap: var(--space-5); align-items: end; margin-bottom: var(--space-4); }
 .page-header h1 { margin: 0; font-size: clamp(1.9rem, 3vw, var(--text-2xl)); line-height: 1.1; letter-spacing: -.03em; }
 .page-header p { margin: .45rem 0 0; color: var(--ink-muted); max-width: 56rem; }
