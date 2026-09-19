@@ -425,9 +425,32 @@
 
   // ---- scan candidates panel ----
 
-  // One candidate row. `proposed` gets the full Register form; `ignored`/`unevaluable` get a
-  // read-only reason plus Dismiss only — `register_resource`'s `fromCandidateId` refuses
-  // server-side on any other `triage_state` (see this file's header note).
+  function driveFileUrl(fileId) { return 'https://drive.google.com/open?id=' + encodeURIComponent(fileId); }
+  function driveFolderUrl(folderId) { return 'https://drive.google.com/drive/folders/' + encodeURIComponent(folderId); }
+
+  // Groups in first-occurrence order (candidates already arrive sorted by `first_seen_at` —
+  // `ScanService_listCandidates` — so this doesn't re-sort within a folder) so the folder
+  // itself is said once, not per document (2026-09-19, vertical-space pass).
+  function groupCandidatesByFolder(candidates) {
+    var order = [];
+    var byKey = {};
+    candidates.forEach(function (c) {
+      var key = c.drive_folder_id || c.drive_folder_path || c.drive_folder_name || '(none)';
+      if (!byKey[key]) {
+        byKey[key] = { folderId: c.drive_folder_id, folderName: c.drive_folder_name, folderPath: c.drive_folder_path, items: [] };
+        order.push(key);
+      }
+      byKey[key].items.push(c);
+    });
+    return order.map(function (key) { return byKey[key]; });
+  }
+
+  // One candidate row — compact: a linked filename, one meta line (modified date/by), the
+  // reason ONLY when it's not the generic proposed-queue boilerplate (every `proposed`
+  // candidate carries the identical "New document in a tracked folder..." text — showing it
+  // once per row said nothing an entry-by-entry read needed), then the disposition controls.
+  // `proposed` gets the full Register form; `ignored`/`unevaluable` get Dismiss only —
+  // `register_resource`'s `fromCandidateId` refuses server-side on any other `triage_state`.
   function renderCandidateRow(c, state, vocab) {
     var dismissFile = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss this file' });
     dismissFile.addEventListener('click', function () { dismiss(c, 'file', dismissFile); });
@@ -440,20 +463,25 @@
       }).then(function (confirmed) { if (confirmed) dismiss(c, 'folder', dismissFolder); });
     });
 
+    var nameLink = c.drive_file_id
+      ? ui.el('a', { href: driveFileUrl(c.drive_file_id), target: '_blank', rel: 'noopener', class: 'section-title', text: c.drive_filename })
+      // `<a>`/`<strong>`, never a heading — same choice `renderFindings`'s row title makes
+      // (`f.kind`): the disclosure `<summary>` above is not itself a heading, so an `<h3>` here
+      // would skip level 2 for a non-admin viewer (`tests/journeys/ux-a11y.spec.js`'s "no
+      // skipped heading level" check, already broken once by this exact page/pattern).
+      : ui.el('strong', { class: 'section-title', text: c.drive_filename });
+
+    var metaBits = ['Modified ' + NDocsRecords.dateOrDash(c.drive_modified_at)];
+    if (c.drive_modified_by) metaBits.push('by ' + c.drive_modified_by);
+
+    var titleRow = [nameLink];
+    if (state !== 'proposed') titleRow.push(ui.el('span', { class: 'badge badge--info', text: CANDIDATE_STATE_LABELS[state] || state }));
+
     var children = [
-      // `<strong>`, not a heading — same choice `renderFindings`'s row title already makes
-      // (`f.kind`). The disclosure `<summary>` above is not itself a heading, so a `<h3>` here
-      // would sit right under `<h1>`/the admin-only `<h2>` "Team state" with nothing bridging
-      // level 2 for a non-admin viewer — exactly the skipped-level failure this project's own
-      // `tests/journeys/ux-a11y.spec.js` "no skipped heading level" check was written to catch
-      // (its comment names this exact page/pattern already breaking it once before, 2026-09-18).
-      ui.el('div', { class: 'badges' }, [
-        ui.el('strong', { class: 'section-title', text: c.drive_filename }),
-        ui.el('span', { class: 'badge badge--info', text: CANDIDATE_STATE_LABELS[state] || state })
-      ]),
-      ui.el('p', { class: 'field-help', text: c.reason }),
-      ui.el('p', { class: 'field-help', text: 'Found in ' + (c.drive_folder_path || c.drive_folder_name || 'an unresolved folder') })
+      ui.el('div', { class: 'badges' }, titleRow),
+      ui.el('p', { class: 'field-help', text: metaBits.join(' · ') })
     ];
+    if (state !== 'proposed' && c.reason) children.push(ui.el('p', { class: 'field-help', text: c.reason }));
 
     if (state === 'proposed') {
       var proposed = c.proposed_fields || {};
@@ -502,7 +530,31 @@
       children.push(ui.el('div', { class: 'button-row' }, [dismissFile, dismissFolder]));
     }
 
-    return ui.el('div', { class: 'surface' }, children);
+    return ui.el('div', { class: 'candidate-row' }, children);
+  }
+
+  // One folder's documents, nested inside the candidates disclosure the same way Inventory
+  // nests per-folder `<details>` inside `#inventory` — the folder is said once, in a header
+  // that is itself a link to the Drive folder, not repeated on every document underneath.
+  function renderCandidateFolderGroup(group, state, vocab) {
+    var label = group.folderId ? (group.folderName || group.folderId) : 'Unresolved folder';
+    var labelNode = group.folderId
+      ? ui.el('a', { href: driveFolderUrl(group.folderId), target: '_blank', rel: 'noopener', text: label })
+      : document.createTextNode(label);
+    if (group.folderId) {
+      // A link inside a `<summary>` would otherwise also toggle the disclosure on click
+      // (the click bubbles to `<summary>`'s default handler) — stop it there so opening the
+      // folder in Drive and expanding the list are two independent actions, not one that does
+      // both at once.
+      labelNode.addEventListener('click', function (e) { e.stopPropagation(); });
+    }
+    var summary = ui.el('summary', {}, [
+      labelNode,
+      ui.el('span', { class: 'summary-meta', text: group.items.length + ' document' + (group.items.length === 1 ? '' : 's') })
+    ]);
+    var content = ui.el('div', { class: 'disclosure-content' });
+    group.items.forEach(function (c) { content.appendChild(renderCandidateRow(c, state, vocab)); });
+    return ui.el('details', { class: 'disclosure', open: 'open' }, [summary, content]);
   }
 
   function renderCandidates(candidates, state) {
@@ -547,7 +599,9 @@
     } else {
       var vocab = (NDocsVocab.current() && NDocsVocab.current().vocab) || {};
       var list = ui.el('div', {});
-      candidates.forEach(function (c) { list.appendChild(renderCandidateRow(c, state, vocab)); });
+      groupCandidatesByFolder(candidates).forEach(function (group) {
+        list.appendChild(renderCandidateFolderGroup(group, state, vocab));
+      });
       body = list;
     }
 
