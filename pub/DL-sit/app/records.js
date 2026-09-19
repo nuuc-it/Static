@@ -84,7 +84,9 @@ var NDocsRecords = (function () {
   //
   // Grouped into the labeled sections ux-components.md's resource composition row requires;
   // `editable: true` fields are the ones `update_resource`'s `human`-intent patch may carry
-  // (ADR-0005) — every other field renders read-only and labeled, never omitted.
+  // (ADR-0005) — every other field renders read-only and labeled, never omitted. The one
+  // exception is `provisions`, which page-resource.js hides while the record declares none
+  // (NDocs-b1w; the term is unsettled, NDocs-3mj).
   var RESOURCE_FIELD_GROUPS = [
     {
       title: 'Identity & classification',

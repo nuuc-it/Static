@@ -437,6 +437,19 @@
     });
   }
 
+  // The editor's rule is "every field the record carries, system-managed ones visible and
+  // labeled read-only, never silently omitted" (ux-components.md, resource.html row).
+  // `provisions` is the single, deliberate exception (NDocs-b1w): docs/CONTEXT.md still
+  // conflates document registration/provisioning with Governance Manual provisioning, so the
+  // word is not put in front of a person whose record has never used it. A record that already
+  // declares a provision keeps the field — hiding it there would strand a value no other
+  // surface can edit. NDocs-3mj settles the term; this exception is removed with it, not
+  // extended to any other field.
+  function fieldHiddenForRecord(field, record) {
+    if (field.control !== 'provisions') return false;
+    return [].concat(record[field.name] || []).length === 0;
+  }
+
   function editorMissingValueNote() {
     return ui.el('p', {
       class: 'field-help',
@@ -450,6 +463,7 @@
     NDocsRecords.RESOURCE_FIELD_GROUPS.forEach(function (group) {
       var grid = ui.el('div', { class: 'form-grid' });
       group.fields.forEach(function (field) {
+        if (fieldHiddenForRecord(field, record)) return;
         var control = fieldControl(field, record);
         var labelText = field.label + (field.editable ? '' : ' (read-only)');
         var isGroupControl = field.control === 'provisions' || (field.control && field.control.indexOf('vocab-multi:') === 0);
@@ -475,6 +489,9 @@
       NDocsRecords.RESOURCE_FIELD_GROUPS.forEach(function (group) {
         group.fields.forEach(function (field) {
           if (!field.editable) return;
+          // A field that was never rendered contributes no key — otherwise the hidden
+          // control would read as "cleared" and overwrite the stored value.
+          if (fieldHiddenForRecord(field, record)) return;
           patch[field.name] = readFieldValue(field);
         });
       });

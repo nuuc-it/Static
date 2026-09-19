@@ -362,14 +362,16 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .detail-list dt:last-of-type, .detail-list dd:last-child { border-bottom: 0; }
 
 /* ---- form field ---- */
-.field { display: grid; gap: .35rem; }
+.field { display: grid; gap: .35rem; align-content: start; }
 .field label, legend { font-weight: 650; }
 .field input:not([type="checkbox"]), .field select, .field textarea, .search-form input {
   min-height: 44px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
   background: var(--surface); color: var(--ink); padding: .6rem .72rem;
 }
 .field-help { color: var(--ink-muted); font-size: var(--text-sm); }
-.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+/* align-items: start keeps a short field (e.g. a single select) from being stretched to
+   match a taller sibling in the same row (e.g. a multi-row checklist) — see Audience/Topics. */
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; align-items: start; }
 .field--full { grid-column: 1 / -1; }
 /* A single-value vocabulary select (e.g. Primary Audience) holds one short word — stretching
    it across the full grid column the way a text input needs is what made it read oversized. */
