@@ -1,11 +1,25 @@
-// app/page-team.js — team.html controller (Stage 15.6, `NDocs-c71`). Rebuilt onto the shared
-// UI system (ADR-0012): team entity summary panel; "Needs your attention" task cards (open
-// certification, waiting scan candidates) ordered by urgency and absent entirely when there is
-// no work — not shown empty; inventory-by-folder as the dominant section card, folder
-// disclosures carrying counts in their summary; open findings as a separate maintenance
-// section; scan job state announced via `NDocsUI.announce`. Calls whoami, list_team_inventory,
-// list_findings, get_certification, certify_resources, admin_list_candidates, scan_folders,
-// dismiss_candidate, register_resource, admin_set_team_state, admin_reassign_resources.
+// app/page-team.js — team.html controller (Stage 15.6, `NDocs-c71`; disclosure-section pass
+// 2026-09-19). Rebuilt onto the shared UI system (ADR-0012): team entity summary panel; "Needs
+// your attention" task cards (open certification, waiting scan candidates) ordered by urgency
+// and absent entirely when there is no work — not shown empty; Inventory, Scanning, and
+// Certification are each a deep-linkable `<details>` disclosure section (`#inventory`,
+// `#candidates`, `#certify`), same convention as `tools.html` ("never a tab widget",
+// ux-components.md) — a team with many folders/candidates never forces one giant always-open
+// page; folder rows inside Inventory stay their own nested disclosures; open findings is a
+// separate maintenance disclosure (`#findings`); scan job state announced via
+// `NDocsUI.announce`. Calls whoami, list_team_inventory, list_findings, get_certification,
+// certify_resources, admin_list_candidates, scan_folders, dismiss_candidate, register_resource,
+// admin_set_team_state, admin_reassign_resources.
+//
+// Candidate review (`#candidates`) is not limited to the `proposed` queue: a state selector
+// also shows `ignored`/`unevaluable` candidates — scan results that were previously completely
+// invisible in the UI (a document auto-ignored by the throwaway-filename/title-collision rule
+// had no way to be seen or reconsidered short of reading the `Candidates` sheet directly).
+// `approved`/`discarded` are deliberately not offered here: `approved` is already visible as a
+// real resource in Inventory, and `discarded` is meant to stay out of sight (that is the whole
+// point of dismissing something). Only `proposed` gets the full Register form — `register_
+// resource`'s `fromCandidateId` path refuses server-side unless `triage_state === 'proposed'`
+// (`RegistryService.js`) — `ignored`/`unevaluable` rows get view + Dismiss only.
 (function () {
   'use strict';
 
@@ -15,10 +29,19 @@
   var FINDING_RESOLUTIONS = ['accept', 'reject', 'fixed', 'wont_fix'];
   var CERT_DISPOSITIONS = ['superseded', 'archived', 'withdrawn'];
   var TEAM_STATES = ['active', 'inactive', 'merged'];
+  var CANDIDATE_STATES = ['proposed', 'ignored', 'unevaluable'];
+  var CANDIDATE_STATE_LABELS = { proposed: 'Waiting review', ignored: 'Ignored by scan', unevaluable: 'Unevaluable' };
   var latestCycle = null;
   var latestCandidateCount = 0;
+  var currentCandidateState = 'proposed';
   // Bulk-reassign selection persists across every per-folder table `renderInventory` draws.
   var reassignSelection = new Set();
+
+  // A fragment link (from a task card's own href, or an external deep link) should land on an
+  // OPEN section, not a collapsed one — same rule `page-tools.js`'s `load()` applies.
+  function openIfLinked(details) {
+    if (window.location.hash === '#' + details.id) details.open = true;
+  }
 
   function teamIdFromQuery() {
     var params = new URLSearchParams(window.location.search);
@@ -141,6 +164,8 @@
 
   function focusSection(el) {
     if (!el) return;
+    var details = el.querySelector('details.disclosure');
+    if (details) details.open = true;
     el.setAttribute('tabindex', '-1');
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     el.focus();
@@ -192,12 +217,18 @@
       if (isAdmin) body.appendChild(renderBulkReassign());
     }
 
-    inventoryEl.appendChild(ui.el('div', { class: 'section-card' }, [
-      ui.el('div', { class: 'section-card-header' }, [
-        ui.el('div', {}, [ui.el('div', { class: 'section-kicker', text: 'Inventory' }), ui.el('h2', { text: 'Resources by folder' })])
-      ]),
-      ui.el('div', { class: 'section-card-body' }, [body])
-    ]));
+    var summary = ui.el('summary', {}, [
+      document.createTextNode('Resources by folder'),
+      ui.el('span', { class: 'summary-meta', text: data.records.length + ' resource' + (data.records.length === 1 ? '' : 's') })
+    ]);
+    // The dominant content of the page (ux-components.md's "inventory-by-folder as the
+    // dominant section card") — open by default, unlike Scanning/Certification which only
+    // open when there's a task or a deep link, per this pass's own disclosure-section rule.
+    var details = ui.el('details', { class: 'disclosure', id: 'inventory', open: 'open' }, [
+      summary, ui.el('div', { class: 'disclosure-content' }, [body])
+    ]);
+    openIfLinked(details);
+    inventoryEl.appendChild(details);
   }
 
   function renderBulkReassign() {
@@ -282,6 +313,8 @@
       body = ui.el('div', { class: 'disclosure-content' }, [list]);
     }
     var details = ui.el('details', { class: 'disclosure', id: 'findings' }, [summary, body]);
+    if (findings.length) details.open = true;
+    openIfLinked(details);
     findingsEl.appendChild(details);
   }
 
@@ -369,24 +402,114 @@
       });
     });
 
-    certifyEl.appendChild(ui.el('div', { class: 'section-card' }, [
-      ui.el('div', { class: 'section-card-header' }, [
-        ui.el('div', {}, [ui.el('div', { class: 'section-kicker', text: 'Certification' }), ui.el('h2', { text: 'Certify this inventory' })]),
-      ]),
-      ui.el('div', { class: 'section-card-body' }, [
+    var overdue = cycle.due_at && new Date(cycle.due_at).getTime() < Date.now();
+    var summary = ui.el('summary', {}, [
+      document.createTextNode('Certify this inventory'),
+      ui.el('span', { class: 'summary-meta', text: cycle.state + (cycle.due_at ? ' · due ' + new Date(cycle.due_at).toLocaleDateString() : '') })
+    ]);
+    var details = ui.el('details', { class: 'disclosure', id: 'certify' }, [
+      summary,
+      ui.el('div', { class: 'disclosure-content' }, [
         ui.el('p', { text: 'Cycle ' + cycle.state + (cycle.due_at ? ' — due ' + new Date(cycle.due_at).toLocaleDateString() : '') + '. Every resource below starts confirmed; uncheck one to record an exception instead.' }),
         table,
         ui.el('div', { class: 'button-row' }, [submit])
       ])
-    ]));
+    ]);
+    // Open when this is an active task (matches the "Certify now" task card's own overdue/due
+    // condition, `renderTasks`) — never open for a routine, not-yet-due cycle by default.
+    if (overdue || cycle.state !== 'certified') details.open = true;
+    openIfLinked(details);
+    certifyEl.appendChild(details);
     renderTasks();
   }
 
   // ---- scan candidates panel ----
 
-  function renderCandidates(candidates) {
+  // One candidate row. `proposed` gets the full Register form; `ignored`/`unevaluable` get a
+  // read-only reason plus Dismiss only — `register_resource`'s `fromCandidateId` refuses
+  // server-side on any other `triage_state` (see this file's header note).
+  function renderCandidateRow(c, state, vocab) {
+    var dismissFile = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss this file' });
+    dismissFile.addEventListener('click', function () { dismiss(c, 'file', dismissFile); });
+    var dismissFolder = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss everything in this folder' });
+    dismissFolder.addEventListener('click', function () {
+      ui.confirm({
+        title: 'Dismiss this folder', danger: true,
+        body: 'Stop scanning "' + (c.drive_folder_name || c.drive_folder_id) + '" for this team entirely?',
+        confirmLabel: 'Dismiss folder'
+      }).then(function (confirmed) { if (confirmed) dismiss(c, 'folder', dismissFolder); });
+    });
+
+    var children = [
+      // `<strong>`, not a heading — same choice `renderFindings`'s row title already makes
+      // (`f.kind`). The disclosure `<summary>` above is not itself a heading, so a `<h3>` here
+      // would sit right under `<h1>`/the admin-only `<h2>` "Team state" with nothing bridging
+      // level 2 for a non-admin viewer — exactly the skipped-level failure this project's own
+      // `tests/journeys/ux-a11y.spec.js` "no skipped heading level" check was written to catch
+      // (its comment names this exact page/pattern already breaking it once before, 2026-09-18).
+      ui.el('div', { class: 'badges' }, [
+        ui.el('strong', { class: 'section-title', text: c.drive_filename }),
+        ui.el('span', { class: 'badge badge--info', text: CANDIDATE_STATE_LABELS[state] || state })
+      ]),
+      ui.el('p', { class: 'field-help', text: c.reason }),
+      ui.el('p', { class: 'field-help', text: 'Found in ' + (c.drive_folder_path || c.drive_folder_name || 'an unresolved folder') })
+    ];
+
+    if (state === 'proposed') {
+      var proposed = c.proposed_fields || {};
+      var titleInput = ui.el('input', { type: 'text', value: proposed.title || '', 'aria-label': 'Title for ' + c.drive_filename });
+      if (!proposed.title) titleInput.placeholder = 'No title found — give it one';
+      var purposeInput = ui.el('input', { type: 'text', value: proposed.purpose || '', 'aria-label': 'Purpose for ' + c.drive_filename });
+      var typeSelect = ui.el('select', { 'aria-label': 'Type for ' + c.drive_filename });
+      (vocab.type || []).forEach(function (t) { typeSelect.appendChild(ui.el('option', { value: t, text: t })); });
+      var audienceSelect = ui.el('select', { 'aria-label': 'Audience for ' + c.drive_filename });
+      (vocab.audience || []).forEach(function (a) { audienceSelect.appendChild(ui.el('option', { value: a, text: a })); });
+
+      var promote = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Register' });
+      promote.addEventListener('click', function () {
+        if (!titleInput.value) { ui.toast('Title is required.', 'warn'); return; }
+        promote.disabled = true;
+        NDocsTransport.call('register_resource', {
+          teamId: currentTeamId, fromCandidateId: c.candidate_id,
+          fields: { title: titleInput.value, purpose: purposeInput.value, type: typeSelect.value, audience: audienceSelect.value },
+          derived: {}
+        }).then(function (result) {
+          ui.announce('Registered ' + result.record.doc_id + '.');
+          ui.toast('Registered ' + result.record.doc_id + '.', 'info');
+          loadCandidates(currentCandidateState);
+        }).catch(function (err) {
+          promote.disabled = false;
+          if (err.code === 'validation_failed') {
+            ui.toast('Fix these fields: ' + ((err.data && err.data.fields) || []).join(', '), 'warn');
+            return;
+          }
+          ui.toast('Could not register: ' + err.message, 'warn');
+        });
+      });
+
+      children.push(
+        ui.el('div', { class: 'form-grid' }, [
+          ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Title' }), titleInput]),
+          ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Purpose' }), purposeInput]),
+          ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Type' }), typeSelect]),
+          ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Audience' }), audienceSelect])
+        ]),
+        ui.el('div', { class: 'button-row' }, [promote, dismissFile, dismissFolder])
+      );
+    } else {
+      // Ignored/unevaluable — a rule already decided this isn't ready to register (or can't be
+      // read at all); the only meaningful disposition here is silencing it, same as `proposed`.
+      children.push(ui.el('div', { class: 'button-row' }, [dismissFile, dismissFolder]));
+    }
+
+    return ui.el('div', { class: 'surface' }, children);
+  }
+
+  function renderCandidates(candidates, state) {
+    state = state || 'proposed';
+    currentCandidateState = state;
     candidatesEl.textContent = '';
-    latestCandidateCount = candidates.length;
+    if (state === 'proposed') latestCandidateCount = candidates.length;
 
     var scanButton = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Scan for new' });
     scanButton.addEventListener('click', function () {
@@ -397,87 +520,55 @@
           result.ignored + ' ignored, ' + result.skippedUnchanged + ' unchanged.';
         ui.announce(msg);
         ui.toast(msg, 'info');
-        loadCandidates();
+        loadCandidates(currentCandidateState);
       }).catch(function (err) {
         scanButton.disabled = false;
         ui.toast('Could not scan: ' + err.message, 'warn');
       });
     });
 
+    var stateSelect = ui.el('select', { id: 'ndocs-candidate-state', 'aria-label': 'Candidate state to show' });
+    CANDIDATE_STATES.forEach(function (s) {
+      var opt = ui.el('option', { value: s, text: CANDIDATE_STATE_LABELS[s] });
+      if (s === state) opt.setAttribute('selected', 'selected');
+      stateSelect.appendChild(opt);
+    });
+    stateSelect.addEventListener('change', function () { loadCandidates(stateSelect.value); });
+
     var body;
     if (!candidates.length) {
       body = ui.el('div', { class: 'empty-state' }, [
-        ui.el('p', { text: 'Nothing waiting for review. Scan to look for new documents.' })
+        ui.el('p', {
+          text: state === 'proposed'
+            ? 'Nothing waiting for review. Scan to look for new documents.'
+            : 'No candidates in this state right now.'
+        })
       ]);
     } else {
       var vocab = (NDocsVocab.current() && NDocsVocab.current().vocab) || {};
       var list = ui.el('div', {});
-      candidates.forEach(function (c) {
-        var proposed = c.proposed_fields || {};
-        var titleInput = ui.el('input', { type: 'text', value: proposed.title || '', 'aria-label': 'Title for ' + c.drive_filename });
-        if (!proposed.title) titleInput.placeholder = 'No title found — give it one';
-        var purposeInput = ui.el('input', { type: 'text', value: proposed.purpose || '', 'aria-label': 'Purpose for ' + c.drive_filename });
-        var typeSelect = ui.el('select', { 'aria-label': 'Type for ' + c.drive_filename });
-        (vocab.type || []).forEach(function (t) { typeSelect.appendChild(ui.el('option', { value: t, text: t })); });
-        var audienceSelect = ui.el('select', { 'aria-label': 'Audience for ' + c.drive_filename });
-        (vocab.audience || []).forEach(function (a) { audienceSelect.appendChild(ui.el('option', { value: a, text: a })); });
-
-        var promote = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Register' });
-        promote.addEventListener('click', function () {
-          if (!titleInput.value) { ui.toast('Title is required.', 'warn'); return; }
-          promote.disabled = true;
-          NDocsTransport.call('register_resource', {
-            teamId: currentTeamId, fromCandidateId: c.candidate_id,
-            fields: { title: titleInput.value, purpose: purposeInput.value, type: typeSelect.value, audience: audienceSelect.value },
-            derived: {}
-          }).then(function (result) {
-            ui.announce('Registered ' + result.record.doc_id + '.');
-            ui.toast('Registered ' + result.record.doc_id + '.', 'info');
-            loadCandidates();
-          }).catch(function (err) {
-            promote.disabled = false;
-            if (err.code === 'validation_failed') {
-              ui.toast('Fix these fields: ' + ((err.data && err.data.fields) || []).join(', '), 'warn');
-              return;
-            }
-            ui.toast('Could not register: ' + err.message, 'warn');
-          });
-        });
-
-        var dismissFile = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss this file' });
-        dismissFile.addEventListener('click', function () { dismiss(c, 'file', dismissFile); });
-        var dismissFolder = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss everything in this folder' });
-        dismissFolder.addEventListener('click', function () {
-          ui.confirm({
-            title: 'Dismiss this folder', danger: true,
-            body: 'Stop scanning "' + (c.drive_folder_name || c.drive_folder_id) + '" for this team entirely?',
-            confirmLabel: 'Dismiss folder'
-          }).then(function (confirmed) { if (confirmed) dismiss(c, 'folder', dismissFolder); });
-        });
-
-        list.appendChild(ui.el('div', { class: 'surface' }, [
-          ui.el('h3', { class: 'section-title', text: c.drive_filename }),
-          ui.el('p', { class: 'field-help', text: c.reason }),
-          ui.el('p', { class: 'field-help', text: 'Found in ' + (c.drive_folder_path || c.drive_folder_name || 'an unresolved folder') }),
-          ui.el('div', { class: 'form-grid' }, [
-            ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Title' }), titleInput]),
-            ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Purpose' }), purposeInput]),
-            ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Type' }), typeSelect]),
-            ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Audience' }), audienceSelect])
-          ]),
-          ui.el('div', { class: 'button-row' }, [promote, dismissFile, dismissFolder])
-        ]));
-      });
+      candidates.forEach(function (c) { list.appendChild(renderCandidateRow(c, state, vocab)); });
       body = list;
     }
 
-    candidatesEl.appendChild(ui.el('div', { class: 'section-card' }, [
-      ui.el('div', { class: 'section-card-header' }, [
-        ui.el('div', {}, [ui.el('div', { class: 'section-kicker', text: 'Scanning' }), ui.el('h2', { text: 'Uncatalogued documents found by scanning' })]),
-        ui.el('div', { class: 'button-row' }, [scanButton])
-      ]),
-      ui.el('div', { class: 'section-card-body' }, [body])
-    ]));
+    var summary = ui.el('summary', {}, [
+      document.createTextNode('Uncatalogued documents found by scanning'),
+      ui.el('span', { class: 'summary-meta', text: candidates.length + ' ' + (CANDIDATE_STATE_LABELS[state] || state).toLowerCase() })
+    ]);
+    var details = ui.el('details', { class: 'disclosure', id: 'candidates' }, [
+      summary,
+      ui.el('div', { class: 'disclosure-content' }, [
+        ui.el('div', { class: 'button-row' }, [scanButton]),
+        ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-candidate-state', text: 'Show' }), stateSelect]),
+        body
+      ])
+    ]);
+    // Open when there's a proposed-queue task (matches the "Review" task card) or when a state
+    // switch/deep link is what got us here in the first place.
+    if (state === 'proposed' && candidates.length > 0) details.open = true;
+    if (state !== 'proposed') details.open = true;
+    openIfLinked(details);
+    candidatesEl.appendChild(details);
     renderTasks();
   }
 
@@ -486,23 +577,24 @@
     NDocsTransport.call('dismiss_candidate', { candidateId: candidate.candidate_id, rev: candidate.rev, scope: scope }).then(function () {
       ui.announce('Dismissed.');
       ui.toast('Dismissed.', 'info');
-      loadCandidates();
+      loadCandidates(currentCandidateState);
     }).catch(function (err) {
       button.disabled = false;
       ui.toast('Could not dismiss: ' + err.message, 'warn');
     });
   }
 
-  function loadCandidates() {
+  function loadCandidates(state) {
+    state = state || 'proposed';
     NDocsShell.region(candidatesEl, 'loading', { loadingText: 'Loading scan candidates…' });
-    NDocsTransport.call('admin_list_candidates', { teamId: currentTeamId }).then(function (data) {
-      renderCandidates(data.candidates);
+    NDocsTransport.call('admin_list_candidates', { teamId: currentTeamId, triageState: state }).then(function (data) {
+      renderCandidates(data.candidates, state);
     }).catch(function (err) {
       if (err.name === 'NotAuthorized') {
         candidatesEl.textContent = ''; // same team-membership gate as list_team_inventory — a refusal there already shows.
         return;
       }
-      NDocsShell.region(candidatesEl, 'error', { message: 'Could not load scan candidates: ' + err.message, onRetry: loadCandidates });
+      NDocsShell.region(candidatesEl, 'error', { message: 'Could not load scan candidates: ' + err.message, onRetry: function () { loadCandidates(state); } });
     });
   }
 
