@@ -122,6 +122,25 @@ button, .button {
   font-weight: 620;
 }
 button:hover, .button:hover { border-color: var(--border-strong); background: var(--surface-subtle); }
+/* Every `.disabled = true` in app/*.js marks an in-flight async call (scan, register, dismiss,
+   save, certify, ...) and is cleared in the following .then/.catch — never a permanently
+   inapplicable control — so a spinner reads correctly everywhere this fires. Pure CSS: no call
+   site needs to change to get it. */
+button:disabled, .button:disabled { cursor: not-allowed; opacity: .7; }
+button:disabled::after, .button:disabled::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: ndocs-spin .7s linear infinite;
+}
+@keyframes ndocs-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  button:disabled::after, .button:disabled::after { animation: none; }
+}
 .button--primary, button.button--primary { background: var(--action); border-color: var(--action); color: #fff; }
 .button--primary:hover, button.button--primary:hover { background: var(--action-hover); border-color: var(--action-hover); color: #fff; }
 .button--danger, button.button--danger { border-color: var(--danger-border); color: var(--danger-ink); background: var(--surface); }
