@@ -461,7 +461,28 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 
 /* ---- disclosure ---- */
 .disclosure { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-block: .55rem; overflow: clip; }
-.disclosure > summary { min-height: 50px; padding: .72rem .9rem; cursor: pointer; font-weight: 700; background: var(--surface); display: block; }
+.disclosure > summary {
+  min-height: 50px; padding: .72rem .9rem .72rem 2.3rem; cursor: pointer; font-weight: 700;
+  background: var(--surface); display: block; position: relative; list-style: none;
+}
+.disclosure > summary::-webkit-details-marker { display: none; }
+/* Open/closed chevron (NDocs-sxy): `display: block` above suppresses the browser's own
+   disclosure triangle, so nesting depth and state had no visual cue at all — a CSS-only
+   corner, rotated in place, needs no icon asset and tracks [open] automatically. */
+.disclosure > summary::before {
+  content: '';
+  position: absolute;
+  left: .95rem;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -5px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform .15s ease;
+}
+.disclosure[open] > summary::before { transform: rotate(45deg); }
 .disclosure > summary:hover { background: var(--surface-subtle); }
 .disclosure[open] > summary { border-bottom: 1px solid var(--border); background: var(--surface-subtle); }
 .disclosure-content { padding: .85rem .9rem; }

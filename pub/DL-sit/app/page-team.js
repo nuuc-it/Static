@@ -32,7 +32,6 @@
   var CANDIDATE_STATES = ['proposed', 'ignored', 'unevaluable'];
   var CANDIDATE_STATE_LABELS = { proposed: 'Waiting review', ignored: 'Ignored by scan', unevaluable: 'Unevaluable' };
   var latestCycle = null;
-  var latestCandidateCount = 0;
   var currentCandidateState = 'proposed';
   // Bulk-reassign selection persists across every per-folder table `renderInventory` draws.
   var reassignSelection = new Set();
@@ -142,22 +141,11 @@
       // it always sorts first, ahead of a merely-due certification and candidates alike.
       if (overdue) cards.unshift(card); else cards.push(card);
     }
-    if (latestCandidateCount > 0) {
-      // No "Review" button here, unlike the certification card above: the candidates
-      // disclosure this would scroll to sits immediately below this task grid in the DOM
-      // (static-src/team.html) and is already auto-opened whenever this card is shown
-      // (`renderCandidates`'s `if (state === 'proposed' && candidates.length > 0) details.open
-      // = true`) — a button pointing at content already visible one scroll away duplicated the
-      // section instead of navigating to it.
-      var cCard = ui.el('div', { class: 'task-card task-card--info' }, [
-        ui.el('div', { class: 'task-icon', 'aria-hidden': 'true', text: String(latestCandidateCount) }),
-        ui.el('div', {}, [
-          ui.el('p', { class: 'task-title', text: latestCandidateCount + ' scan candidate' + (latestCandidateCount === 1 ? '' : 's') + ' waiting' }),
-          ui.el('p', { class: 'task-copy', text: 'Found in tracked folders, not yet catalogued.' })
-        ])
-      ]);
-      cards.push(cCard);
-    }
+    // No task card for waiting scan candidates (NDocs-fkm/2): the "Uncatalogued documents
+    // found by scanning" disclosure just below already carries the same count in its own
+    // summary line and auto-opens whenever candidates are proposed
+    // (`renderCandidates`'s `if (state === 'proposed' && candidates.length > 0) details.open =
+    // true`) — a second card here said nothing that section doesn't already say on its own.
 
     tasksEl.textContent = '';
     if (!cards.length) return; // absent entirely when there is no work — never shown empty
@@ -457,14 +445,6 @@
   function renderCandidateRow(c, state, vocab) {
     var dismissFile = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss this file' });
     dismissFile.addEventListener('click', function () { dismiss(c, 'file', dismissFile); });
-    var dismissFolder = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss everything in this folder' });
-    dismissFolder.addEventListener('click', function () {
-      ui.confirm({
-        title: 'Dismiss this folder', danger: true,
-        body: 'Stop scanning "' + (c.drive_folder_name || c.drive_folder_id) + '" for this team entirely?',
-        confirmLabel: 'Dismiss folder'
-      }).then(function (confirmed) { if (confirmed) dismiss(c, 'folder', dismissFolder); });
-    });
 
     var nameLink = c.drive_file_id
       ? ui.el('a', { href: driveFileUrl(c.drive_file_id), target: '_blank', rel: 'noopener', class: 'section-title', text: c.drive_filename })
@@ -534,12 +514,12 @@
           ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Type' }), typeSelect]),
           ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Audience' }), audienceSelect])
         ]),
-        ui.el('div', { class: 'button-row' }, [promote, dismissFile, dismissFolder])
+        ui.el('div', { class: 'button-row' }, [promote, dismissFile])
       );
     } else {
       // Ignored/unevaluable — a rule already decided this isn't ready to register (or can't be
       // read at all); the only meaningful disposition here is silencing it, same as `proposed`.
-      children.push(ui.el('div', { class: 'button-row' }, [dismissFile, dismissFolder]));
+      children.push(ui.el('div', { class: 'button-row' }, [dismissFile]));
     }
 
     return ui.el('div', { class: 'candidate-row' }, children);
@@ -565,6 +545,19 @@
       ui.el('span', { class: 'summary-meta', text: group.items.length + ' document' + (group.items.length === 1 ? '' : 's') })
     ]);
     var content = ui.el('div', { class: 'disclosure-content' });
+    // Folder-scoped, not per-document (NDocs-6vg): `dismiss_candidate`'s `scope: 'folder'` acts
+    // on the whole folder regardless of which candidate in it is named, so any item here works
+    // as the reference — repeating the control on every row said the same thing N times.
+    var refCandidate = group.items[0];
+    var dismissFolder = ui.el('button', { type: 'button', class: 'button', text: 'Dismiss everything in this folder' });
+    dismissFolder.addEventListener('click', function () {
+      ui.confirm({
+        title: 'Dismiss this folder', danger: true,
+        body: 'Stop scanning "' + (group.folderName || group.folderId) + '" for this team entirely?',
+        confirmLabel: 'Dismiss folder'
+      }).then(function (confirmed) { if (confirmed) dismiss(refCandidate, 'folder', dismissFolder); });
+    });
+    content.appendChild(ui.el('div', { class: 'button-row' }, [dismissFolder]));
     group.items.forEach(function (c) { content.appendChild(renderCandidateRow(c, state, vocab)); });
     return ui.el('details', { class: 'disclosure', open: 'open' }, [summary, content]);
   }
@@ -573,7 +566,6 @@
     state = state || 'proposed';
     currentCandidateState = state;
     candidatesEl.textContent = '';
-    if (state === 'proposed') latestCandidateCount = candidates.length;
 
     var scanButton = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Scan for new' });
     scanButton.addEventListener('click', function () {
@@ -629,13 +621,12 @@
         body
       ])
     ]);
-    // Open when there's a proposed-queue task (matches the "Review" task card) or when a state
-    // switch/deep link is what got us here in the first place.
+    // Open when there's a proposed queue waiting, or when a state switch/deep link is what got
+    // us here in the first place.
     if (state === 'proposed' && candidates.length > 0) details.open = true;
     if (state !== 'proposed') details.open = true;
     openIfLinked(details);
     candidatesEl.appendChild(details);
-    renderTasks();
   }
 
   function dismiss(candidate, scope, button) {
