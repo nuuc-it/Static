@@ -143,6 +143,12 @@
       if (overdue) cards.unshift(card); else cards.push(card);
     }
     if (latestCandidateCount > 0) {
+      // No "Review" button here, unlike the certification card above: the candidates
+      // disclosure this would scroll to sits immediately below this task grid in the DOM
+      // (static-src/team.html) and is already auto-opened whenever this card is shown
+      // (`renderCandidates`'s `if (state === 'proposed' && candidates.length > 0) details.open
+      // = true`) — a button pointing at content already visible one scroll away duplicated the
+      // section instead of navigating to it.
       var cCard = ui.el('div', { class: 'task-card task-card--info' }, [
         ui.el('div', { class: 'task-icon', 'aria-hidden': 'true', text: String(latestCandidateCount) }),
         ui.el('div', {}, [
@@ -150,9 +156,6 @@
           ui.el('p', { class: 'task-copy', text: 'Found in tracked folders, not yet catalogued.' })
         ])
       ]);
-      var reviewBtn = ui.el('button', { type: 'button', class: 'button', text: 'Review' });
-      reviewBtn.addEventListener('click', function () { focusSection(candidatesEl); });
-      cCard.appendChild(reviewBtn);
       cards.push(cCard);
     }
 
@@ -471,7 +474,10 @@
       // skipped heading level" check, already broken once by this exact page/pattern).
       : ui.el('strong', { class: 'section-title', text: c.drive_filename });
 
-    var metaBits = ['Modified ' + NDocsRecords.dateOrDash(c.drive_modified_at)];
+    var metaBits = [];
+    var typeLabel = NDocsRecords.mimeTypeLabel(c.mime_type);
+    if (typeLabel) metaBits.push(typeLabel);
+    metaBits.push('Modified ' + NDocsRecords.dateOrDash(c.drive_modified_at));
     if (c.drive_modified_by) metaBits.push('by ' + c.drive_modified_by);
 
     var titleRow = [nameLink];
@@ -485,8 +491,14 @@
 
     if (state === 'proposed') {
       var proposed = c.proposed_fields || {};
-      var titleInput = ui.el('input', { type: 'text', value: proposed.title || '', 'aria-label': 'Title for ' + c.drive_filename });
-      if (!proposed.title) titleInput.placeholder = 'No title found — give it one';
+      // Same fallback `RegistryService_inspect` applies for manual URL registration
+      // (src/RegistryService.js:110-112, "never hand the human a blank field when a name
+      // already exists") — applied here client-side only, as the form's starting value, since
+      // ScanService's `proposed_fields.title` intentionally stays unset server-side (a
+      // filename match there would skew dedup/judging).
+      var fallbackTitle = proposed.title ? '' : (c.drive_filename || '');
+      var titleInput = ui.el('input', { type: 'text', value: proposed.title || fallbackTitle, 'aria-label': 'Title for ' + c.drive_filename });
+      if (!proposed.title && !fallbackTitle) titleInput.placeholder = 'No title found — give it one';
       var purposeInput = ui.el('input', { type: 'text', value: proposed.purpose || '', 'aria-label': 'Purpose for ' + c.drive_filename });
       var typeSelect = ui.el('select', { 'aria-label': 'Type for ' + c.drive_filename });
       (vocab.type || []).forEach(function (t) { typeSelect.appendChild(ui.el('option', { value: t, text: t })); });

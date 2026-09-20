@@ -157,6 +157,33 @@ var NDocsRecords = (function () {
     return new Date(iso).toLocaleDateString();
   }
 
+  // mimeTypeLabel(mimeType) -> human label, e.g. "Google Sheet", "Excel Sheet". Falls back to
+  // the raw mimeType string for anything not in the map, rather than hiding it — an
+  // unrecognized type is still worth showing verbatim.
+  var MIME_TYPE_LABELS = {
+    'application/vnd.google-apps.document': 'Google Doc',
+    'application/vnd.google-apps.spreadsheet': 'Google Sheet',
+    'application/vnd.google-apps.presentation': 'Google Slides',
+    'application/vnd.google-apps.form': 'Google Form',
+    'application/vnd.google-apps.drawing': 'Google Drawing',
+    'application/vnd.google-apps.folder': 'Folder',
+    'application/vnd.google-apps.shortcut': 'Shortcut',
+    'application/pdf': 'PDF',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word Doc',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel Sheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
+    'application/msword': 'Word Doc',
+    'application/vnd.ms-excel': 'Excel Sheet',
+    'application/vnd.ms-powerpoint': 'PowerPoint',
+    'text/plain': 'Text file',
+    'text/csv': 'CSV'
+  };
+
+  function mimeTypeLabel(mimeType) {
+    if (!mimeType) return '';
+    return MIME_TYPE_LABELS[mimeType] || mimeType;
+  }
+
   // folderCell(record) -> Node — the containing folder: leaf name visible, full path as
   // the tooltip, the folder itself one click away. CONTEXT.md UC-22 forbids truncating a
   // path in a way that makes two folders indistinguishable, so the path is carried whole
@@ -302,6 +329,7 @@ var NDocsRecords = (function () {
     statusBadge: statusBadge,
     folderCell: folderCell,
     dateOrDash: dateOrDash,
+    mimeTypeLabel: mimeTypeLabel,
     resultsTable: resultsTable,
     detailCard: detailCard,
     RESOURCE_FIELD_GROUPS: RESOURCE_FIELD_GROUPS,
