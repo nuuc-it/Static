@@ -13,7 +13,14 @@
 // no work — not shown empty. Open findings is a separate maintenance disclosure (`#findings`);
 // scan job state announced via `NDocsUI.announce`. Calls whoami, list_team_inventory,
 // list_findings, get_certification, certify_resources, admin_list_candidates, scan_folders,
-// dismiss_candidate, register_resource, admin_set_team_state, admin_reassign_resources.
+// dismiss_candidate, register_resource, admin_set_team_state, admin_reassign_resources,
+// affirm_current, add_note, bulk_retire.
+//
+// The inventory selection drives a Bulk action bar (`NDocs-82s.7`, ux-components.md §Bulk
+// action bar) rather than the single admin-only reassign control this page carried before:
+// confirm-still-current, add-a-comment and archive are `teamMember` routes, so every team
+// member selects rows; only Reassign is admin-only and it is absent, not disabled, for anyone
+// else. Supersession stays on resource.html — it needs a successor per document.
 //
 // Candidate review (`#candidates`) is not limited to the `proposed` queue: a state selector
 // also shows `ignored`/`unevaluable` candidates — scan results that were previously completely
@@ -42,9 +49,15 @@
   var CANDIDATE_STATES = ['proposed', 'ignored', 'unevaluable'];
   var CANDIDATE_STATE_LABELS = { proposed: 'Waiting review', ignored: 'Ignored by scan', unevaluable: 'Unevaluable' };
   var latestCycle = null;
+  // The records the inventory last drew, so a bulk confirmation can name the selected ones by
+  // Doc ID and title without re-fetching them.
+  var latestRecords = [];
   var currentCandidateState = 'proposed';
-  // Bulk-reassign selection persists across every re-render `renderInventory` draws.
-  var reassignSelection = new Set();
+  // The inventory selection the Bulk action bar acts on (`NDocs-82s.7`). Cleared on every
+  // re-render `renderInventory` draws — the bar's own disabled state is derived from this Set's
+  // size through `NDocsRecords`' `onSelectionChange`, never from a separately tracked count.
+  var inventorySelection = new Set();
+  var bulkBar = null;
 
   // A fragment link (from a task card's own href, or an external deep link) should land on an
   // OPEN section, not a collapsed one — same rule `page-tools.js`'s `load()` applies.
@@ -196,7 +209,9 @@
     : null;
 
   function renderInventory(data, principal) {
-    reassignSelection.clear();
+    inventorySelection.clear();
+    bulkBar = null;
+    latestRecords = data.records || [];
     if (!data.records.length) {
       sections.inventory.empty({ message: 'This team has no catalogued resources yet.', meta: '0 resources' });
       return;
@@ -229,13 +244,17 @@
       return { labelNode: labelNode, count: folder.count, records: byFolder[folder.folderId || ''] || [] };
     });
 
+    // Selection is offered to every team member, not only an admin: the lifecycle actions in
+    // the bar (confirm current, comment, archive) are `teamMember` routes. Which actions appear
+    // over the selection is the bar's decision, not the table's (ux-components.md).
     var body = ui.el('div', {}, [
       NDocsRecords.groupedResultsTable(groups, {
         hideFolder: true, findingCounts: openCounts,
-        selectable: isAdmin, selectedIds: isAdmin ? reassignSelection : undefined
+        selectable: true, selectedIds: inventorySelection,
+        onSelectionChange: function (count) { if (bulkBar) bulkBar.setCount(count); }
       })
     ]);
-    if (isAdmin) body.appendChild(renderBulkReassign());
+    body.appendChild(renderBulkActions(isAdmin));
 
     var metaText = data.records.length + ' resource' + (data.records.length === 1 ? '' : 's');
     sections.inventory.populate(body, metaText);
@@ -244,43 +263,199 @@
     // Certification which only open when there's a task or a deep link.
   }
 
-  function renderBulkReassign() {
-    var toTeamSelect = ui.el('select', { id: 'ndocs-bulk-reassign-team' });
-    toTeamSelect.appendChild(ui.el('option', { value: '', text: '(unresolved queue)' }));
-    var vocabData = NDocsVocab.current();
-    (vocabData && vocabData.teams || []).forEach(function (t) {
-      toTeamSelect.appendChild(ui.el('option', { value: t.teamId, text: t.name }));
-    });
-    var reassign = ui.el('button', { type: 'button', class: 'button', text: 'Reassign selected' });
-    reassign.addEventListener('click', function () {
-      var ids = Array.from(reassignSelection);
-      if (!ids.length) { ui.toast('Select at least one resource.', 'warn'); return; }
-      var destName = toTeamSelect.options[toTeamSelect.selectedIndex] ? toTeamSelect.options[toTeamSelect.selectedIndex].text : '(unresolved queue)';
+  // ---- bulk action bar (ux-components.md §Bulk action bar, `NDocs-82s.7`) ----
+
+  // One bar over the inventory selection, replacing the single hardcoded reassign control this
+  // page used to carry. Order is the Action bar's: primary, secondary, admin-only, then the
+  // destructive one with visible separation. Every action opens the Confirmation dialog naming
+  // the affected records first (ADR-0012 §8 — bulk and destructive operations require a review
+  // step) and reports applied/skipped counts, never a bare "done".
+  //
+  // With nothing selected every action is `disabled`, so the bar states the precondition before
+  // the click rather than toasting "select at least one" after it. An action the viewer is not
+  // entitled to — Reassign, administrator-only — is ABSENT, not disabled: a disabled control
+  // here means "nothing is selected" and the two must not be confused.
+  //
+  // Supersession is deliberately not here: it needs a successor per document
+  // (`bulk_retire` refuses `superseded`), so it stays on resource.html.
+  function renderBulkActions(isAdmin) {
+    var countEl = ui.el('span', { class: 'ndocs-bulk-bar__count', role: 'status', text: '0 selected' });
+    var actions = [];
+
+    function action(spec) {
+      var button = ui.el('button', { type: 'button', class: spec.class || 'button', text: spec.label });
+      button.disabled = true;
+      button.addEventListener('click', function () { spec.run(button); });
+      actions.push(button);
+      return button;
+    }
+
+    // `selectedRecords()` is read at click time, not at render time: the selection changes
+    // under the bar without it being rebuilt.
+    function selectedIds() { return Array.from(inventorySelection); }
+
+    function confirmThen(spec, run) {
+      var ids = selectedIds();
+      if (!ids.length) return;
       ui.confirm({
-        title: 'Reassign resources',
-        body: 'Move ' + ids.length + ' resource(s) to ' + destName + '.',
-        confirmLabel: 'Reassign'
+        title: spec.title,
+        body: [ui.el('p', { text: spec.consequence }), affectedList(ids)].concat(spec.extra || []),
+        confirmLabel: spec.confirmLabel,
+        danger: !!spec.danger
       }).then(function (confirmed) {
-        if (!confirmed) return;
-        reassign.disabled = true;
-        NDocsTransport.call('admin_reassign_resources', { resourceIds: ids, toTeamId: toTeamSelect.value || undefined })
-          .then(function (result) {
-            reassign.disabled = false;
-            ui.toast('Applied: ' + result.applied.length + ', skipped: ' + result.skipped.length + '.', 'info');
-            load();
-          }).catch(function (err) {
-            reassign.disabled = false;
-            ui.toast('Could not reassign: ' + err.message, 'warn');
-          });
+        if (confirmed) run(ids);
       });
+    }
+
+    function call(actionName, payload, verb) {
+      setBusy(true);
+      NDocsTransport.call(actionName, payload)
+        .then(function (result) {
+          setBusy(false);
+          var applied = (result.applied || []).length;
+          var skipped = (result.skipped || []).length;
+          var message = verb + ' ' + applied + ' resource' + (applied === 1 ? '' : 's') +
+            (skipped ? ', skipped ' + skipped : '') + '.';
+          ui.announce(message);
+          ui.toast(message, skipped ? 'warn' : 'info');
+          load();
+        })
+        .catch(function (err) {
+          setBusy(false);
+          ui.toast('Could not ' + verb.toLowerCase() + ': ' + err.message, 'warn');
+        });
+    }
+
+    var affirm = action({
+      label: 'Confirm still current', class: 'button button--primary',
+      run: function () {
+        confirmThen({
+          title: 'Confirm still current',
+          consequence: 'This records today as the date these were last confirmed current. It does not change when the team\'s next review is due.',
+          confirmLabel: 'Confirm still current'
+        }, function (ids) {
+          call('affirm_current', { teamId: currentTeamId, resourceIds: ids }, 'Confirmed');
+        });
+      }
     });
-    return ui.el('div', { class: 'surface' }, [
-      ui.el('div', { class: 'field' }, [
-        ui.el('label', { for: 'ndocs-bulk-reassign-team', text: 'Reassign selected resources (administrator)' }),
-        toTeamSelect
-      ]),
-      ui.el('div', { class: 'button-row' }, [reassign])
+
+    var comment = action({
+      label: 'Add comment…',
+      run: function () {
+        var noteInput = ui.el('input', { type: 'text', id: 'ndocs-bulk-note', 'aria-label': 'Comment' });
+        var field = ui.el('div', { class: 'field' }, [
+          ui.el('label', { for: 'ndocs-bulk-note', text: 'Comment' }), noteInput
+        ]);
+        confirmThen({
+          title: 'Add a comment',
+          consequence: 'The comment is recorded against each of these documents and shown with the record. It is not a problem report and nobody has to clear it.',
+          confirmLabel: 'Add comment',
+          extra: [field]
+        }, function (ids) {
+          if (!noteInput.value) { ui.toast('Enter a comment first.', 'warn'); return; }
+          call('add_note', { teamId: currentTeamId, resourceIds: ids, note: noteInput.value }, 'Commented on');
+        });
+      }
+    });
+
+    var reassignSelect = null;
+    var reassignButton = null;
+    if (isAdmin) {
+      reassignSelect = ui.el('select', { id: 'ndocs-bulk-reassign-team', 'aria-label': 'Reassign to team' });
+      reassignSelect.appendChild(ui.el('option', { value: '', text: '(unresolved queue)' }));
+      var vocabData = NDocsVocab.current();
+      (vocabData && vocabData.teams || []).forEach(function (t) {
+        reassignSelect.appendChild(ui.el('option', { value: t.teamId, text: t.name }));
+      });
+      reassignButton = action({
+        label: 'Reassign…',
+        run: function () {
+          var destName = reassignSelect.options[reassignSelect.selectedIndex]
+            ? reassignSelect.options[reassignSelect.selectedIndex].text : '(unresolved queue)';
+          confirmThen({
+            title: 'Reassign resources',
+            consequence: 'These move to ' + destName + '. Each keeps its Doc ID, which then names the team it came from (ADR-0004).',
+            confirmLabel: 'Reassign'
+          }, function (ids) {
+            call('admin_reassign_resources', { resourceIds: ids, toTeamId: reassignSelect.value || undefined }, 'Reassigned');
+          });
+        }
+      });
+    }
+
+    var archiveDisposition = ui.el('select', { id: 'ndocs-bulk-disposition', 'aria-label': 'Disposition' });
+    ['archived', 'withdrawn'].forEach(function (d) {
+      archiveDisposition.appendChild(ui.el('option', { value: d, text: d }));
+    });
+    var archive = action({
+      label: 'Archive…', class: 'button button--danger',
+      run: function () {
+        var reasonInput = ui.el('input', { type: 'text', id: 'ndocs-bulk-reason', 'aria-label': 'Reason' });
+        confirmThen({
+          title: 'Retire resources',
+          consequence: 'These stop appearing in the default catalog search and no longer certify. Superseding one document by another is done on its own record, not here.',
+          confirmLabel: 'Retire resources',
+          danger: true,
+          extra: [
+            ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-bulk-disposition', text: 'Disposition' }), archiveDisposition]),
+            ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-bulk-reason', text: 'Reason' }), reasonInput])
+          ]
+        }, function (ids) {
+          call('bulk_retire', {
+            teamId: currentTeamId, resourceIds: ids,
+            disposition: archiveDisposition.value,
+            reason: reasonInput.value || 'Retired from the team inventory'
+          }, 'Retired');
+        });
+      }
+    });
+
+    function setBusy(busy) {
+      actions.forEach(function (b) { b.disabled = busy || inventorySelection.size === 0; });
+      if (reassignSelect) reassignSelect.disabled = busy;
+    }
+
+    var row = [countEl];
+    if (reassignSelect) {
+      row.push(ui.el('div', { class: 'field field--inline' }, [
+        ui.el('label', { for: 'ndocs-bulk-reassign-team', text: 'Reassign to' }), reassignSelect
+      ]));
+    }
+    var bar = ui.el('div', {
+      class: 'surface ndocs-bulk-bar', role: 'group', 'aria-label': 'Bulk actions'
+    }, [
+      ui.el('div', { class: 'ndocs-bulk-bar__status' }, row),
+      ui.el('div', { class: 'button-row' }, [affirm, comment].concat(reassignButton ? [reassignButton] : [])),
+      ui.el('div', { class: 'button-row actions-danger' }, [archive])
     ]);
+
+    bulkBar = {
+      setCount: function (count) {
+        countEl.textContent = count + ' selected';
+        actions.forEach(function (b) { b.disabled = count === 0; });
+      }
+    };
+    bulkBar.setCount(inventorySelection.size);
+    return bar;
+  }
+
+  // The affected-records list every bulk confirmation carries (ux-components.md: named by Doc ID
+  // and title, capped, with "and N more" beyond the cap) — the review step, not decoration.
+  var BULK_CONFIRM_LIST_CAP = 8;
+  function affectedList(ids) {
+    var byId = {};
+    (latestRecords || []).forEach(function (r) { byId[r.resource_id] = r; });
+    var list = ui.el('ul', { class: 'ndocs-bulk-affected' });
+    ids.slice(0, BULK_CONFIRM_LIST_CAP).forEach(function (id) {
+      var record = byId[id];
+      list.appendChild(ui.el('li', {
+        text: record ? ((record.doc_id ? record.doc_id + ' — ' : '') + record.title) : id
+      }));
+    });
+    if (ids.length > BULK_CONFIRM_LIST_CAP) {
+      list.appendChild(ui.el('li', { class: 'summary-meta', text: 'and ' + (ids.length - BULK_CONFIRM_LIST_CAP) + ' more' }));
+    }
+    return list;
   }
 
   // ---- findings — separate maintenance section ----

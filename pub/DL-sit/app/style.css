@@ -601,6 +601,27 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 }
 .ndocs-table__group-row .summary-meta { float: none; font-weight: 500; margin-left: var(--space-3); }
 
+/* ---- selection + bulk action bar (ux-components.md §Bulk action bar, `NDocs-82s.7`) ---- */
+/* The checkbox column carries no header text, so it is sized to the control rather than
+   sharing the remaining width with real columns. */
+.ndocs-select-cell { width: 2.25rem; text-align: center; vertical-align: middle; }
+.ndocs-table__group-row > th > input[type="checkbox"] { margin-right: var(--space-3); vertical-align: middle; }
+
+/* Sits directly below the listing it acts on — not fixed, not floating: it is part of the
+   Inventory section, and detaching it would separate the actions from their selection. */
+.ndocs-bulk-bar { margin-top: var(--space-4); display: grid; gap: var(--space-3); }
+.ndocs-bulk-bar__status {
+  display: flex; gap: var(--space-4); align-items: end; flex-wrap: wrap;
+  justify-content: space-between;
+}
+.ndocs-bulk-bar__count { font-weight: 650; }
+.field--inline { grid-auto-flow: column; align-items: center; gap: .5rem; }
+.field--inline label { font-weight: 500; color: var(--ink-muted); font-size: .82rem; }
+/* The affected-records review list inside a bulk confirmation dialog. Capped in the markup, so
+   the scroll guard is for a long title, not a long list. */
+.ndocs-bulk-affected { margin: .35rem 0 .75rem; padding-left: 1.1rem; }
+.ndocs-bulk-affected li { overflow-wrap: anywhere; }
+
 .ndocs-folder { white-space: nowrap; }
 .ndocs-folder--unresolved { color: var(--ink-muted); font-style: italic; }
 .ndocs-folder-list { margin: .25rem 0 .75rem; padding-left: 1.1rem; }
@@ -666,6 +687,8 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
   .inventory-row { grid-template-columns: 1fr; }
   .button-row--split { display: grid; grid-template-columns: 1fr; }
   .actions-danger { margin-left: 0; }
+  .ndocs-bulk-bar__status { align-items: start; }
+  .field--inline { grid-auto-flow: row; align-items: start; }
   .footer-inner { display: block; }
   .summary-meta { float: none; display: block; margin: .2rem 0 0; }
   .section-card-header { align-items: start; flex-direction: column; }
@@ -676,5 +699,6 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
     display: block;
   }
   .ndocs-table thead { display: none; }
+  .ndocs-select-cell { width: auto; text-align: left; }
   .ndocs-table tr { border-bottom: 2px solid var(--border); padding: .5rem 0; }
 }

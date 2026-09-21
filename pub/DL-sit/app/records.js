@@ -221,9 +221,9 @@ var NDocsRecords = (function () {
     return n;
   }
 
-  function resultsHeadCells(opts) {
+  function resultsHeadCells(opts, selectAll) {
     var cells = [];
-    if (opts.selectable) cells.push(ui.el('th', { text: '' }));
+    if (opts.selectable) cells.push(ui.el('th', { class: 'ndocs-select-cell' }, [selectAll]));
     cells.push(
       ui.el('th', { text: 'Doc ID' }), ui.el('th', { text: 'Title' }),
       ui.el('th', { text: 'Type' })
@@ -239,7 +239,7 @@ var NDocsRecords = (function () {
   // groupedResultsTable share. The Doc ID cell carries the record's Purpose as its tooltip
   // (`title`) — the one place in a listing row a person can see what a document is for
   // without opening it.
-  function resultsRow(record, opts) {
+  function resultsRow(record, opts, selection) {
     var link = ui.el('a', {
       href: 'resource.html?id=' + encodeURIComponent(record.resource_id),
       text: record.title
@@ -250,13 +250,13 @@ var NDocsRecords = (function () {
     ]);
     var cells = [];
     if (opts.selectable) {
-      var checkbox = ui.el('input', { type: 'checkbox', 'aria-label': 'Select ' + (record.title || record.doc_id || record.resource_id) });
-      checkbox.addEventListener('change', function () {
-        if (!opts.selectedIds) return;
-        if (checkbox.checked) opts.selectedIds.add(record.resource_id);
-        else opts.selectedIds.delete(record.resource_id);
+      var checkbox = ui.el('input', {
+        type: 'checkbox',
+        'aria-label': 'Select ' + (record.title || record.doc_id || record.resource_id)
       });
-      cells.push(ui.el('td', {}, [checkbox]));
+      checkbox.addEventListener('change', function () { selection.setOne(record.resource_id, checkbox.checked); });
+      selection.registerRow(record.resource_id, checkbox);
+      cells.push(ui.el('td', { class: 'ndocs-select-cell' }, [checkbox]));
     }
     var docIdAttrs = { text: record.doc_id || '—' };
     if (record.purpose) docIdAttrs.title = record.purpose;
@@ -285,13 +285,19 @@ var NDocsRecords = (function () {
   function groupedResultsTable(groups, opts) {
     opts = opts || {};
     var colspan = resultsColumnCount(opts);
-    var thead = ui.el('thead', {}, [ui.el('tr', {}, resultsHeadCells(opts))]);
+    var selection = makeSelection(opts);
+    var thead = ui.el('thead', {}, [ui.el('tr', {}, resultsHeadCells(opts, selection.allBox('Select all resources')))]);
     var table = ui.el('table', { class: 'ndocs-table ndocs-results-table' }, [thead]);
     groups.forEach(function (group) {
       if (!group.records.length) return;
       var tbody = ui.el('tbody', { class: 'ndocs-table__group' });
       if (group.label || group.labelNode) {
-        var labelChildren = [group.labelNode || document.createTextNode(group.label)];
+        var labelChildren = [];
+        if (opts.selectable) {
+          var groupName = group.label || (group.labelNode && group.labelNode.textContent) || 'this group';
+          labelChildren.push(selection.groupBox('Select all in ' + groupName, group.records));
+        }
+        labelChildren.push(group.labelNode || document.createTextNode(group.label));
         labelChildren.push(ui.el('span', {
           class: 'summary-meta',
           text: (group.count != null ? group.count : group.records.length) +
@@ -301,10 +307,89 @@ var NDocsRecords = (function () {
           ui.el('th', { scope: 'colgroup', colspan: String(colspan) }, labelChildren)
         ]));
       }
-      group.records.forEach(function (record) { tbody.appendChild(resultsRow(record, opts)); });
+      group.records.forEach(function (record) { tbody.appendChild(resultsRow(record, opts, selection)); });
       table.appendChild(tbody);
     });
+    selection.sync();
     return table;
+  }
+
+  // makeSelection(opts) -> the one selection controller a rendered table owns, per
+  // ux-components.md §Grouped listing table "Selection". The selected ids live in the caller's
+  // own Set (`opts.selectedIds`) — this only reads and writes it, so a caller's bulk action
+  // reads the same Set back. `opts.onSelectionChange(count)` fires after every change, which is
+  // how a Bulk action bar updates its count and disabled state without the table re-rendering.
+  // A scope (whole table, one group) whose members are partly selected shows `indeterminate`
+  // rather than checked or clear — a tri-state checkbox is the only honest answer there.
+  // Inert when `opts.selectable` is false: every method is a no-op, so the non-selectable
+  // callers (`catalog.html`'s search results) pay nothing and need no branches of their own.
+  function makeSelection(opts) {
+    var ids = opts.selectable && opts.selectedIds ? opts.selectedIds : null;
+    var rowBoxes = {};          // resource_id -> checkbox
+    var scopes = [];            // { box, ids }  — the header box and one per group
+    // The header scope's member list. It is empty when the header box is built (the groups have
+    // not rendered yet) and is filled by `groupBox` as each group renders; every scope holds the
+    // array by reference, so the header box is correct by the time `sync()` runs.
+    var allIds = [];
+
+    function notify() {
+      if (typeof opts.onSelectionChange === 'function') opts.onSelectionChange(ids ? ids.size : 0);
+    }
+
+    function syncScopes() {
+      scopes.forEach(function (scope) {
+        var selected = scope.ids.filter(function (id) { return ids.has(id); }).length;
+        scope.box.checked = scope.ids.length > 0 && selected === scope.ids.length;
+        scope.box.indeterminate = selected > 0 && selected < scope.ids.length;
+      });
+    }
+
+    function scopeBox(label, memberIds) {
+      var box = ui.el('input', { type: 'checkbox', 'aria-label': label });
+      var scope = { box: box, ids: memberIds };
+      scopes.push(scope);
+      box.addEventListener('change', function () {
+        var checked = box.checked;
+        scope.ids.forEach(function (id) {
+          if (checked) ids.add(id); else ids.delete(id);
+          if (rowBoxes[id]) rowBoxes[id].checked = checked;
+        });
+        syncScopes();
+        notify();
+      });
+      return box;
+    }
+
+    return {
+      registerRow: function (id, box) {
+        if (!ids) return;
+        rowBoxes[id] = box;
+        box.checked = ids.has(id);
+      },
+      setOne: function (id, checked) {
+        if (!ids) return;
+        if (checked) ids.add(id); else ids.delete(id);
+        syncScopes();
+        notify();
+      },
+      // The header box's member list is every row the table will draw, so it is collected as
+      // the groups render — hence the shared array reference rather than a snapshot.
+      allBox: function (label) {
+        return ids ? scopeBox(label, allIds) : null;
+      },
+      groupBox: function (label, records) {
+        if (!ids) return null;
+        var memberIds = records.map(function (r) { return r.resource_id; });
+        memberIds.forEach(function (id) { if (allIds.indexOf(id) === -1) allIds.push(id); });
+        return scopeBox(label, memberIds);
+      },
+      sync: function () {
+        if (!ids) return;
+        syncScopes();
+        notify();
+      }
+    };
+
   }
 
   // resultsTable(records, opts?) -> Node — the listing table for search results
@@ -314,12 +399,13 @@ var NDocsRecords = (function () {
   // opts.hideFolder: true when the caller already names the folder some other way (a
   // group-header row in groupedResultsTable, or a page that omits it entirely) and
   // repeating it in every row would be noise.
-  // opts.selectable: true adds a leading checkbox column, admin-UI-restructure addendum
-  // (post-Stage-15, 2026-09-17) — team.html's bulk-reassign control, admin-only, wired
-  // straight into this table rather than a second listing. opts.selectedIds is the Set a
-  // checkbox's change toggles membership in; the caller owns the Set and reads it back when
-  // the bulk action runs. Off by default, so `catalog.html`'s and `team.html`'s read-only
-  // uses of this table are unaffected.
+  // opts.selectable: true adds a leading checkbox column, a select-all in the header and one
+  // per group-header row (post-Stage-15 addendum 2026-09-17, generalized 2026-09-21 by
+  // `NDocs-82s.7` from team.html's admin-only bulk-reassign control to its whole Bulk action
+  // bar). opts.selectedIds is the Set membership is toggled in; the caller owns the Set and
+  // reads it back when a bulk action runs. opts.onSelectionChange(count) fires after every
+  // change so an action bar can track the count without re-rendering the table. Off by
+  // default, so `catalog.html`'s read-only use of this table is unaffected.
   function resultsTable(records, opts) {
     return groupedResultsTable([{ records: records }], opts);
   }
