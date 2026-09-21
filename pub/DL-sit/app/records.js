@@ -208,12 +208,112 @@ var NDocsRecords = (function () {
   // location_kind beside it would say the same thing twice. The one case that needs more
   // than the path says is a personal Drive, and that is a warning chip, not a field.
 
+  // headCells(opts) -> Node[] — the header row cells for resultsTable/groupedResultsTable,
+  // and the count of columns a group-header row must span. Both callers derive their column
+  // count from this single source so a spanning group row can never drift out of sync with
+  // the header it groups under.
+  function resultsColumnCount(opts) {
+    var n = 3; // Doc ID, Title, Type
+    if (opts.selectable) n++;
+    if (!opts.hideFolder) n++;
+    n += 2; // Updated, Status
+    if (opts.findingCounts) n++;
+    return n;
+  }
+
+  function resultsHeadCells(opts) {
+    var cells = [];
+    if (opts.selectable) cells.push(ui.el('th', { text: '' }));
+    cells.push(
+      ui.el('th', { text: 'Doc ID' }), ui.el('th', { text: 'Title' }),
+      ui.el('th', { text: 'Type' })
+    );
+    if (!opts.hideFolder) cells.push(ui.el('th', { text: 'Folder' }));
+    cells.push(ui.el('th', { text: 'Updated' }));
+    cells.push(ui.el('th', { text: 'Status' }));
+    if (opts.findingCounts) cells.push(ui.el('th', { text: 'Open findings' }));
+    return cells;
+  }
+
+  // resultsRow(record, opts) -> Node — one <tr>, the row shape resultsTable/
+  // groupedResultsTable share. The Doc ID cell carries the record's Purpose as its tooltip
+  // (`title`) — the one place in a listing row a person can see what a document is for
+  // without opening it.
+  function resultsRow(record, opts) {
+    var link = ui.el('a', {
+      href: 'resource.html?id=' + encodeURIComponent(record.resource_id),
+      text: record.title
+    });
+    var statusCell = ui.el('td', {}, [
+      ui.el('span', { text: displayStatus(record) + ' ' }),
+      ui.el('span', { class: 'ndocs-chips' }, warningChips(record))
+    ]);
+    var cells = [];
+    if (opts.selectable) {
+      var checkbox = ui.el('input', { type: 'checkbox', 'aria-label': 'Select ' + (record.title || record.doc_id || record.resource_id) });
+      checkbox.addEventListener('change', function () {
+        if (!opts.selectedIds) return;
+        if (checkbox.checked) opts.selectedIds.add(record.resource_id);
+        else opts.selectedIds.delete(record.resource_id);
+      });
+      cells.push(ui.el('td', {}, [checkbox]));
+    }
+    var docIdAttrs = { text: record.doc_id || '—' };
+    if (record.purpose) docIdAttrs.title = record.purpose;
+    cells.push(
+      ui.el('td', docIdAttrs),
+      ui.el('td', {}, [link]),
+      ui.el('td', { text: record.type || '—' })
+    );
+    if (!opts.hideFolder) cells.push(ui.el('td', {}, [folderCell(record)]));
+    cells.push(ui.el('td', { text: dateOrDash(record.drive_modified_at) }));
+    cells.push(statusCell);
+    if (opts.findingCounts) {
+      var count = opts.findingCounts[record.resource_id] || 0;
+      cells.push(ui.el('td', { text: count ? String(count) : '—' }));
+    }
+    return ui.el('tr', {}, cells);
+  }
+
+  // groupedResultsTable(groups, opts?) -> Node — one <table>, one <thead>, one <tbody> per
+  // group (2026-09-20 vertical-space pass, `NDocs-ei1`). Replaces team.html's former one-
+  // <table>-per-folder disclosures: those cost a full `<thead>` plus disclosure chrome per
+  // folder and made columns impossible to line up folder to folder. A group with no records
+  // is skipped; a group with no `label` renders no group-header row at all — the degenerate
+  // single-group case is exactly what `resultsTable` below is built from.
+  // groups: [{ label, labelNode?, count?, records }]
+  function groupedResultsTable(groups, opts) {
+    opts = opts || {};
+    var colspan = resultsColumnCount(opts);
+    var thead = ui.el('thead', {}, [ui.el('tr', {}, resultsHeadCells(opts))]);
+    var table = ui.el('table', { class: 'ndocs-table ndocs-results-table' }, [thead]);
+    groups.forEach(function (group) {
+      if (!group.records.length) return;
+      var tbody = ui.el('tbody', { class: 'ndocs-table__group' });
+      if (group.label || group.labelNode) {
+        var labelChildren = [group.labelNode || document.createTextNode(group.label)];
+        labelChildren.push(ui.el('span', {
+          class: 'summary-meta',
+          text: (group.count != null ? group.count : group.records.length) +
+            ' resource' + ((group.count != null ? group.count : group.records.length) === 1 ? '' : 's')
+        }));
+        tbody.appendChild(ui.el('tr', { class: 'ndocs-table__group-row' }, [
+          ui.el('th', { scope: 'colgroup', colspan: String(colspan) }, labelChildren)
+        ]));
+      }
+      group.records.forEach(function (record) { tbody.appendChild(resultsRow(record, opts)); });
+      table.appendChild(tbody);
+    });
+    return table;
+  }
+
   // resultsTable(records, opts?) -> Node — the listing table for search results
   // (index.html) and team inventory (team.html), one row per record, Doc ID first
   // column. No separate Team column — the Doc ID prefix already names the team.
   // opts.findingCounts: { [resource_id]: count } adds an Open findings column.
-  // opts.hideFolder: true inside a folder-grouped inventory, where the group heading
-  // already names the folder and repeating it in every row is noise.
+  // opts.hideFolder: true when the caller already names the folder some other way (a
+  // group-header row in groupedResultsTable, or a page that omits it entirely) and
+  // repeating it in every row would be noise.
   // opts.selectable: true adds a leading checkbox column, admin-UI-restructure addendum
   // (post-Stage-15, 2026-09-17) — team.html's bulk-reassign control, admin-only, wired
   // straight into this table rather than a second listing. opts.selectedIds is the Set a
@@ -221,54 +321,7 @@ var NDocsRecords = (function () {
   // the bulk action runs. Off by default, so `catalog.html`'s and `team.html`'s read-only
   // uses of this table are unaffected.
   function resultsTable(records, opts) {
-    opts = opts || {};
-    var showFolder = !opts.hideFolder;
-    var headCells = [];
-    if (opts.selectable) headCells.push(ui.el('th', { text: '' }));
-    headCells.push(
-      ui.el('th', { text: 'Doc ID' }), ui.el('th', { text: 'Title' }),
-      ui.el('th', { text: 'Type' })
-    );
-    if (showFolder) headCells.push(ui.el('th', { text: 'Folder' }));
-    headCells.push(ui.el('th', { text: 'Updated' }));
-    headCells.push(ui.el('th', { text: 'Status' }));
-    if (opts.findingCounts) headCells.push(ui.el('th', { text: 'Open findings' }));
-    var thead = ui.el('thead', {}, [ui.el('tr', {}, headCells)]);
-    var tbody = ui.el('tbody', {});
-    records.forEach(function (record) {
-      var link = ui.el('a', {
-        href: 'resource.html?id=' + encodeURIComponent(record.resource_id),
-        text: record.title
-      });
-      var statusCell = ui.el('td', {}, [
-        ui.el('span', { text: displayStatus(record) + ' ' }),
-        ui.el('span', { class: 'ndocs-chips' }, warningChips(record))
-      ]);
-      var cells = [];
-      if (opts.selectable) {
-        var checkbox = ui.el('input', { type: 'checkbox', 'aria-label': 'Select ' + (record.title || record.doc_id || record.resource_id) });
-        checkbox.addEventListener('change', function () {
-          if (!opts.selectedIds) return;
-          if (checkbox.checked) opts.selectedIds.add(record.resource_id);
-          else opts.selectedIds.delete(record.resource_id);
-        });
-        cells.push(ui.el('td', {}, [checkbox]));
-      }
-      cells.push(
-        ui.el('td', { text: record.doc_id || '—' }),
-        ui.el('td', {}, [link]),
-        ui.el('td', { text: record.type || '—' })
-      );
-      if (showFolder) cells.push(ui.el('td', {}, [folderCell(record)]));
-      cells.push(ui.el('td', { text: dateOrDash(record.drive_modified_at) }));
-      cells.push(statusCell);
-      if (opts.findingCounts) {
-        var count = opts.findingCounts[record.resource_id] || 0;
-        cells.push(ui.el('td', { text: count ? String(count) : '—' }));
-      }
-      tbody.appendChild(ui.el('tr', {}, cells));
-    });
-    return ui.el('table', { class: 'ndocs-table ndocs-results-table' }, [thead, tbody]);
+    return groupedResultsTable([{ records: records }], opts);
   }
 
   // detailCard(record) -> Node — the full record view on resource.html. The folder path is
@@ -331,6 +384,7 @@ var NDocsRecords = (function () {
     dateOrDash: dateOrDash,
     mimeTypeLabel: mimeTypeLabel,
     resultsTable: resultsTable,
+    groupedResultsTable: groupedResultsTable,
     detailCard: detailCard,
     RESOURCE_FIELD_GROUPS: RESOURCE_FIELD_GROUPS,
     RESOURCE_STATUS_VALUES: RESOURCE_STATUS_VALUES

@@ -24,8 +24,14 @@
   'use strict';
 
   var ui = NDocsUI;
-  var summaryEl, tasksEl, inventoryEl, certifyEl, candidatesEl, findingsEl;
+  var summaryEl, settingsEl, tasksEl, inventoryEl, certifyEl, candidatesEl, findingsEl;
   var currentTeamId, currentPrincipal;
+  // Every disclosure section's persistent shell (NDocsShell.section, `NDocs-ei1`) — built
+  // once in `buildSections()`, before any fetch, so no section is ever absent from the page
+  // while its data loads. `summaryEl`/`tasksEl` are not disclosures (ux-components.md "loading
+  // is shown on the summary line... region-loading in the body applies only to non-disclosure
+  // regions") and stay on `NDocsShell.region` directly.
+  var sections = {};
   var FINDING_RESOLUTIONS = ['accept', 'reject', 'fixed', 'wont_fix'];
   var CERT_DISPOSITIONS = ['superseded', 'archived', 'withdrawn'];
   var TEAM_STATES = ['active', 'inactive', 'merged'];
@@ -75,14 +81,24 @@
         ui.el('span', { class: 'hero-meta-value', text: pair[1] })
       ]));
     });
-    var children = [ui.el('div', { class: 'entity-summary' }, [top, meta])];
-    if (currentPrincipal && currentPrincipal.isAdmin) {
-      children.push(renderTeamStateControl(team));
-    }
     summaryEl.textContent = '';
-    children.forEach(function (n) { summaryEl.appendChild(n); });
+    summaryEl.appendChild(ui.el('div', { class: 'entity-summary' }, [top, meta]));
+
+    // Team Settings (admin-only) is a persistent disclosure shell (`sections.settings`, built
+    // once in `buildSections`), not part of the summary render — `whoami` (already resolved by
+    // the time `load()` runs) decides whether it stays.
+    if (currentPrincipal && currentPrincipal.isAdmin) {
+      sections.settings.populate(renderTeamStateControl(team), '');
+    } else {
+      sections.settings.remove();
+    }
   }
 
+  // Content ONLY — no kicker/h2/wrapper of its own. Those used to be needed because this
+  // rendered directly after the entity summary's h1 as a bare `.surface`; now it fills
+  // `sections.settings`'s disclosure body, whose `<summary>Team Settings</summary>` already
+  // says what this is (ux-components.md "logical heading order" is unaffected — there is
+  // nothing here that could skip a level).
   function renderTeamStateControl(team) {
     var stateSelect = ui.el('select', { id: 'ndocs-team-state' });
     TEAM_STATES.forEach(function (s) {
@@ -104,12 +120,7 @@
         ui.toast('Could not update: ' + err.message, 'warn');
       });
     });
-    return ui.el('div', { class: 'surface' }, [
-      ui.el('div', { class: 'section-kicker', text: 'Administrator' }),
-      // h2, not h3 — this renders directly after the entity summary's h1, before any of the
-      // page's h2 section cards, so it must not skip a level (ux-components.md "logical
-      // heading order").
-      ui.el('h2', { class: 'section-title', text: 'Team state' }),
+    return ui.el('div', {}, [
       ui.el('div', { class: 'form-grid' }, [
         ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-team-state', text: 'State' }), stateSelect]),
         ui.el('div', { class: 'field' }, [ui.el('label', { text: 'Successor team' }), successorInput])
@@ -153,6 +164,15 @@
     tasksEl.appendChild(ui.el('div', { class: 'task-grid' }, cards));
   }
 
+  // ux-components.md "loading is shown on the summary line... region-loading in the body
+  // applies only to non-disclosure regions" — Tasks is not a disclosure (it is deliberately
+  // absent, not collapsed, when there is no work), so it gets a plain `region()` loading state
+  // rather than a `NDocsShell.section()` shell. `renderTasks` (called once `latestCycle` is
+  // known) always replaces this, whether or not it ends up rendering any cards.
+  function renderTasksLoading() {
+    NDocsShell.region(tasksEl, 'loading', { loadingText: 'Checking for pending work…' });
+  }
+
   function focusSection(el) {
     if (!el) return;
     var details = el.querySelector('details.disclosure');
@@ -164,62 +184,60 @@
 
   // ---- inventory by folder (dominant section card) ----
 
+  // Alphabetical, locale-aware, "Folder 2" before "Folder 10" — `sensitivity: 'base'` so case
+  // never reshuffles the list. The unresolved folder (no `folderId`) has no name to sort by
+  // and stays last, matching where it already sorted under the old first-occurrence order.
+  var FOLDER_COLLATOR = (typeof Intl !== 'undefined' && Intl.Collator)
+    ? new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
+    : null;
+
   function renderInventory(data, principal) {
-    inventoryEl.textContent = '';
     reassignSelection.clear();
-    var body = ui.el('div', {});
     if (!data.records.length) {
-      body.appendChild(ui.el('div', { class: 'empty-state' }, [
-        ui.el('p', { text: 'This team has no catalogued resources yet.' })
-      ]));
-    } else {
-      var isAdmin = !!(principal && principal.isAdmin);
-      var openCounts = {};
-      Object.keys(data.findingCounts || {}).forEach(function (id) {
-        openCounts[id] = data.findingCounts[id].open;
-      });
-      var byFolder = {};
-      data.records.forEach(function (r) {
-        var key = r.drive_folder_id || '';
-        (byFolder[key] = byFolder[key] || []).push(r);
-      });
-      var resolvedFolders = data.folders.filter(function (f) { return f.folderId; });
-      var unresolvedFolder = data.folders.filter(function (f) { return !f.folderId; })[0];
-      var ordered = unresolvedFolder ? resolvedFolders.concat([unresolvedFolder]) : resolvedFolders;
-
-      ordered.forEach(function (folder, idx) {
-        var records = byFolder[folder.folderId || ''] || [];
-        var label = folder.folderId ? (folder.name || folder.folderId) : 'Unresolved folder';
-        var summary = ui.el('summary', {}, [
-          document.createTextNode(label),
-          ui.el('span', { class: 'summary-meta', text: folder.count + ' resource' + (folder.count === 1 ? '' : 's') })
-        ]);
-        var content = ui.el('div', { class: 'disclosure-content' }, [
-          NDocsRecords.resultsTable(records, {
-            hideFolder: true, findingCounts: openCounts,
-            selectable: isAdmin, selectedIds: isAdmin ? reassignSelection : undefined
-          })
-        ]);
-        var details = ui.el('details', { class: 'disclosure' }, [summary, content]);
-        if (idx === 0) details.open = true;
-        body.appendChild(details);
-      });
-
-      if (isAdmin) body.appendChild(renderBulkReassign());
+      sections.inventory.empty({ message: 'This team has no catalogued resources yet.', meta: '0 resources' });
+      return;
     }
+    var isAdmin = !!(principal && principal.isAdmin);
+    var openCounts = {};
+    Object.keys(data.findingCounts || {}).forEach(function (id) {
+      openCounts[id] = data.findingCounts[id].open;
+    });
+    var byFolder = {};
+    data.records.forEach(function (r) {
+      var key = r.drive_folder_id || '';
+      (byFolder[key] = byFolder[key] || []).push(r);
+    });
+    var resolvedFolders = data.folders.filter(function (f) { return f.folderId; }).slice();
+    var unresolvedFolder = data.folders.filter(function (f) { return !f.folderId; })[0];
+    if (FOLDER_COLLATOR) {
+      resolvedFolders.sort(function (a, b) {
+        return FOLDER_COLLATOR.compare(a.name || a.folderId, b.name || b.folderId);
+      });
+    }
+    var ordered = unresolvedFolder ? resolvedFolders.concat([unresolvedFolder]) : resolvedFolders;
 
-    var summary = ui.el('summary', {}, [
-      document.createTextNode('Resources by folder'),
-      ui.el('span', { class: 'summary-meta', text: data.records.length + ' resource' + (data.records.length === 1 ? '' : 's') })
+    var groups = ordered.map(function (folder) {
+      var labelNode = folder.folderId
+        ? (folder.url
+          ? ui.el('a', { class: 'ndocs-folder', href: folder.url, title: folder.path || folder.name || folder.folderId, target: '_blank', rel: 'noopener', text: folder.name || folder.folderId })
+          : ui.el('span', { class: 'ndocs-folder', title: folder.path || folder.name || folder.folderId, text: folder.name || folder.folderId }))
+        : ui.el('span', { class: 'ndocs-folder ndocs-folder--unresolved', text: 'Unresolved folder' });
+      return { labelNode: labelNode, count: folder.count, records: byFolder[folder.folderId || ''] || [] };
+    });
+
+    var body = ui.el('div', {}, [
+      NDocsRecords.groupedResultsTable(groups, {
+        hideFolder: true, findingCounts: openCounts,
+        selectable: isAdmin, selectedIds: isAdmin ? reassignSelection : undefined
+      })
     ]);
+    if (isAdmin) body.appendChild(renderBulkReassign());
+
+    var metaText = data.records.length + ' resource' + (data.records.length === 1 ? '' : 's');
+    sections.inventory.populate(body, metaText);
     // The dominant content of the page (ux-components.md's "inventory-by-folder as the
-    // dominant section card") — open by default, unlike Scanning/Certification which only
-    // open when there's a task or a deep link, per this pass's own disclosure-section rule.
-    var details = ui.el('details', { class: 'disclosure', id: 'inventory', open: 'open' }, [
-      summary, ui.el('div', { class: 'disclosure-content' }, [body])
-    ]);
-    openIfLinked(details);
-    inventoryEl.appendChild(details);
+    // dominant section card") — stays open (set at shell construction), unlike Scanning/
+    // Certification which only open when there's a task or a deep link.
   }
 
   function renderBulkReassign() {

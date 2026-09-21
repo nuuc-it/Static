@@ -158,6 +158,54 @@ var NDocsShell = (function () {
     return box;
   }
 
+  // section(opts) -> handle — the persistent disclosure shell (docs/interfaces/ux-components.md
+  // "Disclosure section"). `region()` starts by clearing the container, so it can never show a
+  // loading state without also destroying the section's own heading/summary — exactly what was
+  // missing on team.html, where sections rendered nothing at all until their fetch resolved.
+  // `section()` renders the shell synchronously, once; every later state change touches only the
+  // body (via `region()`) or the `summary-meta` slot's text — the `<details>` node's identity is
+  // stable across every re-render a mutation (register/dismiss/certify/…) triggers.
+  //   opts: { container, id, title, open, loadingText }
+  // handle: { details, body, meta(text), busy(text), populate(node, metaText), empty(opts),
+  //   error(opts), denied(message), expand(), remove() }
+  function section(opts) {
+    opts = opts || {};
+    var metaEl = el('span', { class: 'summary-meta', text: opts.loadingText || 'loading…' });
+    var summary = el('summary', {}, [document.createTextNode(opts.title || ''), metaEl]);
+    var body = el('div', { class: 'disclosure-content' });
+    var details = el('details', { class: 'disclosure', 'aria-busy': 'true' }, [summary, body]);
+    if (opts.id) details.id = opts.id;
+    if (opts.open) details.open = true;
+    if (opts.container) opts.container.appendChild(details);
+
+    function setMeta(text) { metaEl.textContent = text || ''; }
+    // busy(text) — a section re-entering a loading state (e.g. a mutation triggering a reload)
+    // shows `text` (typically "syncing…") in place of its count, without touching the body or
+    // its open/closed state — unlike `region()`'s loading state, nothing here is destroyed.
+    function busy(text) {
+      details.setAttribute('aria-busy', 'true');
+      setMeta(text || opts.loadingText || 'loading…');
+    }
+    function settle(metaText) {
+      details.setAttribute('aria-busy', 'false');
+      if (metaText !== undefined) setMeta(metaText);
+    }
+    function populate(node, metaText) { settle(metaText); region(body, 'populated', { node: node }); }
+    function empty(o) { o = o || {}; settle(o.meta); region(body, 'empty', o); }
+    function error(o) { o = o || {}; settle(o.meta); region(body, 'error', o); }
+    function denied(message) { settle(); region(body, 'permission-denied', { message: message }); }
+    // expand() is one-way — a user may open a section while it is still loading; a later
+    // data-driven open-rule check must never re-close it, so nothing here ever sets `open = false`.
+    function expand() { details.open = true; }
+    function remove() { if (details.parentNode) details.parentNode.removeChild(details); }
+
+    return {
+      details: details, body: body, meta: setMeta, busy: busy,
+      populate: populate, empty: empty, error: error, denied: denied,
+      expand: expand, remove: remove
+    };
+  }
+
   // mount(opts) — opts:
   //   activePage: string matching a nav entry, for aria-current
   //   pageContent: the <main> element already in the page's own markup (hidden until signed in)
@@ -252,6 +300,7 @@ var NDocsShell = (function () {
   return {
     mount: mount,
     region: region,
+    section: section,
     showError: showError,
     clearError: clearError
   };
