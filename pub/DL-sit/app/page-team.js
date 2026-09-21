@@ -1,15 +1,19 @@
 // app/page-team.js — team.html controller (Stage 15.6, `NDocs-c71`; disclosure-section pass
-// 2026-09-19). Rebuilt onto the shared UI system (ADR-0012): team entity summary panel; "Needs
-// your attention" task cards (open certification, waiting scan candidates) ordered by urgency
-// and absent entirely when there is no work — not shown empty; Inventory, Scanning, and
-// Certification are each a deep-linkable `<details>` disclosure section (`#inventory`,
-// `#candidates`, `#certify`), same convention as `tools.html` ("never a tab widget",
-// ux-components.md) — a team with many folders/candidates never forces one giant always-open
-// page; folder rows inside Inventory stay their own nested disclosures; open findings is a
-// separate maintenance disclosure (`#findings`); scan job state announced via
-// `NDocsUI.announce`. Calls whoami, list_team_inventory, list_findings, get_certification,
-// certify_resources, admin_list_candidates, scan_folders, dismiss_candidate, register_resource,
-// admin_set_team_state, admin_reassign_resources.
+// 2026-09-19; persistent-shell/grouped-table pass 2026-09-20, `NDocs-ei1`). Rebuilt onto the
+// shared UI system (ADR-0012): team entity summary panel; admin-only Team Settings, Inventory,
+// Scanning, and Certification are each a deep-linkable `NDocsShell.section()` disclosure
+// (`#team-settings`, `#inventory`, `#candidates`, `#certify`), same convention as `tools.html`
+// ("never a tab widget", ux-components.md) — a team with many folders/candidates never forces
+// one giant always-open page. Every section's shell renders synchronously before its data is
+// fetched, with a "loading…"/"syncing…" indicator in its summary count slot while the fetch is
+// outstanding (`NDocs-ei1`) — no section is ever silently absent while the page loads. Inventory
+// is one Grouped listing table, rows grouped by folder (alphabetized), not a `<details>` nested
+// per folder — see ux-components.md's Grouped listing table component. "Needs your attention"
+// task cards (open certification only) are ordered by urgency and absent entirely when there is
+// no work — not shown empty. Open findings is a separate maintenance disclosure (`#findings`);
+// scan job state announced via `NDocsUI.announce`. Calls whoami, list_team_inventory,
+// list_findings, get_certification, certify_resources, admin_list_candidates, scan_folders,
+// dismiss_candidate, register_resource, admin_set_team_state, admin_reassign_resources.
 //
 // Candidate review (`#candidates`) is not limited to the `proposed` queue: a state selector
 // also shows `ignored`/`unevaluable` candidates — scan results that were previously completely
@@ -39,7 +43,7 @@
   var CANDIDATE_STATE_LABELS = { proposed: 'Waiting review', ignored: 'Ignored by scan', unevaluable: 'Unevaluable' };
   var latestCycle = null;
   var currentCandidateState = 'proposed';
-  // Bulk-reassign selection persists across every per-folder table `renderInventory` draws.
+  // Bulk-reassign selection persists across every re-render `renderInventory` draws.
   var reassignSelection = new Set();
 
   // A fragment link (from a task card's own href, or an external deep link) should land on an
@@ -282,57 +286,46 @@
   // ---- findings — separate maintenance section ----
 
   function renderFindings(findings) {
-    findingsEl.textContent = '';
-    var summary = ui.el('summary', {}, [
-      document.createTextNode('Open findings'),
-      ui.el('span', { class: 'summary-meta', text: findings.length + ' open' })
-    ]);
-    var body;
     if (!findings.length) {
-      body = ui.el('div', { class: 'disclosure-content' }, [
-        ui.el('div', { class: 'empty-state' }, [ui.el('p', { text: 'No open findings.' })])
-      ]);
-    } else {
-      var list = ui.el('div', {});
-      findings.forEach(function (f) {
-        var select = ui.el('select', { 'aria-label': 'Resolution for ' + f.kind });
-        FINDING_RESOLUTIONS.forEach(function (r) { select.appendChild(ui.el('option', { value: r, text: r })); });
-        var note = ui.el('input', { type: 'text', placeholder: 'Note (optional)', 'aria-label': 'Resolution note' });
-        var button = ui.el('button', { type: 'button', class: 'button', text: 'Resolve' });
-        button.addEventListener('click', function () {
-          NDocsTransport.call('resolve_finding', {
-            findingId: f.finding_id, rev: f.rev, resolution: select.value, note: note.value || undefined
-          }).then(function () {
-            ui.announce('Finding resolved.');
-            ui.toast('Finding resolved.', 'info');
-            load();
-          }).catch(function (err) { ui.toast('Could not resolve: ' + err.message, 'warn'); });
-        });
-        var resourceLink = f.resource_id
-          ? ui.el('a', { href: 'resource.html?id=' + encodeURIComponent(f.resource_id), text: f.resource_id })
-          : ui.el('span', { text: '—' });
-        list.appendChild(ui.el('div', { class: 'status-panel status-panel--danger' }, [
-          ui.el('div', {}, [
-            ui.el('strong', { text: f.kind }),
-            ui.el('p', {}, [document.createTextNode('Resource: '), resourceLink, document.createTextNode(' · detected ' + NDocsRecords.dateOrDash(f.detected_at))])
-          ]),
-          ui.el('div', { class: 'button-row' }, [select, note, button])
-        ]));
-      });
-      body = ui.el('div', { class: 'disclosure-content' }, [list]);
+      sections.findings.empty({ message: 'No open findings.', meta: '0 open' });
+      return;
     }
-    var details = ui.el('details', { class: 'disclosure', id: 'findings' }, [summary, body]);
-    if (findings.length) details.open = true;
-    openIfLinked(details);
-    findingsEl.appendChild(details);
+    var list = ui.el('div', {});
+    findings.forEach(function (f) {
+      var select = ui.el('select', { 'aria-label': 'Resolution for ' + f.kind });
+      FINDING_RESOLUTIONS.forEach(function (r) { select.appendChild(ui.el('option', { value: r, text: r })); });
+      var note = ui.el('input', { type: 'text', placeholder: 'Note (optional)', 'aria-label': 'Resolution note' });
+      var button = ui.el('button', { type: 'button', class: 'button', text: 'Resolve' });
+      button.addEventListener('click', function () {
+        NDocsTransport.call('resolve_finding', {
+          findingId: f.finding_id, rev: f.rev, resolution: select.value, note: note.value || undefined
+        }).then(function () {
+          ui.announce('Finding resolved.');
+          ui.toast('Finding resolved.', 'info');
+          load();
+        }).catch(function (err) { ui.toast('Could not resolve: ' + err.message, 'warn'); });
+      });
+      var resourceLink = f.resource_id
+        ? ui.el('a', { href: 'resource.html?id=' + encodeURIComponent(f.resource_id), text: f.resource_id })
+        : ui.el('span', { text: '—' });
+      list.appendChild(ui.el('div', { class: 'status-panel status-panel--danger' }, [
+        ui.el('div', {}, [
+          ui.el('strong', { text: f.kind }),
+          ui.el('p', {}, [document.createTextNode('Resource: '), resourceLink, document.createTextNode(' · detected ' + NDocsRecords.dateOrDash(f.detected_at))])
+        ]),
+        ui.el('div', { class: 'button-row' }, [select, note, button])
+      ]));
+    });
+    sections.findings.populate(list, findings.length + ' open');
+    sections.findings.expand();
   }
 
   // ---- certify panel ----
 
   function renderCertify(cycle, entries) {
-    certifyEl.textContent = '';
     latestCycle = cycle;
     if (cycle.state === 'certified_empty') {
+      sections.certify.remove();
       renderTasks();
       return;
     }
@@ -412,23 +405,17 @@
     });
 
     var overdue = cycle.due_at && new Date(cycle.due_at).getTime() < Date.now();
-    var summary = ui.el('summary', {}, [
-      document.createTextNode('Certify this inventory'),
-      ui.el('span', { class: 'summary-meta', text: cycle.state + (cycle.due_at ? ' · due ' + new Date(cycle.due_at).toLocaleDateString() : '') })
+    var body = ui.el('div', {}, [
+      ui.el('p', { text: 'Cycle ' + cycle.state + (cycle.due_at ? ' — due ' + new Date(cycle.due_at).toLocaleDateString() : '') + '. Every resource below starts confirmed; uncheck one to record an exception instead.' }),
+      table,
+      ui.el('div', { class: 'button-row' }, [submit])
     ]);
-    var details = ui.el('details', { class: 'disclosure', id: 'certify' }, [
-      summary,
-      ui.el('div', { class: 'disclosure-content' }, [
-        ui.el('p', { text: 'Cycle ' + cycle.state + (cycle.due_at ? ' — due ' + new Date(cycle.due_at).toLocaleDateString() : '') + '. Every resource below starts confirmed; uncheck one to record an exception instead.' }),
-        table,
-        ui.el('div', { class: 'button-row' }, [submit])
-      ])
-    ]);
+    var metaText = cycle.state + (cycle.due_at ? ' · due ' + new Date(cycle.due_at).toLocaleDateString() : '');
+    sections.certify.populate(body, metaText);
     // Open when this is an active task (matches the "Certify now" task card's own overdue/due
     // condition, `renderTasks`) — never open for a routine, not-yet-due cycle by default.
-    if (overdue || cycle.state !== 'certified') details.open = true;
-    openIfLinked(details);
-    certifyEl.appendChild(details);
+    // `expand()` is one-way, so a person who already opened it stays opened.
+    if (overdue || cycle.state !== 'certified') sections.certify.expand();
     renderTasks();
   }
 
@@ -583,7 +570,6 @@
   function renderCandidates(candidates, state) {
     state = state || 'proposed';
     currentCandidateState = state;
-    candidatesEl.textContent = '';
 
     var scanButton = ui.el('button', { type: 'button', class: 'button button--primary', text: 'Scan for new' });
     scanButton.addEventListener('click', function () {
@@ -627,24 +613,18 @@
       body = list;
     }
 
-    var summary = ui.el('summary', {}, [
-      document.createTextNode('Uncatalogued documents found by scanning'),
-      ui.el('span', { class: 'summary-meta', text: candidates.length + ' ' + (CANDIDATE_STATE_LABELS[state] || state).toLowerCase() })
-    ]);
-    var details = ui.el('details', { class: 'disclosure', id: 'candidates' }, [
-      summary,
-      ui.el('div', { class: 'disclosure-content' }, [
-        ui.el('div', { class: 'button-row' }, [scanButton]),
-        ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-candidate-state', text: 'Show' }), stateSelect]),
-        body
-      ])
-    ]);
+    var metaText = candidates.length + ' ' + (CANDIDATE_STATE_LABELS[state] || state).toLowerCase();
+    sections.candidates.populate(ui.el('div', {}, [
+      ui.el('div', { class: 'button-row' }, [scanButton]),
+      ui.el('div', { class: 'field' }, [ui.el('label', { for: 'ndocs-candidate-state', text: 'Show' }), stateSelect]),
+      body
+    ]), metaText);
     // Open when there's a proposed queue waiting, or when a state switch/deep link is what got
-    // us here in the first place.
-    if (state === 'proposed' && candidates.length > 0) details.open = true;
-    if (state !== 'proposed') details.open = true;
-    openIfLinked(details);
-    candidatesEl.appendChild(details);
+    // us here in the first place. `expand()` is one-way — it never re-collapses a section the
+    // caller (or the person) already opened.
+    if ((state === 'proposed' && candidates.length > 0) || state !== 'proposed') {
+      sections.candidates.expand();
+    }
   }
 
   function dismiss(candidate, scope, button) {
@@ -661,56 +641,99 @@
 
   function loadCandidates(state) {
     state = state || 'proposed';
-    NDocsShell.region(candidatesEl, 'loading', { loadingText: 'Loading scan candidates…' });
+    ensureSection('candidates').busy(sections.candidates.body.childNodes.length ? 'syncing…' : 'loading…');
     NDocsTransport.call('admin_list_candidates', { teamId: currentTeamId, triageState: state }).then(function (data) {
       renderCandidates(data.candidates, state);
     }).catch(function (err) {
       if (err.name === 'NotAuthorized') {
-        candidatesEl.textContent = ''; // same team-membership gate as list_team_inventory — a refusal there already shows.
+        sections.candidates.remove(); // same team-membership gate as list_team_inventory — a refusal there already shows.
         return;
       }
-      NDocsShell.region(candidatesEl, 'error', { message: 'Could not load scan candidates: ' + err.message, onRetry: function () { loadCandidates(state); } });
+      sections.candidates.error({ message: 'Could not load scan candidates: ' + err.message, onRetry: function () { loadCandidates(state); } });
     });
   }
 
   function loadCertify() {
+    ensureSection('certify').busy(sections.certify.body.childNodes.length ? 'syncing…' : 'loading…');
     NDocsTransport.call('get_certification', { teamId: currentTeamId }).then(function (data) {
       renderCertify(data.cycle, data.entries);
     }).catch(function (err) {
-      certifyEl.textContent = '';
       latestCycle = null;
-      if (err.code === 'not_found') { renderTasks(); return; } // no open cycle — a quiet, expected state
-      if (err.name === 'NotAuthorized') { renderTasks(); return; } // membership refusal already shown by the inventory panel
-      NDocsShell.region(certifyEl, 'error', { message: 'Could not load certification: ' + err.message, onRetry: loadCertify });
+      if (err.code === 'not_found') { sections.certify.remove(); renderTasks(); return; } // no open cycle — a quiet, expected state
+      if (err.name === 'NotAuthorized') { sections.certify.remove(); renderTasks(); return; } // membership refusal already shown by the inventory panel
+      sections.certify.error({ message: 'Could not load certification: ' + err.message, onRetry: loadCertify });
     });
   }
 
   function load() {
-    NDocsShell.region(inventoryEl, 'loading', { loadingText: 'Loading inventory…' });
+    renderTasksLoading();
+    sections.inventory.busy(sections.inventory.body.childNodes.length ? 'syncing…' : 'loading…');
+    ensureSection('settings').busy('loading…');
     NDocsTransport.call('list_team_inventory', { teamId: currentTeamId, groupBy: 'folder' }).then(function (data) {
       renderSummary(data.team);
       renderInventory(data, currentPrincipal);
     }).catch(function (err) {
       summaryEl.textContent = '';
+      sections.settings.remove();
       if (err.name === 'NotAuthorized') {
-        NDocsShell.region(inventoryEl, 'permission-denied', { message: 'You are not a member of this team.' });
+        sections.inventory.denied('You are not a member of this team.');
         return;
       }
-      NDocsShell.region(inventoryEl, 'error', { message: 'Team not found or could not be loaded.', onRetry: load });
+      sections.inventory.error({ message: 'Team not found or could not be loaded.', onRetry: load });
     });
 
+    ensureSection('findings').busy(sections.findings.body.childNodes.length ? 'syncing…' : 'loading…');
     NDocsTransport.call('list_findings', { teamId: currentTeamId, state: 'open' }).then(function (data) {
       renderFindings(data.findings);
     }).catch(function () {
       // Same team-membership gate as list_team_inventory above; a refusal already shows there.
+      sections.findings.remove();
     });
 
     loadCertify();
     loadCandidates();
   }
 
+  // buildSections() — every disclosure's persistent shell, built synchronously before any
+  // fetch (ux-components.md "Disclosure section renders its shell... before its data is
+  // fetched"). `sections.settings` is speculative — built closed with no known admin status
+  // yet; `renderSummary`/`load()`'s catch decide whether it stays.
+  // Each section's build options, kept so a section that `.remove()`d itself (settings for a
+  // non-admin, candidates/certify/findings for a refusal or an empty/not_found cycle) can be
+  // rebuilt on the next load if the underlying condition reverses — e.g. an admin session
+  // regains access, or a new certification cycle opens — without a full page reload.
+  var SECTION_SPECS = {
+    settings: { key: 'settings', id: 'team-settings', title: 'Team Settings', loadingText: 'loading…' },
+    inventory: { key: 'inventory', id: 'inventory', title: 'Resources by folder', open: true, loadingText: 'loading…' },
+    candidates: { key: 'candidates', id: 'candidates', title: 'Uncatalogued documents found by scanning', loadingText: 'loading…' },
+    certify: { key: 'certify', id: 'certify', title: 'Certify this inventory', loadingText: 'loading…' },
+    findings: { key: 'findings', id: 'findings', title: 'Open findings', loadingText: 'loading…' }
+  };
+  var SECTION_CONTAINERS = {}; // populated in init() once the DOM refs are known
+
+  function buildSections() {
+    SECTION_CONTAINERS = {
+      settings: settingsEl, inventory: inventoryEl, candidates: candidatesEl,
+      certify: certifyEl, findings: findingsEl
+    };
+    Object.keys(SECTION_SPECS).forEach(function (key) {
+      sections[key] = NDocsShell.section(Object.assign({ container: SECTION_CONTAINERS[key] }, SECTION_SPECS[key]));
+      openIfLinked(sections[key].details);
+    });
+  }
+
+  // ensureSection(key) — rebuilds a section's shell if a previous load `.remove()`d it.
+  // Called right before any `busy()`/`populate()` on a section that has a remove() path.
+  function ensureSection(key) {
+    if (!sections[key].details.parentNode) {
+      sections[key] = NDocsShell.section(Object.assign({ container: SECTION_CONTAINERS[key] }, SECTION_SPECS[key]));
+    }
+    return sections[key];
+  }
+
   function init() {
     summaryEl = document.getElementById('ndocs-team-summary');
+    settingsEl = document.getElementById('ndocs-team-settings');
     tasksEl = document.getElementById('ndocs-team-tasks');
     inventoryEl = document.getElementById('ndocs-team-inventory');
     findingsEl = document.getElementById('ndocs-team-findings');
@@ -722,6 +745,8 @@
       NDocsShell.region(inventoryEl, 'error', { message: 'No team in the link.' });
       return Promise.resolve();
     }
+
+    buildSections();
 
     // The candidate promote form's type/audience selects, and the bulk-reassign destination
     // select, need the vocabulary — loaded once here, same "load() once per session" contract

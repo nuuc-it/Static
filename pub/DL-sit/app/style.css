@@ -487,6 +487,11 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .disclosure[open] > summary { border-bottom: 1px solid var(--border); background: var(--surface-subtle); }
 .disclosure-content { padding: .85rem .9rem; }
 .summary-meta { float: right; color: var(--ink-muted); font-weight: 500; font-size: .88rem; margin-left: var(--space-4); }
+/* A section's own summary-meta slot IS its loading indicator while `aria-busy="true"` — text
+   ("loading…"/"syncing…"), not a separate glyph (`NDocs-ei1`, ux-components.md's Disclosure
+   section amendment). Italic is the one extra visual cue; the word itself still carries the
+   meaning under prefers-reduced-motion or for anyone who can't perceive the styling alone. */
+.disclosure[aria-busy="true"] > summary .summary-meta { font-style: italic; }
 /* A dense row inside a disclosure body — one per scanned document, grouped under its folder's
    own disclosure (team.html's Scanning section) — lighter than `.surface`'s card padding/
    margin, which reads fine for one-off content but stacked per-row over many documents was the
@@ -584,6 +589,17 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 
 .ndocs-table { width: 100%; border-collapse: collapse; }
 .ndocs-table th, .ndocs-table td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--border); }
+
+/* One table, folders as groups (`NDocs-ei1`, 2026-09-20 vertical-space pass) — replaces a
+   per-folder `<table>` each carrying its own `<thead>` and disclosure chrome, which cost
+   ~140px of pure furniture per folder and made columns impossible to line up folder to
+   folder. Each `<tbody class="ndocs-table__group">` is led by one spanning `<th
+   scope="colgroup">` row naming the folder and its count. */
+.ndocs-table__group + .ndocs-table__group .ndocs-table__group-row > th { padding-top: var(--space-4); }
+.ndocs-table__group-row > th {
+  background: var(--surface-subtle); font-weight: 700; border-bottom: 1px solid var(--border-strong);
+}
+.ndocs-table__group-row .summary-meta { float: none; font-weight: 500; margin-left: var(--space-3); }
 
 .ndocs-folder { white-space: nowrap; }
 .ndocs-folder--unresolved { color: var(--ink-muted); font-style: italic; }
