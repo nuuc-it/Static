@@ -27,7 +27,12 @@ var NDocsPageIdentity = (function () {
     ]));
   }
 
-  function renderTeamTiles(teams) {
+  // `statsByTeamId` is `{ [teamId]: {catalogued, uncatalogued} }` from `list_team_stats`
+  // (`NDocs-oml.5`) — a team absent from it (the stats call failed, or hasn't resolved yet)
+  // renders no count line rather than a fabricated one; a real `0` is still shown once it
+  // does resolve. Deliberately a second call, not part of `whoami`'s own `teams` array — see
+  // `H_Meta_teamStats`'s header for the cost reasoning.
+  function renderTeamTiles(teams, statsByTeamId) {
     var host = document.getElementById('ndocs-team-tiles');
     if (!teams.length) {
       NDocsShell.region(host, 'empty', {
@@ -38,14 +43,14 @@ var NDocsPageIdentity = (function () {
     }
     var frag = document.createDocumentFragment();
     teams.forEach(function (t) {
-      var folderCount = (t.folders || []).length;
+      var stats = statsByTeamId[t.teamId];
+      var metaText = stats
+        ? stats.catalogued + ' catalogued · ' + stats.uncatalogued + ' uncatalogued'
+        : '—';
       frag.appendChild(ui.el('article', { class: 'team-tile' }, [
         ui.el('div', {}, [
           ui.el('strong', { text: t.name }),
-          ui.el('div', {
-            class: 'meta',
-            text: folderCount + ' tracked folder' + (folderCount === 1 ? '' : 's')
-          })
+          ui.el('div', { class: 'meta', text: metaText })
         ]),
         ui.el('a', { class: 'button', href: 'team.html?team=' + encodeURIComponent(t.teamId), text: 'Open' })
       ]));
@@ -59,9 +64,19 @@ var NDocsPageIdentity = (function () {
     return NDocsTransport.call('whoami', {}).then(function (principal) {
       NDocsSession.setPrincipal(principal);
       renderIdentityCard(principal);
-      renderTeamTiles(principal.teams || []);
-      var count = (principal.teams || []).length;
+      var teams = principal.teams || [];
+      var count = teams.length;
       ui.announce(count + ' team' + (count === 1 ? '' : 's') + ' loaded.');
+      // Stats are fetched after the tiles' own membership list is known, but the tiles are
+      // rendered either way — a stats failure degrades to the '—' placeholder above rather
+      // than blocking the page (whoami already answered the question the page must show).
+      NDocsTransport.call('list_team_stats', {}).then(function (stats) {
+        var byId = {};
+        (stats.teams || []).forEach(function (s) { byId[s.teamId] = s; });
+        renderTeamTiles(teams, byId);
+      }).catch(function () {
+        renderTeamTiles(teams, {});
+      });
       return principal;
     });
   }

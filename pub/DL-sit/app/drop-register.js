@@ -348,5 +348,10 @@ var NDocsDropRegister = (function () {
     outcome.appendChild(box);
   }
 
-  return { mount: mount };
+  // `handleUrl` is also exposed directly (NDocs-oml.4): team.html's folder-URL preview
+  // (`page-team.js`) registers an individual previewed file through this exact function —
+  // the same inspect_url -> renderEntry -> register_resource sequence a drop or a pasted
+  // link already runs, reused rather than forked, called against a small per-item `outcome`
+  // element instead of the whole panel's.
+  return { mount: mount, handleUrl: handleUrl };
 })();

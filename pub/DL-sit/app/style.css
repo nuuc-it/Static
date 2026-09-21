@@ -444,6 +444,10 @@ textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
 .add-document-panel__header h2 { margin: 0; font-size: 1.05rem; }
 .add-document-panel__header p { margin: .18rem 0 0; color: var(--ink-muted); font-size: .9rem; }
 .add-document-panel__body { padding: .9rem 1.05rem 1rem; }
+/* NDocs-oml.4: the folder-URL preview, nested in the same panel — a distinct action (look,
+   not add), so it gets its own top border rather than blending into `__body`'s form. */
+.add-document-panel__folder-preview { padding: .9rem 1.05rem 1rem; border-top: 1px solid var(--border); }
+.add-document-panel__folder-preview h3 { margin: 0 0 .2rem; font-size: .95rem; }
 
 /* ---- results ---- */
 .result-list, .inventory-list, .queue-list, .team-list { list-style: none; margin: 0; padding: 0; }

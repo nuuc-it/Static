@@ -13,6 +13,31 @@
 
   <div id="ndocs-team-summary" aria-live="polite"></div>
   <div id="ndocs-team-settings"></div>
+
+  <div class="button-row">
+    <button id="ndocs-team-add-toggle" type="button" class="button--soft" aria-expanded="false" aria-controls="ndocs-team-add-panel">+ Add resource</button>
+  </div>
+  <section id="ndocs-team-add-panel" class="add-document-panel" aria-labelledby="ndocs-team-add-heading" hidden>
+    <div class="add-document-panel__header">
+      <div>
+        <h2 id="ndocs-team-add-heading">Add resource</h2>
+        <p>Paste a Google Drive link, or drop the link into the box below.</p>
+      </div>
+      <button id="ndocs-team-add-close" type="button" class="button--quiet">Close</button>
+    </div>
+    <div class="add-document-panel__body"></div>
+    <div class="add-document-panel__folder-preview">
+      <h3>Preview a folder</h3>
+      <p class="field-help">Paste a Drive folder link to see its file names before deciding whether to register anything. This does not bring the folder into scope — only registering an individual file does that.</p>
+      <div class="field field--inline">
+        <label for="ndocs-team-folder-url">Folder link</label>
+        <input id="ndocs-team-folder-url" type="url" placeholder="Paste a Drive folder link">
+        <button id="ndocs-team-folder-preview-btn" type="button" class="button">Preview folder</button>
+      </div>
+      <div id="ndocs-team-folder-preview-result" aria-live="polite"></div>
+    </div>
+  </section>
+
   <div id="ndocs-team-inventory" aria-busy="true"></div>
   <div id="ndocs-team-tasks"></div>
   <div id="ndocs-team-candidates"></div>
@@ -21,7 +46,7 @@
 </main>
 
 <script>
-var STATIC_BUILD_VERSION_ = "0.0.0.53";
+var STATIC_BUILD_VERSION_ = "0.0.0.54";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8_za32WV8jhkzhlDc8-FkwBFxAj1RNP1PWQV1RIz91qJwYV1foynm5dahABsaTY7L/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_BUILD_ENV_ = "test";
@@ -37,6 +62,7 @@ var STATIC_GIS_CLIENT_ID_ = "657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.
 <script src="app/shell.js"></script>
 <script src="app/records.js"></script>
 <script src="app/vocab.js"></script>
+<script src="app/drop-register.js"></script>
 <!-- page-team.js defines window.NDocsPageTeam before the mount call below runs it. -->
 <script src="app/page-team.js"></script>
 <script>

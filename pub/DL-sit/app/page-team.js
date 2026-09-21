@@ -14,7 +14,8 @@
 // scan job state announced via `NDocsUI.announce`. Calls whoami, list_team_inventory,
 // list_findings, get_certification, certify_resources, admin_list_candidates, scan_folders,
 // dismiss_candidate, register_resource, admin_set_team_state, admin_reassign_resources,
-// affirm_current, add_note, bulk_retire.
+// affirm_current, add_note, bulk_retire, inspect_url (via drop-register.js), preview_folder
+// (NDocs-oml.3, folder-URL preview — NDocs-oml.4).
 //
 // The inventory selection drives a Bulk action bar (`NDocs-82s.7`, ux-components.md §Bulk
 // action bar) rather than the single admin-only reassign control this page carried before:
@@ -68,6 +69,130 @@
   function teamIdFromQuery() {
     var params = new URLSearchParams(window.location.search);
     return params.get('team');
+  }
+
+  // ---- Add-resource panel (NDocs-oml.1) ----
+  // Mirrors catalog.html's own toggle/panel (page-search.js's wireAddPanel) verbatim, wired
+  // to this page's DOM ids. `NDocsDropRegister.mount` is reused unchanged — `opts.teamId`
+  // preselects the team and skips its team-picker path (drop-register.js's own header
+  // comment), so no picker shows here.
+  function wireAddPanel() {
+    var toggle = document.getElementById('ndocs-team-add-toggle');
+    var panel = document.getElementById('ndocs-team-add-panel');
+    var closeBtn = document.getElementById('ndocs-team-add-close');
+    if (!toggle || !panel) return;
+
+    function open() {
+      panel.hidden = false;
+      toggle.setAttribute('aria-expanded', 'true');
+      var urlInput = panel.querySelector('.ndocs-drop-url');
+      if (urlInput) urlInput.focus();
+    }
+    function close() {
+      panel.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.focus();
+    }
+    toggle.addEventListener('click', function () {
+      if (panel.hidden) open(); else close();
+    });
+    if (closeBtn) closeBtn.addEventListener('click', close);
+  }
+
+  // Mounted once `whoami` resolves (init()) — the panel needs `principal` for
+  // drop-register.js's folder guide. `onRegistered` refreshes the inventory list in place
+  // (the same `load()` every other mutating action on this page already calls — bulk
+  // actions, team-state changes, certification) rather than navigating away, since the
+  // person is mid-session on the team page (bead AC).
+  function mountAddPanel() {
+    var panel = document.getElementById('ndocs-team-add-panel');
+    if (!panel || typeof NDocsDropRegister === 'undefined') return;
+    NDocsDropRegister.mount(panel.querySelector('.add-document-panel__body'), {
+      principal: currentPrincipal,
+      teamId: currentTeamId,
+      onRegistered: function () { load(); }
+    });
+  }
+
+  // ---- folder-URL preview (NDocs-oml.4, ADR-0010 amended 2026-09-21) ----
+  // Nested in the same Add-resource panel (NDocs-oml.1). Calls the new `preview_folder` route
+  // (NDocs-oml.3) — read-only, outside the tracked set — and renders each direct child with a
+  // badge/link when it is already catalogued, or an "Add & edit details" action when it is not.
+  // That action reuses `NDocsDropRegister.handleUrl` verbatim (the same inspect_url ->
+  // renderEntry -> register_resource sequence a drop or a pasted link already runs) rather
+  // than forking the write logic — see drop-register.js's own header comment on `handleUrl`'s
+  // export. No `onRegistered` override here: this goes through the ordinary redirect-to-
+  // resource.html?edit=1&new=1 flow, same as catalog.html's own single-document Add panel,
+  // per the bead's own description — unlike the team-page Add-resource panel above, which
+  // stays in place and refreshes the inventory (NDocs-oml.1's own, different, AC).
+  function renderFolderPreviewItem(item) {
+    var typeLabel = NDocsRecords.mimeTypeLabel(item.mimeType);
+    var head = ui.el('div', { class: 'badges' }, [
+      ui.el('span', { class: 'section-title', text: item.name })
+    ]);
+    var children = [head];
+    if (item.alreadyCatalogued) {
+      head.appendChild(ui.el('a', {
+        class: 'badge badge--info',
+        href: 'resource.html?id=' + encodeURIComponent(item.resourceId),
+        text: 'Already in the Catalog'
+      }));
+    }
+    if (typeLabel) children.push(ui.el('p', { class: 'field-help', text: typeLabel }));
+    if (!item.alreadyCatalogued) {
+      var outcome = ui.el('div', { 'aria-live': 'polite' });
+      var addBtn = ui.el('button', { type: 'button', class: 'button', text: 'Add & edit details' });
+      addBtn.addEventListener('click', function () {
+        addBtn.disabled = true;
+        NDocsDropRegister.handleUrl(item.url, outcome, { principal: currentPrincipal, teamId: currentTeamId });
+      });
+      children.push(ui.el('div', { class: 'button-row' }, [addBtn]), outcome);
+    }
+    // `.candidate-row` — the same compact row treatment the scan-candidate list already uses
+    // for "a linked filename plus a couple of controls", reused rather than a new class.
+    return ui.el('div', { class: 'candidate-row' }, children);
+  }
+
+  function renderFolderPreview(data) {
+    var resultEl = document.getElementById('ndocs-team-folder-preview-result');
+    resultEl.textContent = '';
+    var headerNodes = [ui.el('h4', { text: data.folderName || data.folderId })];
+    if (data.folderPath) headerNodes.push(ui.el('p', { class: 'field-help', text: data.folderPath }));
+    resultEl.appendChild(ui.el('div', {}, headerNodes));
+
+    if (!data.items.length) {
+      resultEl.appendChild(ui.el('p', { class: 'field-help', text: 'This folder is empty.' }));
+      return;
+    }
+    if (data.items.every(function (i) { return i.alreadyCatalogued; })) {
+      resultEl.appendChild(ui.el('p', { class: 'field-help', text: 'Every file in this folder is already in the catalog.' }));
+    }
+    var list = ui.el('div', {});
+    data.items.forEach(function (item) { list.appendChild(renderFolderPreviewItem(item)); });
+    resultEl.appendChild(list);
+    ui.announce(data.items.length + ' file' + (data.items.length === 1 ? '' : 's') + ' in ' + (data.folderName || 'that folder') + '.');
+  }
+
+  function wireFolderPreview() {
+    var input = document.getElementById('ndocs-team-folder-url');
+    var button = document.getElementById('ndocs-team-folder-preview-btn');
+    var resultEl = document.getElementById('ndocs-team-folder-preview-result');
+    if (!input || !button || !resultEl) return;
+    button.addEventListener('click', function () {
+      if (!input.value) { ui.toast('Paste a folder link first.', 'warn'); return; }
+      button.disabled = true;
+      NDocsShell.region(resultEl, 'loading', { loadingText: 'Looking at that folder…' });
+      NDocsTransport.call('preview_folder', { teamId: currentTeamId, folderUrl: input.value }).then(function (data) {
+        button.disabled = false;
+        renderFolderPreview(data);
+      }).catch(function (err) {
+        button.disabled = false;
+        NDocsShell.region(resultEl, 'error', {
+          message: 'Could not preview that folder: ' + err.message,
+          onRetry: function () { button.click(); }
+        });
+      });
+    });
   }
 
   // ---- team entity summary panel ----
@@ -922,6 +1047,8 @@
     }
 
     buildSections();
+    wireAddPanel();
+    wireFolderPreview();
 
     // The candidate promote form's type/audience selects, and the bulk-reassign destination
     // select, need the vocabulary — loaded once here, same "load() once per session" contract
@@ -931,6 +1058,7 @@
     return NDocsTransport.call('whoami', {}).then(function (principal) {
       NDocsSession.setPrincipal(principal);
       currentPrincipal = principal;
+      mountAddPanel();
       load();
       return principal;
     });
