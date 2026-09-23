@@ -183,7 +183,7 @@
 <script>
 // Build-time stamps (identical convention to index.html/doc.html) — left null
 // in the unbuilt source, stamped by scripts/build-static-portal.js.
-var STATIC_BUILD_VERSION_ = "0.2.5.116";
+var STATIC_BUILD_VERSION_ = "0.2.5.117";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 
@@ -406,7 +406,9 @@ function renderRow(row){
   // "applied"). With no run history, everything starts checked.
   const appliedLastRun = !!row.operations.length &&
     row.operations.every(op => state.savedOperations.indexOf(op) !== -1);
-  const checked = row.locked || appliedLastRun || !state.savedOperations.length;
+  // `defaultChecked` (gts-xe1w): an `optionKey` row (e.g. 'doc_status') has
+  // no operations history to consult — starts at its own declared default.
+  const checked = row.locked || row.defaultChecked || appliedLastRun || !state.savedOperations.length;
   const specText = (row.ruleIds || []).map(ruleLabel).join(' · ');
   let tags = '';
   if (row.scopeTag) tags += '<span class="scopeTag">' + (state.range ? 'selection' : 'whole doc') + '</span>';
@@ -438,6 +440,31 @@ function checkedOperations(){
     if (el && el.checked) row.operations.forEach(op => { opSet[op] = true; });
   });
   return Object.keys(opSet);
+}
+
+/**
+ * Rows with `optionKey` (gts-xe1w) contribute their checked state to
+ * `options[optionKey]` instead of to `operations` — today only 'doc_status'
+ * -> options.docStatus. Only an UNCHECKED (false) value is ever forwarded
+ * here, never true/omitted: this page still runs the selected operations as
+ * several sequential gc_format_run_stage calls (one per engine stage, see
+ * buildRunStages's header), and _gcFormatExecute's wantDocStatus already
+ * fires once, on whichever single stage carries 'format', when docStatus is
+ * simply omitted — sending an explicit `true` on every stage would instead
+ * rebuild the Doc Format Status tab once per stage. Explicit `false` doesn't
+ * have that problem (an override always wins, on every stage, to the same
+ * end state: never generated) so it's forwarded unconditionally. The
+ * add-on's single-call gc_format_run path (GcFormatDialog.html) has no such
+ * asymmetry and forwards true explicitly too.
+ */
+function checkedOptions(){
+  const opts = {};
+  PICKER_ROWS.forEach(row => {
+    if (!row.optionKey) return;
+    const el = $('row_' + row.id);
+    if (el && !el.checked) opts[row.optionKey] = false;
+  });
+  return opts;
 }
 
 $('allBox').addEventListener('change', (e) => {
@@ -509,7 +536,8 @@ function runGcFormat(dryRun){
     if (cancelled) return Promise.resolve();
     return postJson(GACTIONSHEET_URL, Object.assign(
       { action: 'gc_format_run_stage', assertion: state.assertion, docId: state.docId,
-        operations: operations, stageIndex: i, options: { dryRun: !!dryRun } },
+        operations: operations, stageIndex: i,
+        options: Object.assign({ dryRun: !!dryRun }, checkedOptions()) },
       state.range ? { range: state.range } : {}
     )).then(res => {
       if (!res.ok) throw Object.assign(new Error(res.error || 'Unknown error.'), { stages: res.stages, stageIndex: i });
