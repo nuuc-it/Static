@@ -951,7 +951,8 @@ body {
 /* SCHEDULE MODAL (reuses .folder-picker / .picker-* shell)            */
 /* ================================================================== */
 
-.schedule-body { padding: var(--spacing); max-height: 80vh; overflow-y: auto; }
+.schedule-dialog { display: flex; flex-direction: column; overflow: hidden; }
+.schedule-body { padding: var(--spacing); flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .schedule-body .status-message { margin-top: 0; }
 .schedule-loading, .schedule-empty { color: var(--text-3); font-size: 14px; margin: 0; }
 .schedule-event { padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--border); }
@@ -1251,10 +1252,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.9.8";
+var STATIC_BUILD_VERSION_ = "1.6.9.9";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-03T19:46:29.236Z";
+var STATIC_BUILD_DATE_ = "2026-10-03T20:01:35.544Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -4924,7 +4925,7 @@ const UI = (() => {
   <!-- Choir schedule modal: body level so it serves either page; purely an overlay -->
   <div id="schedule-modal" data-testid="schedule-modal" class="folder-picker hidden" role="dialog" aria-modal="true" aria-labelledby="schedule-title">
     <div class="picker-overlay" id="schedule-overlay"></div>
-    <div class="picker-dialog">
+    <div class="picker-dialog schedule-dialog">
       <div class="picker-header">
         <h3 id="schedule-title">Choir Schedule</h3>
         <button id="schedule-close-btn" data-testid="schedule-close-btn" class="btn btn-close" aria-label="Close">✕</button>
@@ -4962,7 +4963,15 @@ function formatScheduleDate(iso, todayIso) {
   return String(y) === String(todayIso).slice(0, 4) ? base : base + ', ' + y;
 }
 
-if (typeof module !== 'undefined') module.exports = { localTodayIso, upcomingScheduleEvents, formatScheduleDate };
+/** True when `next` is a different file or a newer edit than `prev` (or there is no usable prev). */
+function scheduleChanged(prev, next) {
+  const p = prev && prev.source;
+  const n = next && next.source;
+  if (!p || !n || !p.modifiedTime) return true;
+  return p.url !== n.url || p.modifiedTime !== n.modifiedTime;
+}
+
+if (typeof module !== 'undefined') module.exports = { localTodayIso, upcomingScheduleEvents, formatScheduleDate, scheduleChanged };
 
 if (typeof document !== 'undefined') (function () {
   const modal = document.getElementById('schedule-modal');
@@ -5061,20 +5070,32 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
-  async function load() {
+  // The last good schedule survives reloads, so the popup opens instantly; every open still asks
+  // the server, which re-reads the doc only when it has been edited.
+  const STORE_KEY = 'pmix.schedule';
+  function readStored() {
+    try { return JSON.parse(window.localStorage.getItem(STORE_KEY)); } catch (e) { return null; }
+  }
+  function writeStored(result) {
+    try { window.localStorage.setItem(STORE_KEY, JSON.stringify(result)); } catch (e) { /* optional */ }
+  }
+
+  // background: a copy is already on screen — keep it on failure, redraw only on a change.
+  async function load(background) {
     if (loading) return;
     loading = true;
-    showLoading();
+    if (!background) showLoading();
     try {
       const result = await callApi('getSchedule');
       if (!result || result.error) {
-        showError((result && result.error) || 'The schedule could not be loaded.');
-      } else {
+        if (!background) showError((result && result.error) || 'The schedule could not be loaded.');
+      } else if (!background || scheduleChanged(cached, result)) {
         cached = result;
-        render(result);
+        writeStored(result);
+        if (!modal.classList.contains('hidden')) render(result);
       }
     } catch (err) {
-      showError(err && err.message ? err.message : String(err));
+      if (!background) showError(err && err.message ? err.message : String(err));
     } finally {
       loading = false;
     }
@@ -5084,7 +5105,8 @@ if (typeof document !== 'undefined') (function () {
     opener = btn;
     modal.classList.remove('hidden');
     closeBtn.focus();
-    if (cached) render(cached); else load();
+    if (!cached) cached = readStored();
+    if (cached) { render(cached); load(true); } else load(false);
   }
 
   function close() {
