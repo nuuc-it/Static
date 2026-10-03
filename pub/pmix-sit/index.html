@@ -103,14 +103,14 @@ body {
 .header-subtitle { font-size: 13px; color: var(--text-3); }
 
 .playback-header {
-  /* Back | title | schedule. The title takes the middle track and wraps, as it did before the
-     schedule button arrived, rather than clipping a long song name on a phone. */
+  /* Back | title | actions (links, schedule). The title takes the middle track and wraps, as it did
+     before the header buttons arrived, rather than clipping a long song name on a phone. */
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
   gap: var(--spacing-sm); margin-bottom: var(--spacing);
 }
 
 .playback-header .btn-back { justify-self: start; }
-.playback-header .btn-schedule { justify-self: end; }
+.playback-header .header-actions { justify-self: end; }
 
 .playback-header h1 {
   font-size: 18px; text-align: center; margin: 0; min-width: 0;
@@ -331,15 +331,16 @@ body {
 
 .btn-back:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
 
-/* Header calendar button (choir schedule) */
-.btn-schedule {
+/* Header action buttons: links and choir schedule, grouped at the top right */
+.header-actions { display: flex; gap: var(--spacing-sm); }
+.btn-schedule, .btn-links {
   background: var(--surface-2); color: var(--text-2);
   border: 1px solid var(--border-strong); border-radius: 9px;
   width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; font-size: 18px;
 }
 
-.btn-schedule:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
-.header > .btn-schedule { position: absolute; top: 0; right: 0; }
+.btn-schedule:hover:not(:disabled), .btn-links:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.header > .header-actions { position: absolute; top: 0; right: 0; }
 
 /* ================================================================== */
 /* TRANSPORT CONTROLS                                                  */
@@ -948,22 +949,29 @@ body {
 .btn-close:hover { background: var(--surface-2); color: var(--text); transform: none; box-shadow: none; }
 
 /* ================================================================== */
-/* SCHEDULE MODAL (reuses .folder-picker / .picker-* shell)            */
+/* DOC POPUPS: schedule + links (reuse .folder-picker / .picker-*)     */
+/* One shared single-scroll shell; the schedule-* class names are the  */
+/* shared ones, links-* add only what is specific to links.            */
 /* ================================================================== */
 
 .schedule-dialog { display: flex; flex-direction: column; overflow: hidden; }
-.schedule-body { padding: var(--spacing); flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.schedule-body { padding: var(--spacing); flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-wrap: anywhere; }
 .schedule-body .status-message { margin-top: 0; }
-.schedule-loading, .schedule-empty { color: var(--text-3); font-size: 14px; margin: 0; }
+.schedule-loading, .schedule-empty, .links-loading, .links-empty { color: var(--text-3); font-size: 14px; margin: 0; }
 .schedule-event { padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--border); }
 .schedule-event:last-child { border-bottom: none; }
-.schedule-date { margin: 0 0 4px; font-size: 14px; color: var(--text); display: flex; align-items: center; gap: var(--spacing-sm); }
+.schedule-date { margin: 0 0 4px; font-size: 14px; color: var(--text); display: flex; align-items: center; flex-wrap: wrap; gap: var(--spacing-sm); }
 .schedule-today {
   font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
   background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue);
 }
 .schedule-items { margin: 0; padding-left: 20px; font-size: 14px; color: var(--text-2); }
+.schedule-items li + li { margin-top: 4px; }
+.schedule-items a, .links-notes a { color: var(--blue); }
 .schedule-section { font-size: 12px; color: var(--text-3); margin-right: 6px; }
+.links-heading { font-weight: 400; color: var(--text-2); }
+.links-notes { margin-top: var(--spacing-sm); padding-top: var(--spacing-sm); border-top: 1px solid var(--border); font-size: 13px; color: var(--text-3); }
+.links-notes p { margin: 0 0 4px; }
 .schedule-source { padding: var(--spacing-sm) var(--spacing); border-top: 1px solid var(--border); font-size: 12px; color: var(--text-3); }
 .schedule-source a { color: var(--blue); }
 .schedule-retry { margin-top: var(--spacing-sm); }
@@ -1003,7 +1011,10 @@ body {
       <header class="header">
         <h1>🎵 Practice Mix</h1>
         <p class="header-subtitle">Find and play your practice tracks</p>
-        <button class="btn btn-schedule" data-testid="schedule-btn" aria-label="Choir schedule" title="Choir schedule">📅</button>
+        <div class="header-actions">
+          <button class="btn btn-links" data-testid="links-btn" aria-label="Links to learn by" title="Links to learn by">🔗</button>
+          <button class="btn btn-schedule" data-testid="schedule-btn" aria-label="Choir schedule" title="Choir schedule">📅</button>
+        </div>
       </header>
 
       <!-- Folder Info Section -->
@@ -1088,7 +1099,10 @@ body {
           aria-label="Return to selection"
         >← Back</button>
         <h1 id="playback-title" data-testid="playback-title">Practice Mix</h1>
-        <button class="btn btn-schedule" data-testid="schedule-btn-playback" aria-label="Choir schedule" title="Choir schedule">📅</button>
+        <div class="header-actions">
+          <button class="btn btn-links" data-testid="links-btn-playback" aria-label="Links to learn by" title="Links to learn by">🔗</button>
+          <button class="btn btn-schedule" data-testid="schedule-btn-playback" aria-label="Choir schedule" title="Choir schedule">📅</button>
+        </div>
       </div>
 
       <!-- Transport Controls -->
@@ -1252,10 +1266,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.9.9";
+var STATIC_BUILD_VERSION_ = "1.6.9.10";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-03T20:01:35.544Z";
+var STATIC_BUILD_DATE_ = "2026-10-03T20:11:52.138Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -4922,7 +4936,7 @@ const UI = (() => {
   return { getState: () => state, getElements: () => el };
 })();
 </script>
-  <!-- Choir schedule modal: body level so it serves either page; purely an overlay -->
+  <!-- Doc popups (schedule, links): body level so they serve either page; purely overlays -->
   <div id="schedule-modal" data-testid="schedule-modal" class="folder-picker hidden" role="dialog" aria-modal="true" aria-labelledby="schedule-title">
     <div class="picker-overlay" id="schedule-overlay"></div>
     <div class="picker-dialog schedule-dialog">
@@ -4935,10 +4949,23 @@ const UI = (() => {
     </div>
   </div>
 
+  <div id="links-modal" data-testid="links-modal" class="folder-picker hidden" role="dialog" aria-modal="true" aria-labelledby="links-title">
+    <div class="picker-overlay" id="links-overlay"></div>
+    <div class="picker-dialog schedule-dialog">
+      <div class="picker-header">
+        <h3 id="links-title">Links to Learn By</h3>
+        <button id="links-close-btn" data-testid="links-close-btn" class="btn btn-close" aria-label="Close">✕</button>
+      </div>
+      <div id="links-list" data-testid="links-list" class="schedule-body"></div>
+      <div id="links-source" class="schedule-source" hidden></div>
+    </div>
+  </div>
+
 <script>
 /**
- * Choir schedule popup. Pure helpers are exported for unit tests; DOM wiring only runs in a
- * browser. Doc text is user-authored, so every node is built with textContent.
+ * Doc popups (choir schedule, links to learn by). Pure helpers are exported for unit tests; DOM
+ * wiring only runs in a browser. Doc text is user-authored, so every node is built with
+ * textContent / text nodes; links are http/https only.
  */
 function localTodayIso(date) {
   const d = date || new Date();
@@ -4952,6 +4979,20 @@ function upcomingScheduleEvents(events, todayIso) {
     .filter((e) => e && typeof e.date === 'string' && e.date >= todayIso)
     .slice()
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/** Entries whose last day (endDate, else date) is today or later, ascending by date. */
+function upcomingLinkEntries(entries, todayIso) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .filter((e) => e && typeof e.date === 'string' && (typeof e.endDate === 'string' ? e.endDate : e.date) >= todayIso)
+    .slice()
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/** The url when it is an http/https string, else null (never javascript:, data:, ...). */
+function safeLinkUrl(url) {
+  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
 }
 
 function formatScheduleDate(iso, todayIso) {
@@ -4971,14 +5012,21 @@ function scheduleChanged(prev, next) {
   return p.url !== n.url || p.modifiedTime !== n.modifiedTime;
 }
 
-if (typeof module !== 'undefined') module.exports = { localTodayIso, upcomingScheduleEvents, formatScheduleDate, scheduleChanged };
+if (typeof module !== 'undefined') module.exports = { localTodayIso, upcomingScheduleEvents, upcomingLinkEntries, safeLinkUrl, formatScheduleDate, scheduleChanged };
 
-if (typeof document !== 'undefined') (function () {
-  const modal = document.getElementById('schedule-modal');
-  const list = document.getElementById('schedule-list');
-  const titleEl = document.getElementById('schedule-title');
-  const sourceEl = document.getElementById('schedule-source');
-  const closeBtn = document.getElementById('schedule-close-btn');
+/**
+ * One popup over one server doc, configured per view.
+ * cfg: { prefix, buttonClass, action, storeKey, defaultTitle, loadingText, failText,
+ *        render(result, list, today) }  — elements are #<prefix>-modal/-list/-title/-source/
+ *        -close-btn/-overlay; testids <prefix>-error / -retry-btn.
+ */
+function createDocPopup(cfg) {
+  const id = (suffix) => document.getElementById(cfg.prefix + '-' + suffix);
+  const modal = id('modal');
+  const list = id('list');
+  const titleEl = id('title');
+  const sourceEl = id('source');
+  const closeBtn = id('close-btn');
   let cached = null;   // successful response only; errors are never cached
   let opener = null;
   let loading = false;
@@ -4988,8 +5036,8 @@ if (typeof document !== 'undefined') (function () {
   function showLoading() {
     clear();
     const p = document.createElement('p');
-    p.className = 'schedule-loading';
-    p.textContent = 'Loading schedule…';
+    p.className = cfg.prefix + '-loading';
+    p.textContent = cfg.loadingText;
     list.appendChild(p);
   }
 
@@ -4997,60 +5045,21 @@ if (typeof document !== 'undefined') (function () {
     clear();
     const box = document.createElement('div');
     box.className = 'status-message error';
-    box.setAttribute('data-testid', 'schedule-error');
+    box.setAttribute('data-testid', cfg.prefix + '-error');
     box.textContent = message;
     const retry = document.createElement('button');
     retry.className = 'btn btn-secondary schedule-retry';
-    retry.setAttribute('data-testid', 'schedule-retry-btn');
+    retry.setAttribute('data-testid', cfg.prefix + '-retry-btn');
     retry.textContent = 'Retry';
-    retry.addEventListener('click', load);
+    retry.addEventListener('click', () => load(false));
     list.appendChild(box);
     list.appendChild(retry);
   }
 
   function render(result) {
-    titleEl.textContent = result.title || 'Choir Schedule';
+    titleEl.textContent = result.title || cfg.defaultTitle;
     clear();
-    const today = localTodayIso();
-    const events = upcomingScheduleEvents(result.events, today);
-    if (events.length === 0) {
-      const p = document.createElement('p');
-      p.className = 'schedule-empty';
-      p.setAttribute('data-testid', 'schedule-empty');
-      p.textContent = 'No upcoming dates on the schedule.';
-      list.appendChild(p);
-    }
-    events.forEach((e) => {
-      const block = document.createElement('div');
-      block.className = 'schedule-event';
-      block.setAttribute('data-testid', 'schedule-event');
-      block.setAttribute('data-date', e.date);
-      const h = document.createElement('h4');
-      h.className = 'schedule-date';
-      h.appendChild(document.createTextNode(formatScheduleDate(e.date, today)));
-      if (e.date === today) {
-        const badge = document.createElement('span');
-        badge.className = 'schedule-today';
-        badge.textContent = 'Today';
-        h.appendChild(badge);
-      }
-      block.appendChild(h);
-      const ul = document.createElement('ul');
-      ul.className = 'schedule-items';
-      (e.items || []).forEach((it) => {
-        const li = document.createElement('li');
-        if (it.section) {
-          const sec = document.createElement('span');
-          sec.className = 'schedule-section';
-          sec.textContent = it.section;
-          li.appendChild(sec);
-        }
-        li.appendChild(document.createTextNode(it.text));
-        ul.appendChild(li);
-      });
-      block.appendChild(ul);
-      list.appendChild(block);
-    });
+    cfg.render(result, list, localTodayIso());
     sourceEl.textContent = '';
     if (result.source && result.source.name) {
       sourceEl.appendChild(document.createTextNode('Source: '));
@@ -5070,14 +5079,13 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
-  // The last good schedule survives reloads, so the popup opens instantly; every open still asks
+  // The last good copy survives reloads, so the popup opens instantly; every open still asks
   // the server, which re-reads the doc only when it has been edited.
-  const STORE_KEY = 'pmix.schedule';
   function readStored() {
-    try { return JSON.parse(window.localStorage.getItem(STORE_KEY)); } catch (e) { return null; }
+    try { return JSON.parse(window.localStorage.getItem(cfg.storeKey)); } catch (e) { return null; }
   }
   function writeStored(result) {
-    try { window.localStorage.setItem(STORE_KEY, JSON.stringify(result)); } catch (e) { /* optional */ }
+    try { window.localStorage.setItem(cfg.storeKey, JSON.stringify(result)); } catch (e) { /* optional */ }
   }
 
   // background: a copy is already on screen — keep it on failure, redraw only on a change.
@@ -5086,9 +5094,9 @@ if (typeof document !== 'undefined') (function () {
     loading = true;
     if (!background) showLoading();
     try {
-      const result = await callApi('getSchedule');
+      const result = await callApi(cfg.action);
       if (!result || result.error) {
-        if (!background) showError((result && result.error) || 'The schedule could not be loaded.');
+        if (!background) showError((result && result.error) || cfg.failText);
       } else if (!background || scheduleChanged(cached, result)) {
         cached = result;
         writeStored(result);
@@ -5116,11 +5124,130 @@ if (typeof document !== 'undefined') (function () {
     opener = null;
   }
 
-  document.querySelectorAll('.btn-schedule').forEach((b) => b.addEventListener('click', () => open(b)));
+  document.querySelectorAll('.' + cfg.buttonClass).forEach((b) => b.addEventListener('click', () => open(b)));
   closeBtn.addEventListener('click', close);
-  document.getElementById('schedule-overlay').addEventListener('click', close);
+  id('overlay').addEventListener('click', close);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
-})();
+}
+
+function docNode(tag, className, testId) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (testId) el.setAttribute('data-testid', testId);
+  return el;
+}
+
+/** Appends runs: an http(s) url becomes a new-tab anchor, anything else a plain text node. */
+function appendRuns(parent, runs) {
+  (runs || []).forEach((r) => {
+    if (!r || typeof r.text !== 'string') return;
+    const url = safeLinkUrl(r.url);
+    if (url) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = r.text;
+      parent.appendChild(a);
+    } else {
+      parent.appendChild(document.createTextNode(r.text));
+    }
+  });
+}
+
+function renderScheduleList(result, list, today) {
+  const events = upcomingScheduleEvents(result.events, today);
+  if (events.length === 0) {
+    const p = docNode('p', 'schedule-empty', 'schedule-empty');
+    p.textContent = 'No upcoming dates on the schedule.';
+    list.appendChild(p);
+  }
+  events.forEach((e) => {
+    const block = docNode('div', 'schedule-event', 'schedule-event');
+    block.setAttribute('data-date', e.date);
+    const h = docNode('h4', 'schedule-date');
+    h.appendChild(document.createTextNode(formatScheduleDate(e.date, today)));
+    if (e.date === today) {
+      const badge = docNode('span', 'schedule-today');
+      badge.textContent = 'Today';
+      h.appendChild(badge);
+    }
+    block.appendChild(h);
+    const ul = docNode('ul', 'schedule-items');
+    (e.items || []).forEach((it) => {
+      const li = document.createElement('li');
+      if (it.section) {
+        const sec = docNode('span', 'schedule-section');
+        sec.textContent = it.section;
+        li.appendChild(sec);
+      }
+      li.appendChild(document.createTextNode(it.text));
+      ul.appendChild(li);
+    });
+    block.appendChild(ul);
+    list.appendChild(block);
+  });
+}
+
+function renderLinksList(result, list, today) {
+  const entries = upcomingLinkEntries(result.entries, today);
+  if (entries.length === 0) {
+    const p = docNode('p', 'links-empty', 'links-empty');
+    p.textContent = 'No upcoming links.';
+    list.appendChild(p);
+  }
+  entries.forEach((e) => {
+    const end = typeof e.endDate === 'string' ? e.endDate : e.date;
+    const block = docNode('div', 'schedule-event links-entry', 'links-entry');
+    block.setAttribute('data-date', e.date);
+    block.setAttribute('data-end-date', end);
+    const h = docNode('h4', 'schedule-date');
+    h.appendChild(document.createTextNode(e.label || e.date));
+    if (e.heading) {
+      const hs = docNode('span', 'links-heading');
+      hs.textContent = '— ' + e.heading;
+      h.appendChild(hs);
+    }
+    if (e.date <= today && today <= end) {
+      const badge = docNode('span', 'schedule-today');
+      badge.textContent = 'Today';
+      h.appendChild(badge);
+    }
+    block.appendChild(h);
+    if (Array.isArray(e.items) && e.items.length) {
+      const ul = docNode('ul', 'schedule-items');
+      e.items.forEach((it) => {
+        const li = document.createElement('li');
+        appendRuns(li, it && it.runs);
+        ul.appendChild(li);
+      });
+      block.appendChild(ul);
+    }
+    list.appendChild(block);
+  });
+  if (Array.isArray(result.notes) && result.notes.length) {
+    const notes = docNode('div', 'links-notes', 'links-notes');
+    result.notes.forEach((n) => {
+      const p = document.createElement('p');
+      appendRuns(p, n && n.runs);
+      notes.appendChild(p);
+    });
+    list.appendChild(notes);
+  }
+}
+
+if (typeof document !== 'undefined') {
+  createDocPopup({
+    prefix: 'schedule', buttonClass: 'btn-schedule', action: 'getSchedule', storeKey: 'pmix.schedule',
+    defaultTitle: 'Choir Schedule', loadingText: 'Loading schedule…', failText: 'The schedule could not be loaded.',
+    render: renderScheduleList
+  });
+  createDocPopup({
+    prefix: 'links', buttonClass: 'btn-links', action: 'getLinks', storeKey: 'pmix.links',
+    defaultTitle: 'Links to Learn By', loadingText: 'Loading links…', failText: 'The links could not be loaded.',
+    render: renderLinksList
+  });
+}
 </script>
 </body>
 </html>
