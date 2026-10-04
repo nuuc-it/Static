@@ -27,6 +27,8 @@ its own folder beneath `pub/`.
 | `pub/ballot` | RankChoiceVoting (`tools/static-pages.js` via `gas-static`, NUUC build) | nuuc | <https://nuuc-it.github.io/Static/pub/ballot/> |
 | `pub/pmix-sit` | PracticeMix (`tools/static-pages.js` via `gas-static`) | test | <https://nuuc-it.github.io/Static/pub/pmix-sit/> |
 | `pub/pmix` | PracticeMix (same pipeline, PROD build) | prod | <https://nuuc-it.github.io/Static/pub/pmix/> |
+| `pub/shell-sit` | NUUTS-Shell (`scripts/static-pages.js` via `gas-static`, chained off `deploy:test`) | test | <https://nuuc-it.github.io/Static/pub/shell-sit/> |
+| `pub/shell` | NUUTS-Shell (same pipeline, PROD build) | production | <https://nuuc-it.github.io/Static/pub/shell/> |
 
 `pub/pmix` went live on 2026-08-26 with PracticeMix v1.6.8 — its first PROD deploy.
 
@@ -46,6 +48,8 @@ Keep it in step with the table above.
   "pub/AS-sit": { "project": "GActionSheet", "env": "test", "url": "https://nuuc-it.github.io/Static/pub/AS-sit/" },
   "pub/ballot": { "project": "RankChoiceVoting", "env": "nuuc", "url": "https://nuuc-it.github.io/Static/pub/ballot/" },
   "pub/pmix-sit": { "project": "PracticeMix", "env": "test", "url": "https://nuuc-it.github.io/Static/pub/pmix-sit/" },
-  "pub/pmix": { "project": "PracticeMix", "env": "prod", "url": "https://nuuc-it.github.io/Static/pub/pmix/" }
+  "pub/pmix": { "project": "PracticeMix", "env": "prod", "url": "https://nuuc-it.github.io/Static/pub/pmix/" },
+  "pub/shell-sit": { "project": "NUUTS-Shell", "env": "test", "url": "https://nuuc-it.github.io/Static/pub/shell-sit/" },
+  "pub/shell": { "project": "NUUTS-Shell", "env": "production", "url": "https://nuuc-it.github.io/Static/pub/shell/" }
 }
 ```
