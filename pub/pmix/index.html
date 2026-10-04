@@ -1276,10 +1276,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.12";
+var STATIC_BUILD_VERSION_ = "1.6.13";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-10-04T05:13:50.133Z";
+var STATIC_BUILD_DATE_ = "2026-10-04T18:33:55.074Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -1324,13 +1324,35 @@ function resolveWebappUrl_() {
  * D5: this posts `{action, ...args}` and nothing else — no ID token, and the page has no sign-in
  * flow. **P6's seam is the payload literal below**: that is the one place a token gets added.
  */
+/**
+ * Anonymous per-browser visitor id for the server's activity report (bd atc-0oe). Random, generated
+ * once and kept in localStorage; it identifies a browser, never a person. If storage is blocked the
+ * id lives for this page load only. Never throws.
+ */
+var visitorId_ = null;
+function getVisitorId_() {
+  if (visitorId_) return visitorId_;
+  try {
+    var stored = localStorage.getItem('pmix.visitor');
+    if (stored && /^[A-Za-z0-9-]{1,40}$/.test(stored)) { visitorId_ = stored; return visitorId_; }
+  } catch (e) { /* storage unavailable — fall through to an in-memory id */ }
+  var id = '';
+  try {
+    id = (crypto.randomUUID ? crypto.randomUUID() : '').replace(/-/g, '').slice(0, 16);
+  } catch (e) { id = ''; }
+  while (id.length < 16) id += Math.floor(Math.random() * 36).toString(36);
+  visitorId_ = id;
+  try { localStorage.setItem('pmix.visitor', id); } catch (e) { /* in-memory only */ }
+  return visitorId_;
+}
+
 async function callApi(action, args) {
   var url = resolveWebappUrl_();
   if (!url) {
     throw new Error('No web app URL configured — append ?webapp=<deployment /exec URL> or publish a built page.');
   }
 
-  var payload = Object.assign({ action: action }, args || {});
+  var payload = Object.assign({ action: action }, args || {}, { visitor: getVisitorId_() });
 
   var response;
   try {
