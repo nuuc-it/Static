@@ -1021,7 +1021,7 @@ body {
         <p class="header-subtitle">Find and play your practice tracks</p>
         <div class="header-actions">
           <a class="btn btn-drive" data-testid="drive-btn" target="_blank" rel="noopener" aria-label="Open this folder in Google Drive" title="Open this folder in Google Drive">📂</a>
-          <button class="btn btn-links" data-testid="links-btn"aria-label="Links to learn by" title="Links to learn by">🔗</button>
+          <button class="btn btn-links" data-testid="links-btn" aria-label="Links to learn by" title="Links to learn by">🔗</button>
           <button class="btn btn-schedule" data-testid="schedule-btn" aria-label="Choir schedule" title="Choir schedule">📅</button>
         </div>
       </header>
@@ -1110,7 +1110,7 @@ body {
         <h1 id="playback-title" data-testid="playback-title">Practice Mix</h1>
         <div class="header-actions">
           <a class="btn btn-drive" data-testid="drive-btn-playback" target="_blank" rel="noopener" aria-label="Open this folder in Google Drive" title="Open this folder in Google Drive">📂</a>
-          <button class="btn btn-links" data-testid="links-btn-playback"aria-label="Links to learn by" title="Links to learn by">🔗</button>
+          <button class="btn btn-links" data-testid="links-btn-playback" aria-label="Links to learn by" title="Links to learn by">🔗</button>
           <button class="btn btn-schedule" data-testid="schedule-btn-playback" aria-label="Choir schedule" title="Choir schedule">📅</button>
         </div>
       </div>
@@ -1276,10 +1276,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.11";
+var STATIC_BUILD_VERSION_ = "1.6.12";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-10-04T00:00:52.811Z";
+var STATIC_BUILD_DATE_ = "2026-10-04T05:13:50.133Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -1367,6 +1367,346 @@ const BUILD_INFO = {
   buildDate: STATIC_BUILD_STAMP_,
   target: STATIC_ENV_LABEL_ || 'LOCAL'
 };
+</script>
+<script>
+/**
+ * Persistent folder-listing cache helpers - pmixListingCache (bd atc-cy2.3, ADR-0009 Decisions 2-3). Pure: storage is
+ * passed in, every access is try/catch, and a failure means uncached operation (FR-1.6.13).
+ * Keys are pmix.<target>.v1.folder.<folderId> so TEST and PROD never share entries (FR-1.6.12).
+ * The fp stored with a listing is the server's; it is echoed back as knownFp, never recomputed.
+ */
+function listingCacheTarget(envLabel) {
+  if (envLabel === 'TEST') return 'test';
+  if (envLabel === 'PRODUCTION') return 'prod';
+  return 'local';
+}
+
+function listingCacheKey(target, folderId) {
+  return 'pmix.' + target + '.v1.folder.' + folderId;
+}
+
+function readListing(storage, target, folderId) {
+  try {
+    var raw = storage.getItem(listingCacheKey(target, folderId));
+    if (!raw) return null;
+    var v = JSON.parse(raw);
+    return v && typeof v === 'object' && !v.error ? v : null;
+  } catch (e) { return null; }
+}
+
+function writeListing(storage, target, folderId, listing) {
+  try {
+    if (!listing || listing.error) return false;
+    storage.setItem(listingCacheKey(target, folderId), JSON.stringify(listing));
+    return true;
+  } catch (e) { return false; }
+}
+
+/** Split selected ids (in selection order) into those still in newAudio and those that vanished. */
+function reconcileSelections(selectedIds, newAudio) {
+  var present = new Set((newAudio || []).map(function (f) { return f.id; }));
+  var kept = [];
+  var dropped = [];
+  (selectedIds || []).forEach(function (id) { (present.has(id) ? kept : dropped).push(id); });
+  return { kept: kept, dropped: dropped };
+}
+
+/** The persistent cache bound to this page's target and window.localStorage. */
+var LISTING_TARGET_ = listingCacheTarget(typeof STATIC_ENV_LABEL_ !== 'undefined' ? STATIC_ENV_LABEL_ : null);
+function pmixTarget() { return LISTING_TARGET_; }
+function storeListingPersistent(folderId, listing) {
+  try { return writeListing(window.localStorage, LISTING_TARGET_, folderId, listing); } catch (e) { return false; }
+}
+function loadListingPersistent(folderId) {
+  try { return readListing(window.localStorage, LISTING_TARGET_, folderId); } catch (e) { return null; }
+}
+
+if (typeof module !== 'undefined') module.exports = { listingCacheTarget, listingCacheKey, readListing, writeListing, reconcileSelections };
+</script>
+<script>
+/**
+ * Browser audio byte cache - pmixAudioCache (bd atc-cy2.4, ADR-0010 Decisions 1-2; FR-1.6.6/7/11/13/14).
+ * Raw bytes live in Cache Storage pmix-audio-<target>-v1 under synthetic same-origin URL keys (never fetched);
+ * per-entry TTL/LRU metadata lives in localStorage. Everything is injected and try/catch'd: any failure means an
+ * uncached load. createAudioCache().fetchTrackBytes(entry) is the single entry point (cache check, download, store,
+ * in-flight dedupe per key) that a prefetch queue should call as well.
+ */
+var AUDIO_TTL_MS = 16 * 86400000;
+var AUDIO_CAP_BYTES = 128 * 1024 * 1024;
+var AUDIO_KEY_PREFIX = './__pmix_audio__/';
+
+function audioCacheName(target) { return 'pmix-audio-' + target + '-v1'; }
+function audioMetaKey(target) { return 'pmix.' + target + '.v1.audioMeta'; }
+function audioPersistKey(target) { return 'pmix.' + target + '.v1.persistRequested'; }
+function audioCacheKey(fileId, modified) {
+  return AUDIO_KEY_PREFIX + encodeURIComponent(fileId) + '?m=' + (modified || 0);
+}
+/** Relative key for a cache.keys() Request URL, or null when it is not one of ours. */
+function audioKeyFromUrl(url) {
+  var i = String(url).indexOf('/__pmix_audio__/');
+  return i < 0 ? null : '.' + String(url).slice(i);
+}
+
+function readAudioMeta(storage, target) {
+  try {
+    var v = JSON.parse(storage.getItem(audioMetaKey(target)));
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+function writeAudioMeta(storage, target, meta) {
+  try { storage.setItem(audioMetaKey(target), JSON.stringify(meta)); return true; } catch (e) { return false; }
+}
+
+/** Entries whose lastUsed is more than ttlMs before now. */
+function selectExpired(meta, now, ttlMs) {
+  return (meta || []).filter(function (e) { return now - (e.lastUsed || 0) > ttlMs; });
+}
+
+/** Least-recently-used entries to evict until total bytes <= capBytes; entries whose fileId is protected are never chosen. */
+function selectEvictions(meta, capBytes, protectedIds) {
+  var total = 0;
+  (meta || []).forEach(function (e) { total += e.bytes || 0; });
+  var out = [];
+  var order = (meta || []).slice().sort(function (a, b) { return (a.lastUsed || 0) - (b.lastUsed || 0); });
+  for (var i = 0; i < order.length && total > capBytes; i++) {
+    if (protectedIds && protectedIds.has(order[i].fileId)) continue;
+    out.push(order[i]);
+    total -= order[i].bytes || 0;
+  }
+  return out;
+}
+
+/** Decodes the base64 payload of a data URI to a fresh ArrayBuffer. */
+function dataUriToBytes(dataUri) {
+  var bin = atob(String(dataUri).slice(String(dataUri).indexOf(',') + 1));
+  var u8 = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8.buffer;
+}
+
+/**
+ * opts: caches (CacheStorage or undefined), storage, target, now(), fetchBase64(fileId) -> {dataUri}|{error},
+ * getProtectedIds() -> Set of displayed-folder audio ids, ttlMs, capBytes.
+ */
+function createAudioCache(opts) {
+  var ttlMs = opts.ttlMs || AUDIO_TTL_MS;
+  var capBytes = opts.capBytes || AUDIO_CAP_BYTES;
+  var inflight = new Map();
+
+  async function openCache() {
+    try { return opts.caches ? await opts.caches.open(audioCacheName(opts.target)) : null; } catch (e) { return null; }
+  }
+  function protectedIds() {
+    try { return opts.getProtectedIds ? opts.getProtectedIds() : new Set(); } catch (e) { return new Set(); }
+  }
+  async function removeKeys(cache, keys) {
+    for (var i = 0; i < keys.length; i++) { try { await cache.delete(keys[i]); } catch (e) { /* ignore */ } }
+  }
+  function touch(key, e, bytes) {
+    var meta = readAudioMeta(opts.storage, opts.target).filter(function (m) { return m.key !== key; });
+    meta.push({ key: key, fileId: e.id, modified: e.modified || 0, bytes: bytes, lastUsed: opts.now() });
+    writeAudioMeta(opts.storage, opts.target, meta);
+  }
+
+  async function download(e) {
+    var res = await opts.fetchBase64(e.id);
+    if (!res || res.error || !res.dataUri) throw new Error((res && res.error) || 'download failed');
+    return dataUriToBytes(res.dataUri);
+  }
+
+  async function store(cache, key, e, bytes) {
+    try {
+      var stale = readAudioMeta(opts.storage, opts.target)
+        .filter(function (m) { return m.fileId === e.id && m.key !== key; }).map(function (m) { return m.key; });
+      await cache.put(key, new Response(bytes.slice(0), { headers: { 'content-type': e.mimeType || 'application/octet-stream' } }));
+      await removeKeys(cache, stale);
+      var meta = readAudioMeta(opts.storage, opts.target).filter(function (m) { return stale.indexOf(m.key) < 0; });
+      writeAudioMeta(opts.storage, opts.target, meta);
+      touch(key, e, bytes.byteLength);
+      var victims = selectEvictions(readAudioMeta(opts.storage, opts.target), capBytes, protectedIds());
+      if (victims.length) {
+        var gone = victims.map(function (v) { return v.key; });
+        await removeKeys(cache, gone);
+        writeAudioMeta(opts.storage, opts.target,
+          readAudioMeta(opts.storage, opts.target).filter(function (m) { return gone.indexOf(m.key) < 0; }));
+      }
+    } catch (err) { /* cache write failed (quota etc): uncached load */ }
+  }
+
+  async function fetchOnce(e, key) {
+    var cache = await openCache();
+    if (cache) {
+      try {
+        var hit = await cache.match(key);
+        if (hit) {
+          var bytes = await hit.arrayBuffer();
+          touch(key, e, bytes.byteLength);
+          return bytes;
+        }
+      } catch (err) { /* fall through to download */ }
+    }
+    var fresh = await download(e);
+    if (cache) await store(cache, key, e, fresh);
+    return fresh;
+  }
+
+  /** Bytes for entry {id, name, mimeType, modified}: cache hit, else download + store. Same-key calls share one run. Each caller gets its own ArrayBuffer. */
+  async function fetchTrackBytes(e) {
+    var key = audioCacheKey(e.id, e.modified);
+    var p = inflight.get(key);
+    if (!p) {
+      p = fetchOnce(e, key);
+      inflight.set(key, p);
+      var clear = function () { inflight.delete(key); };
+      p.then(clear, clear);
+    }
+    return (await p).slice(0);
+  }
+
+  /** App open: drop entries unused > ttl and any meta/cache orphans. */
+  async function pruneOnOpen() {
+    try {
+      var cache = await openCache();
+      if (!cache) return;
+      var meta = readAudioMeta(opts.storage, opts.target);
+      var present = new Set();
+      (await cache.keys()).forEach(function (r) { var k = audioKeyFromUrl(r.url); if (k) present.add(k); });
+      var expired = new Set(selectExpired(meta, opts.now(), ttlMs).map(function (m) { return m.key; }));
+      var known = new Set(meta.map(function (m) { return m.key; }));
+      var keep = meta.filter(function (m) { return !expired.has(m.key) && present.has(m.key); });
+      var drop = [];
+      present.forEach(function (k) { if (expired.has(k) || !known.has(k)) drop.push(k); });
+      await removeKeys(cache, drop);
+      writeAudioMeta(opts.storage, opts.target, keep);
+    } catch (e) { /* uncached operation */ }
+  }
+
+  /** Asks the browser for persistent storage once; the request is remembered in localStorage. */
+  async function requestPersist(nav) {
+    try {
+      if (!nav || !nav.storage || typeof nav.storage.persist !== 'function') return;
+      if (opts.storage.getItem(audioPersistKey(opts.target))) return;
+      opts.storage.setItem(audioPersistKey(opts.target), '1');
+      await nav.storage.persist();
+    } catch (e) { /* ignore */ }
+  }
+
+  return { fetchTrackBytes: fetchTrackBytes, pruneOnOpen: pruneOnOpen, requestPersist: requestPersist };
+}
+
+if (typeof module !== 'undefined') module.exports = { audioCacheName, audioMetaKey, audioCacheKey, readAudioMeta, writeAudioMeta, selectExpired, selectEvictions, dataUriToBytes, createAudioCache };
+</script>
+<script>
+/**
+ * Focus-first prefetch queue - pmixPrefetch (bd atc-cy2.5, ADR-0010 Decision 3; FR-1.5.3, FR-1.6.8-10).
+ * Pure: every dependency is injected. P0 (user selections) bypasses this queue entirely; the queue only
+ * holds P1 (remembered focus part) and P2 (remaining tracks), runs one download at a time, and never
+ * starts one while isSelectionLoading() is true. It only fills the byte cache via opts.fetch.
+ */
+var PREFETCH_MAX_TRIES_ = 4;
+var PREFETCH_SIMULTANEOUS_RE_ = /too many simultaneous invocations/i;
+
+function focusPartKey(target) { return 'pmix.' + target + '.focusPart'; }
+
+/** Delay before retry number `attempt` (1-based): 2s, 4s, 8s, 16s, capped at 30s. */
+function backoffMs(attempt) { return Math.min(30000, 1000 * Math.pow(2, attempt)); }
+
+/** True when the connection says to prefetch only the focus track. */
+function isConstrainedConnection(conn) {
+  if (!conn) return false;
+  if (conn.saveData === true) return true;
+  return conn.effectiveType === 'slow-2g' || conn.effectiveType === '2g' || conn.effectiveType === '3g';
+}
+
+function createPrefetcher(opts) {
+  var generation = 0;
+  var pending = [];
+  var running = null;
+  var log = opts.log || function () {};
+
+  function readFocus() {
+    try { return opts.storage.getItem(focusPartKey(opts.target)); } catch (e) { return null; }
+  }
+
+  /** Records the focus part when the selection set went from empty to one (count is the new size). */
+  function noteSelection(label, selectedCountAfter) {
+    if (selectedCountAfter !== 1 || !label) return;
+    try { opts.storage.setItem(focusPartKey(opts.target), String(label)); } catch (e) { /* ignore */ }
+  }
+
+  /** Ordered [{file, priority}] : P1 (label == focus part) then P2 in listing order. */
+  function plan(files, labels) {
+    var focus = readFocus();
+    focus = focus ? String(focus).toLowerCase() : null;
+    var skipP2 = isConstrainedConnection(opts.getConnection && opts.getConnection());
+    var p1 = [], p2 = [];
+    (files || []).forEach(function (f) {
+      if (opts.isSkipped && opts.isSkipped(f.id)) return;
+      var label = labels && labels.get(f.id);
+      if (focus && label && String(label).toLowerCase() === focus && p1.length === 0) p1.push({ file: f, priority: 1 });
+      else p2.push({ file: f, priority: 2 });
+    });
+    return skipP2 ? p1 : p1.concat(p2);
+  }
+
+  async function runItem(item, gen, label) {
+    for (var attempt = 1; attempt <= PREFETCH_MAX_TRIES_; attempt++) {
+      if (gen !== generation) return;
+      while (opts.isSelectionLoading()) {
+        await opts.sleep(200);
+        if (gen !== generation) return;
+      }
+      try {
+        log('[prefetch] fetch P' + item.priority + ' ' + label + ' ' + item.file.id);
+        await opts.fetch(item.file);
+        log('[prefetch] done P' + item.priority + ' ' + label + ' ' + item.file.id);
+        return;
+      } catch (e) {
+        var msg = e && e.message ? e.message : String(e);
+        if (PREFETCH_SIMULTANEOUS_RE_.test(msg) && attempt < PREFETCH_MAX_TRIES_) {
+          var ms = backoffMs(attempt);
+          log('[prefetch] backoff ' + ms + 'ms ' + label + ' ' + item.file.id);
+          await opts.sleep(ms);
+          continue;
+        }
+        log('[prefetch] skip ' + label + ' ' + item.file.id + ': ' + msg);
+        return;
+      }
+    }
+  }
+
+  async function loop() {
+    while (pending.length) {
+      var gen = generation;
+      var item = pending.shift();
+      var label = (item.labels && item.labels.get(item.file.id)) || item.file.name;
+      if (opts.isSkipped && opts.isSkipped(item.file.id)) continue;
+      await runItem(item, gen, label);
+    }
+  }
+
+  /** (Re)plans for the displayed folder; drops pending items of any earlier plan. */
+  function start(token, files, labels) {
+    generation++;
+    pending = plan(files, labels).map(function (p) { return { file: p.file, priority: p.priority, labels: labels }; });
+    log('[prefetch] plan folderToken=' + token + ' ' + pending.map(function (p) { return 'P' + p.priority + ':' + ((labels && labels.get(p.file.id)) || p.file.name); }).join(','));
+    if (!running && pending.length) {
+      running = loop().then(function () { running = null; }, function () { running = null; });
+    }
+  }
+
+  /** Drops pending items; an in-flight download may finish. */
+  function cancel() { generation++; pending = []; }
+
+  /** Resolves when the queue is drained (test hook). */
+  async function idle() {
+    while (running) await running;
+  }
+
+  return { noteSelection: noteSelection, plan: plan, start: start, cancel: cancel, idle: idle };
+}
+
+if (typeof module !== 'undefined') module.exports = { focusPartKey, backoffMs, isConstrainedConnection, createPrefetcher };
 </script>
   <!-- Version Footer -->
   <footer class="version-footer" data-testid="version-footer" id="version-footer"></footer>
@@ -1866,6 +2206,7 @@ const AudioEngine = (() => {
         sourceNode: null, leftGainNode: null, rightGainNode: null,
         meterAnalyserLeft: null, meterAnalyserRight: null
       });
+      invalidateMixOverviewCache();
       const trackInfo = {
         id: trackId, name: name,
         duration: stereoBuffer.duration,
@@ -3573,6 +3914,7 @@ const UI = (() => {
     folderName: null,
     currentPath: [],
     folderFiles: [],
+    folderFp: null,
     folderSubFolders: [],
 
     // Track selection & loading
@@ -3609,45 +3951,82 @@ const UI = (() => {
   let masterWaveformContext = null;
 
   // ================================================================
-  // SESSION STORAGE — folder listing cache (atc-79j)
+  // FOLDER LISTING CACHE - localStorage, render-then-revalidate (atc-cy2.3)
   // ================================================================
 
-  // sessionStorage has no TTL and survives reloads for the life of the tab, so
-  // an unscoped key serves a pre-deploy listing indefinitely to anyone who
-  // keeps the app open. Scoping by build stamp orphans those entries on deploy,
-  // mirroring what the build stamp does for the server cache (src/Admin.js).
-  function folderCacheKeyPrefix() {
-    const stamp = (typeof BUILD_INFO !== 'undefined' && BUILD_INFO.buildDate)
-      ? BUILD_INFO.buildDate
-      : 'nostamp';
-    return 'atc_folder_' + stamp + '_';
+  // Two tiers: state.folderCache (memory) over localStorage (pmix.<target>.v1.folder.<id>).
+  function getCachedListing(folderId) {
+    const mem = state.folderCache.get(folderId);
+    if (mem && !mem.error) return mem;
+    const stored = loadListingPersistent(folderId);
+    if (stored) state.folderCache.set(folderId, stored);
+    return stored;
   }
 
-  function getFolderSessionCache(key) {
-    try {
-      const raw = sessionStorage.getItem(folderCacheKeyPrefix() + key);
-      return raw ? JSON.parse(raw) : null;
-    } catch (_) { return null; }
+  function storeListing(folderId, listing) {
+    if (!listing || listing.error) return;
+    state.folderCache.set(folderId, listing);
+    storeListingPersistent(folderId, listing);
   }
 
-  function setFolderSessionCache(key, data) {
-    try {
-      sessionStorage.setItem(folderCacheKeyPrefix() + key, JSON.stringify(data));
-    } catch (_) { /* quota exceeded — skip silently */ }
+  // Make a listing the displayed one. Does not touch selections (callers decide).
+  function showListing(listing) {
+    state.folderId = listing.folderId;
+    state.folderName = listing.folderName;
+    state.folderFp = listing.fp || null;
+    state.folderFiles = listing.audio || [];
+    state.folderSubFolders = listing.folders || [];
+    el.folderName.textContent = state.folderName;
   }
 
-  // Drop listings written by an earlier build so orphaned entries cannot
-  // accumulate against the sessionStorage quota.
-  function pruneStaleFolderSessionCache() {
+  let folderUpdatedTimer = null;
+  function showFolderUpdated() {
+    showSelectionStatus('Folder updated', 'info');
+    clearTimeout(folderUpdatedTimer);
+    folderUpdatedTimer = setTimeout(() => {
+      if (el.selectionStatus.textContent === 'Folder updated') showSelectionStatus('', '');
+    }, 3000);
+  }
+
+  // Update the displayed folder in place: surviving selections keep their order, vanished ones are
+  // dropped and unloaded. The playback page is never touched (callers check currentPage).
+  function applyListingInPlace(listing) {
+    const { dropped } = reconcileSelections([...state.selectedFileIds], listing.audio);
+    dropped.forEach(id => {
+      state.selectedFileIds.delete(id);
+      state.trackLoadStatus.delete(id);
+      AudioEngine.removeTrack(id);
+    });
+    // Loaded-but-deselected tracks that vanished also leave the engine.
+    const present = new Set((listing.audio || []).map(f => f.id));
+    [...state.trackLoadStatus.keys()].forEach(id => {
+      if (!present.has(id)) { state.trackLoadStatus.delete(id); AudioEngine.removeTrack(id); }
+    });
+    showListing(listing);
+    renderTrackButtons();
+    renderSubFolders();
+    showFolderUpdated();
+  }
+
+  // Background revalidation of the displayed listing. requestFolderId may be null (the default
+  // folder). A response is ignored unless the same folder is still displayed on the selection page;
+  // otherwise it only refreshes the store.
+  async function revalidateListing(requestFolderId, shownFolderId) {
+    const token = state.folderToken;
+    const knownFp = state.folderFp;
+    const args = { folderId: requestFolderId, folderPath: state.currentPath, refresh: true };
+    if (typeof knownFp === 'string') args.knownFp = knownFp;
+    let result;
     try {
-      const keep = folderCacheKeyPrefix();
-      const stale = [];
-      for (let i = 0; i < sessionStorage.length; i++) {
-        const k = sessionStorage.key(i);
-        if (k && k.indexOf('atc_folder_') === 0 && k.indexOf(keep) !== 0) stale.push(k);
-      }
-      stale.forEach(k => sessionStorage.removeItem(k));
-    } catch (_) { /* storage unavailable — nothing to prune */ }
+      result = await callApi('listFilesAndFolders', args);
+    } catch (_) { return; }
+    if (!result || result.error || result.unchanged) return;
+    storeListing(result.folderId, result);
+    if (requestFolderId === null) storeListing('__initial__', result);
+    if (token !== state.folderToken || state.currentPage !== 'selection') return;
+    if (state.folderId !== result.folderId || state.folderId !== shownFolderId) return;
+    if (result.fp === state.folderFp) return;
+    applyListingInPlace(result);
   }
 
   // getDriveToken() was removed by PMIX-PLAN.md stage P1R (bd atc-b0o): it
@@ -3812,16 +4191,18 @@ const UI = (() => {
     // Immediately flip to content area with loading state so the user sees
     // feedback before the RPC resolves (can take several seconds first time).
     showFolderPicker(false);
-    showFolderLoadingState();
+    const cachedGo = getCachedListing(folderId);
+    if (!cachedGo) showFolderLoadingState();
 
     // Invalidate any in-flight track loads before awaiting the RPC.
     state.folderToken++;
+    prefetcher.cancel();
 
     try {
-      let result = getFolderSessionCache(folderId);
-      if (!result || result.error) {
+      let result = cachedGo;
+      if (!result) {
         result = await callApi('listFilesAndFolders', { folderId: folderId, folderPath: [] });
-        if (!result.error) setFolderSessionCache(folderId, result);
+        if (!result.error) storeListing(folderId, result);
       }
 
       if (result.error) {
@@ -3830,20 +4211,17 @@ const UI = (() => {
         return;
       }
 
-      logBackend('listFilesAndFolders', result);
-      state.folderId = result.folderId;
-      state.folderName = result.folderName;
+      if (!cachedGo) logBackend('listFilesAndFolders', result);
       state.currentPath = result.currentPath || [];
-      state.folderFiles = result.audio || [];
-      state.folderSubFolders = result.folders || [];
+      showListing(result);
       state.navStack = [];
 
       clearSelectedTracks();
 
-      el.folderName.textContent = state.folderName;
       el.selectionBackBtn.style.display = 'none';
       renderTrackButtons();
       renderSubFolders();
+      if (cachedGo) revalidateListing(folderId, result.folderId);
     } catch (error) {
       showFolderPicker(true);
       showFolderStatus('Failed to load folder: ' + error, 'error');
@@ -3973,6 +4351,9 @@ const UI = (() => {
       el.trackButtons.appendChild(btn);
     });
 
+    // (Re)plan the focus-first prefetch for the displayed listing (bd atc-cy2.5); drops any older plan.
+    prefetcher.start(state.folderToken, state.folderFiles, labels);
+
     updatePlaySelectedButton();
     updateSelectionCountLabel();
   }
@@ -4032,11 +4413,9 @@ const UI = (() => {
 
   function prefetchSubfolders(subfolders) {
     subfolders.slice(0, 10).forEach(subfolder => {
-      if (state.folderCache.has(subfolder.id)) return;
+      if (getCachedListing(subfolder.id)) return;
       callApi('listFilesAndFolders', { folderId: subfolder.id, folderPath: [] }).then(result => {
-        if (!result.error) {
-          state.folderCache.set(subfolder.id, result);
-        }
+        if (!result.error) storeListing(subfolder.id, result);
       }).catch(() => { /* prefetch is best-effort */ });
     });
   }
@@ -4047,6 +4426,7 @@ const UI = (() => {
       folderName: state.folderName,
       folderFiles: [...state.folderFiles],
       folderSubFolders: [...state.folderSubFolders],
+      folderFp: state.folderFp,
     });
     el.selectionBackBtn.style.display = '';
   }
@@ -4054,11 +4434,14 @@ const UI = (() => {
   function handleSelectionBack() {
     if (!state.navStack.length) return;
     state.folderToken++;
+    prefetcher.cancel();
     const prev = state.navStack.pop();
     state.folderId = prev.folderId;
     state.folderName = prev.folderName;
     state.folderFiles = prev.folderFiles;
     state.folderSubFolders = prev.folderSubFolders;
+    const cachedPrev = getCachedListing(prev.folderId);
+    state.folderFp = prev.folderFp || (cachedPrev && cachedPrev.fp) || null;
     el.folderName.textContent = state.folderName;
     clearSelectedTracks();
     renderTrackButtons();
@@ -4066,6 +4449,7 @@ const UI = (() => {
     if (!state.navStack.length) {
       el.selectionBackBtn.style.display = 'none';
     }
+    revalidateListing(prev.folderId, prev.folderId);
   }
 
   async function handleSubFolderClick(folderId) {
@@ -4073,22 +4457,19 @@ const UI = (() => {
 
     // Invalidate any in-flight track loads immediately, before any await.
     state.folderToken++;
+    prefetcher.cancel();
 
-    // Check in-memory cache first, then sessionStorage, then RPC.
-    const cached = state.folderCache.get(folderId) || getFolderSessionCache(folderId);
+    // Render the cached listing at once (memory, then localStorage), then revalidate in the background.
+    const cached = getCachedListing(folderId);
     if (!cached) showFolderLoadingState();
 
     if (cached) {
-      state.folderCache.set(folderId, cached);
-      state.folderId = cached.folderId;
-      state.folderName = cached.folderName;
       state.currentPath = [{ id: cached.folderId, name: cached.folderName }];
-      state.folderFiles = cached.audio || [];
-      state.folderSubFolders = cached.folders || [];
-      el.folderName.textContent = state.folderName;
+      showListing(cached);
       clearSelectedTracks();
       renderTrackButtons();
       renderSubFolders();
+      revalidateListing(folderId, cached.folderId);
       return;
     }
 
@@ -4104,16 +4485,10 @@ const UI = (() => {
 
       logBackend('listFilesAndFolders', result);
 
-      state.folderId = result.folderId;
-      state.folderName = result.folderName;
       state.currentPath = result.currentPath || [];
-      state.folderFiles = result.audio || [];
-      state.folderSubFolders = result.folders || [];
+      showListing(result);
+      storeListing(folderId, result);
 
-      state.folderCache.set(folderId, result);
-      setFolderSessionCache(folderId, result);
-
-      el.folderName.textContent = state.folderName;
       showSelectionStatus('', '');
       clearSelectedTracks();
       renderTrackButtons();
@@ -4140,6 +4515,8 @@ const UI = (() => {
       }
     } else {
       state.selectedFileIds.add(fileId);
+      // First selection in a folder = the singer's focus part; remember its label (FR-1.5.3).
+      prefetcher.noteSelection(parseTrackLabels(state.folderFiles).labels.get(fileId), state.selectedFileIds.size);
       if (btn) btn.dataset.selected = 'true';
       const status = state.trackLoadStatus.get(fileId);
       if (status === 'loaded' || AudioEngine.hasTrack(fileId)) {
@@ -4179,7 +4556,13 @@ const UI = (() => {
   async function loadTrackFile(fileId) {
     const file = state.folderFiles.find(f => f.id === fileId);
     if (!file) return;
-    await loadTrackFileViaBase64(fileId, file, state.folderToken);
+    // P0: selection loads bypass the prefetch queue; the queue starts nothing while one is in flight.
+    selectionLoads++;
+    try {
+      await loadTrackFileViaBase64(fileId, file, state.folderToken);
+    } finally {
+      selectionLoads--;
+    }
   }
 
   /**
@@ -4190,43 +4573,73 @@ const UI = (() => {
   async function loadTrackFileViaBase64(fileId, file, token) {
     try {
       const t0 = performance.now();
+      // Cache hit -> bytes with no getFileAsBase64 call; miss -> base64 download, stored, then bytes (bd atc-cy2.4).
+      const bytes = await audioCache.fetchTrackBytes({
+        id: fileId, name: file.name, mimeType: file.mimeType, modified: file.modified
+      });
+
+      if (state.folderToken !== token) {
+        console.log(`[load] stale load ignored after byte fetch: ${fileId}`);
+        return;
+      }
+
+      const t1 = performance.now();
+      console.log(`[load] bytes: ${(t1 - t0).toFixed(0)}ms  size: ${(bytes.byteLength / 1048576).toFixed(2)}MB`);
+
+      const trackInfo = await AudioEngine.loadTrackFromBuffer(fileId, bytes, file.name);
+      if (state.folderToken !== token) {
+        console.log(`[load] stale load ignored after decode: ${fileId}`);
+        AudioEngine.removeTrack(fileId);
+        return;
+      }
+      const t2 = performance.now();
+      console.log(`[load] decode: ${(t2 - t1).toFixed(0)}ms  TOTAL: ${(t2 - t0).toFixed(0)}ms`);
+
+      state.loadedTracks.set(fileId, trackInfo);
+    } catch (error) {
+      console.error('[load] Error loading track:', error);
+      state.trackLoadStatus.set(fileId, 'available');
+    }
+  }
+
+  /** Count of in-flight user-selection (P0) loads; the prefetch queue pauses while > 0 (bd atc-cy2.5). */
+  let selectionLoads = 0;
+
+  /** Focus-first prefetch queue (bd atc-cy2.5). Declared before audioCache is used; fetch resolves audioCache lazily. */
+  const prefetcher = createPrefetcher({
+    storage: (() => { try { return window.localStorage; } catch (e) { return null; } })(),
+    target: pmixTarget(),
+    fetch: (f) => audioCache.fetchTrackBytes({ id: f.id, name: f.name, mimeType: f.mimeType, modified: f.modified }).then(() => undefined),
+    isSelectionLoading: () => selectionLoads > 0,
+    isSkipped: (id) => state.selectedFileIds.has(id) || state.trackLoadStatus.get(id) === 'loaded' || AudioEngine.hasTrack(id),
+    getConnection: () => { try { return navigator.connection; } catch (e) { return undefined; } },
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    log: (m) => console.log(m)
+  });
+
+  /** Browser audio byte cache bound to this page (bd atc-cy2.4). Protected ids = displayed folder's audio. */
+  const audioCache = createAudioCache({
+    caches: (() => { try { return window.caches; } catch (e) { return undefined; } })(),
+    storage: (() => { try { return window.localStorage; } catch (e) { return null; } })(),
+    target: pmixTarget(),
+    now: () => Date.now(),
+    getProtectedIds: () => new Set((state.folderFiles || []).map(f => f.id)),
+    fetchBase64: async (fileId) => {
+      const t0 = performance.now();
       const result = await Promise.race([
         callApi('getFileAsBase64', { fileId: fileId }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('getFileAsBase64 timeout')), 18000)
         )
       ]);
-
-      if (state.folderToken !== token) {
-        console.log(`[load] stale load ignored after base64 fetch: ${fileId}`);
-        return;
+      if (result && !result.error) {
+        console.log(`[base64] getFileAsBase64: ${(performance.now() - t0).toFixed(0)}ms  size: ${result.sizeMB}MB`);
+      } else {
+        console.error('[base64] Failed to load track:', result && result.error);
       }
-
-      if (result.error) {
-        console.error('[base64] Failed to load track:', result.error);
-        state.trackLoadStatus.set(fileId, 'available');
-        return;
-      }
-
-      const t1 = performance.now();
-      console.log(`[base64] getFileAsBase64: ${(t1 - t0).toFixed(0)}ms  size: ${result.sizeMB}MB`);
-
-      const trackInfo = await AudioEngine.loadTrack(fileId, result.dataUri, file.name);
-      if (state.folderToken !== token) {
-        console.log(`[load] stale load ignored after base64 decode: ${fileId}`);
-        AudioEngine.removeTrack(fileId);
-        return;
-      }
-      const t2 = performance.now();
-      console.log(`[base64] loadTrack (fetch+decode): ${(t2 - t1).toFixed(0)}ms`);
-      console.log(`[base64] TOTAL: ${(t2 - t0).toFixed(0)}ms  (${result.sizeMB}MB)`);
-
-      state.loadedTracks.set(fileId, trackInfo);
-    } catch (error) {
-      console.error('[base64] Error loading track:', error);
-      state.trackLoadStatus.set(fileId, 'available');
+      return result;
     }
-  }
+  });
 
   function updatePlaySelectedButton() {
     const allLoaded = [...state.selectedFileIds].every(id =>
@@ -4827,6 +5240,10 @@ const UI = (() => {
   async function init() {
     cacheElements();
 
+    // Audio byte cache housekeeping (bd atc-cy2.4); never blocks or fails startup
+    audioCache.pruneOnOpen();
+    audioCache.requestPersist(navigator);
+
     // Initialize AudioEngine
     await AudioEngine.init();
 
@@ -4897,14 +5314,14 @@ const UI = (() => {
       console.warn('[init] failed to apply saved master volume to UI', e);
     }
 
-    pruneStaleFolderSessionCache();
-
-    // Load default folder — check sessionStorage first, then RPC.
-    // RPC retries once on transient Drive service errors (rate limiting under load).
+    // Load default folder: render the cached listing at once, then revalidate in the background.
+    // An uncached open does a normal RPC, retried once on transient Drive service errors
+    // (rate limiting under load).
     try {
-      let folderResult = getFolderSessionCache('__initial__');
+      const cachedInit = getCachedListing('__initial__');
+      let folderResult = cachedInit;
 
-      if (!folderResult || folderResult.error) {
+      if (!folderResult) {
         folderResult = await callApi('listFilesAndFolders', { folderId: null, folderPath: [] });
 
         if (folderResult.error) {
@@ -4914,19 +5331,16 @@ const UI = (() => {
         }
 
         if (!folderResult.error) {
-          setFolderSessionCache('__initial__', folderResult);
-          setFolderSessionCache(folderResult.folderId, folderResult);
+          storeListing('__initial__', folderResult);
+          storeListing(folderResult.folderId, folderResult);
         }
       }
 
       if (!folderResult.error) {
-        state.folderId = folderResult.folderId;
-        state.folderName = folderResult.folderName;
-        state.folderFiles = folderResult.audio || [];
-        state.folderSubFolders = folderResult.folders || [];
-        el.folderName.textContent = state.folderName;
+        showListing(folderResult);
         renderTrackButtons();
         renderSubFolders();
+        if (cachedInit) revalidateListing(null, folderResult.folderId);
       }
     } catch (error) {
       console.error('Failed to load initial folder:', error);
