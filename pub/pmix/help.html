@@ -30,7 +30,6 @@
       border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
     }
     .btn-primary { background: var(--green); border-color: var(--green); color: #06130c; flex: 1 1 200px; }
-    .btn-secondary { flex: 1 1 140px; }
     .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
     #help-close {
       position: absolute; top: 12px; right: 12px; width: 44px; height: 44px; min-height: 0; padding: 0;
@@ -45,16 +44,20 @@
     }
     .step p, .step ul { font-size: 15px; }
     .step ul { margin: 6px 0 0 20px; }
+    .text p + p { margin-top: 8px; }
     .step strong { color: var(--text); }
     .focus { color: var(--green); font-weight: 600; }
     figure { margin-top: 12px; text-align: center; }
-    img { display: block; max-width: 100%; height: auto; margin: 0 auto; border: 1px solid var(--border); border-radius: var(--radius); }
+    img { display: block; width: 240px; max-width: 100%; height: auto; margin: 0 auto; border: 1px solid var(--border); border-radius: var(--radius); }
     figcaption { font-size: 12px; color: var(--text-3); margin-top: 6px; }
     .tips { margin-top: 20px; }
     .tips h2 { font-size: 16px; color: var(--text); margin-bottom: 6px; }
     .tips ul { margin-left: 20px; font-size: 15px; }
     footer { margin-top: 20px; font-size: 12px; color: var(--text-3); text-align: center; }
-    @media (min-width: 720px) { figure img { max-width: 320px; } }
+    @media (min-width: 600px) {
+      .step-body { display: grid; grid-template-columns: 1fr 240px; gap: 20px; align-items: start; }
+      .step-body figure { margin-top: 0; }
+    }
     @media print { #help-close, .actions { display: none; } }
   </style>
 </head>
@@ -71,42 +74,53 @@
 
   <div class="actions">
     <a class="btn btn-primary" href="./" data-testid="help-open-app">Open Practice Mix</a>
-    <button type="button" class="btn btn-secondary" id="help-share" data-testid="help-share">Share by email</button>
   </div>
 
   <section class="step">
     <h2><span class="num">1</span>Open the app</h2>
-    <p>It opens on the current season folder. Tap a song's folder to go in.</p>
-    <figure>
-      <img src="help/folder.png" alt="The season folder with a list of song folders" data-testid="help-shot-folder" width="390" height="844">
-      <figcaption>Season folder: tap a song.</figcaption>
-    </figure>
+    <div class="step-body">
+      <div class="text">
+        <p>It opens on the current season folder. Tap a song's folder to go in.</p>
+      </div>
+      <figure>
+        <img src="help/folder.png" alt="The season folder with a list of song folders" data-testid="help-shot-folder" width="390" height="844">
+        <figcaption>Season folder: tap a song.</figcaption>
+      </figure>
+    </div>
   </section>
 
   <section class="step">
     <h2><span class="num">2</span>Pick your tracks</h2>
-    <p><span class="focus">Tap your own part first.</span> The first track you select is your <strong>focus track</strong> and plays at normal level.</p>
-    <p>Then tap the other parts or the accompaniment you want to sing against. These are <strong>background tracks</strong> and play quieter.</p>
-    <figure>
-      <img src="help/song.png" alt="A song folder with one focus track and two background tracks selected" data-testid="help-shot-song" width="390" height="844">
-      <figcaption>Song folder: your part first, then the others.</figcaption>
-    </figure>
+    <div class="step-body">
+      <div class="text">
+        <p><span class="focus">Tap your own part first.</span> The first track you select is your <strong>focus track</strong> and plays at normal level.</p>
+        <p>Then tap the other parts or the accompaniment you want to sing against. These are <strong>background tracks</strong> and play quieter.</p>
+      </div>
+      <figure>
+        <img src="help/song.png" alt="A song folder with one focus track and two background tracks selected" data-testid="help-shot-song" width="390" height="844">
+        <figcaption>Song folder: your part first, then the others.</figcaption>
+      </figure>
+    </div>
   </section>
 
   <section class="step">
     <h2><span class="num">3</span>Play Selected</h2>
-    <p>Tap <strong>▶ Play Selected</strong> to open the mixer, then practise:</p>
-    <ul>
-      <li><strong>Speed</strong> from 0.7x to 1.3x, with the pitch preserved</li>
-      <li><strong>Level and pan</strong> for each track</li>
-      <li><strong>Solo or mute</strong> any part</li>
-      <li><strong>Repeat</strong> with the Loop switch</li>
-      <li><strong>Export</strong> your mix as a WAV file</li>
-    </ul>
-    <figure>
-      <img src="help/mixer.png" alt="The mixer with transport, speed and per-track controls" data-testid="help-shot-mixer" width="390" height="844">
-      <figcaption>The mixer.</figcaption>
-    </figure>
+    <div class="step-body">
+      <div class="text">
+        <p>Tap <strong>▶ Play Selected</strong> to open the mixer, then practise:</p>
+        <ul>
+          <li><strong>Speed</strong> from 0.7x to 1.3x, with the pitch preserved</li>
+          <li><strong>Level and pan</strong> for each track</li>
+          <li><strong>Solo or mute</strong> any part</li>
+          <li><strong>Repeat</strong> with the Loop switch</li>
+          <li><strong>Export</strong> your mix as a WAV file</li>
+        </ul>
+      </div>
+      <figure>
+        <img src="help/mixer.png" alt="The mixer with transport, speed and per-track controls" data-testid="help-shot-mixer" width="390" height="844">
+        <figcaption>The mixer.</figcaption>
+      </figure>
+    </div>
   </section>
 
   <section class="tips">
@@ -142,17 +156,6 @@
     }
   });
 
-  document.getElementById('help-share').addEventListener('click', function () {
-    var appUrl = new URL('./', location.href).href;
-    var guideUrl = location.origin + location.pathname;
-    var text = 'Practice Mix lets you practise your choir part with the other parts mixed in the background.';
-    if (navigator.share) {
-      navigator.share({ title: 'Practice Mix', text: text, url: appUrl }).catch(function () {});
-      return;
-    }
-    var body = text + '\n\nOpen the app: ' + appUrl + '\nHow to use it: ' + guideUrl + '\n';
-    location.href = 'mailto:?subject=' + encodeURIComponent('Practice Mix') + '&body=' + encodeURIComponent(body);
-  });
 })();
 </script>
 </body>
