@@ -331,20 +331,23 @@ body {
 
 .btn-back:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
 
-/* Header action buttons: links and choir schedule, grouped at the top right */
+/* Header action buttons: Drive folder, links and choir schedule, grouped at the top right */
 .header-actions { display: flex; gap: var(--spacing-sm); }
-.btn-schedule, .btn-links {
+.btn-schedule, .btn-links, .btn-drive {
   background: var(--surface-2); color: var(--text-2);
   border: 1px solid var(--border-strong); border-radius: 9px;
   width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; font-size: 18px;
 }
 
-.btn-schedule:hover:not(:disabled), .btn-links:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.btn-schedule:hover:not(:disabled), .btn-links:hover:not(:disabled), .btn-drive:hover { background: var(--surface-3); color: var(--text); }
+.btn-drive { text-decoration: none; }
+/* No folder loaded yet: the link has no href, so it shows but does nothing. */
+.btn-drive:not([href]) { opacity: .5; pointer-events: none; }
 .header > .header-actions { position: absolute; top: 0; right: 0; }
-/* Phones: centring the title leaves it touching the two buttons, so align it left and keep the
-   buttons' column clear (2 × 40px + gap + breathing room). */
+/* Phones: centring the title leaves it touching the three buttons, so align it left and keep the
+   buttons' column clear (3 × 40px + 2 gaps + breathing room). */
 @media (max-width: 560px) {
-  .header { text-align: left; padding-right: 104px; }
+  .header { text-align: left; padding-right: 152px; }
 }
 
 /* ================================================================== */
@@ -1017,7 +1020,8 @@ body {
         <h1>🎵 Practice Mix</h1>
         <p class="header-subtitle">Find and play your practice tracks</p>
         <div class="header-actions">
-          <button class="btn btn-links" data-testid="links-btn" aria-label="Links to learn by" title="Links to learn by">🔗</button>
+          <a class="btn btn-drive" data-testid="drive-btn" target="_blank" rel="noopener" aria-label="Open this folder in Google Drive" title="Open this folder in Google Drive">📂</a>
+          <button class="btn btn-links" data-testid="links-btn"aria-label="Links to learn by" title="Links to learn by">🔗</button>
           <button class="btn btn-schedule" data-testid="schedule-btn" aria-label="Choir schedule" title="Choir schedule">📅</button>
         </div>
       </header>
@@ -1105,7 +1109,8 @@ body {
         >← Back</button>
         <h1 id="playback-title" data-testid="playback-title">Practice Mix</h1>
         <div class="header-actions">
-          <button class="btn btn-links" data-testid="links-btn-playback" aria-label="Links to learn by" title="Links to learn by">🔗</button>
+          <a class="btn btn-drive" data-testid="drive-btn-playback" target="_blank" rel="noopener" aria-label="Open this folder in Google Drive" title="Open this folder in Google Drive">📂</a>
+          <button class="btn btn-links" data-testid="links-btn-playback"aria-label="Links to learn by" title="Links to learn by">🔗</button>
           <button class="btn btn-schedule" data-testid="schedule-btn-playback" aria-label="Choir schedule" title="Choir schedule">📅</button>
         </div>
       </div>
@@ -1271,10 +1276,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.10";
+var STATIC_BUILD_VERSION_ = "1.6.11";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-10-03T20:24:13.951Z";
+var STATIC_BUILD_DATE_ = "2026-10-04T00:00:52.811Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -3891,10 +3896,12 @@ const UI = (() => {
    * Puts the current folder in the address bar without a reload, so the page is linkable and the
    * back button is not a dead end. `?webapp=` is dropped on the way through: it is a local-dev
    * bootstrap parameter, already remembered in sessionStorage, and has no business in a link
-   * anyone shares.
+   * anyone shares. The header Drive buttons follow the same folder.
    */
   function syncAddressBar() {
     if (!state.folderId) return;
+    const driveUrl = 'https://drive.google.com/drive/folders/' + encodeURIComponent(state.folderId);
+    document.querySelectorAll('.btn-drive').forEach((a) => { a.href = driveUrl; });
     try {
       const url = new URL(window.location.href);
       url.searchParams.delete('webapp');
