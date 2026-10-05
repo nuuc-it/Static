@@ -32,7 +32,7 @@
     .btn-primary { background: var(--green); border-color: var(--green); color: #06130c; flex: 1 1 200px; }
     .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
     #help-close {
-      position: absolute; top: 12px; right: 12px; width: 44px; height: 44px; min-height: 0; padding: 0;
+      position: fixed; z-index: 10; top: 12px; right: 12px; width: 44px; height: 44px; min-height: 0; padding: 0;
       font-size: 22px; line-height: 1; border-radius: 50%;
     }
     #help-close[hidden] { display: none; }
@@ -142,9 +142,10 @@
   var hasOpener = !!window.opener;
   var closeBtn = document.getElementById('help-close');
 
-  if (params.get('from') === 'app' || hasOpener || framed) closeBtn.hidden = false;
+  var fromApp = params.get('from') === 'app' || hasOpener || framed;
+  if (fromApp) closeBtn.hidden = false;
 
-  closeBtn.addEventListener('click', function () {
+  function closeGuide() {
     if (window.parent !== window) {
       window.parent.postMessage({ type: 'pmix-help-close' }, '*');
     } else if (window.opener) {
@@ -154,7 +155,16 @@
     } else {
       location.href = './';
     }
-  });
+  }
+  closeBtn.addEventListener('click', closeGuide);
+
+  // Launched from the app: the primary button returns to it rather than opening a second copy.
+  if (fromApp) {
+    var appLink = document.querySelector('[data-testid="help-open-app"]');
+    appLink.textContent = 'Back to Practice Mix';
+    appLink.addEventListener('click', function (e) { e.preventDefault(); closeGuide(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeGuide(); });
+  }
 
 })();
 </script>

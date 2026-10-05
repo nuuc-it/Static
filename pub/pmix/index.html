@@ -331,23 +331,46 @@ body {
 
 .btn-back:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
 
-/* Header action buttons: Drive folder, links and choir schedule, grouped at the top right */
+/* Header action buttons: Drive folder, links, choir schedule and help, grouped at the top right */
 .header-actions { display: flex; gap: var(--spacing-sm); }
-.btn-schedule, .btn-links, .btn-drive {
+.btn-schedule, .btn-links, .btn-drive, .btn-help {
   background: var(--surface-2); color: var(--text-2);
   border: 1px solid var(--border-strong); border-radius: 9px;
   width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; font-size: 18px;
 }
 
-.btn-schedule:hover:not(:disabled), .btn-links:hover:not(:disabled), .btn-drive:hover { background: var(--surface-3); color: var(--text); }
+.btn-help { font-weight: 700; }
+.btn-schedule:hover:not(:disabled), .btn-links:hover:not(:disabled), .btn-drive:hover, .btn-help:hover { background: var(--surface-3); color: var(--text); }
 .btn-drive { text-decoration: none; }
 /* No folder loaded yet: the link has no href, so it shows but does nothing. */
 .btn-drive:not([href]) { opacity: .5; pointer-events: none; }
 .header > .header-actions { position: absolute; top: 0; right: 0; }
-/* Phones: centring the title leaves it touching the three buttons, so align it left and keep the
-   buttons' column clear (3 × 40px + 2 gaps + breathing room). */
+/* Phones: centring the title leaves it touching the four buttons, so align it left and keep the
+   buttons' column clear (4 × 40px + 3 gaps + breathing room). */
 @media (max-width: 560px) {
-  .header { text-align: left; padding-right: 152px; }
+  .header { text-align: left; padding-right: 196px; }
+}
+/* Narrow phones: slightly smaller buttons leave the song title room to breathe on the mixer. */
+@media (max-width: 400px) {
+  .header-actions { gap: 6px; }
+  .btn-schedule, .btn-links, .btn-drive, .btn-help { width: 36px; min-width: 36px; height: 36px; min-height: 36px; font-size: 16px; }
+  .header { padding-right: 164px; }
+  .header h1 { font-size: 20px; }
+  /* Mixer: Back and the buttons share the top row; the song title gets the full width below. */
+  .playback-header { grid-template-columns: auto 1fr; row-gap: 10px; }
+  .playback-header h1 { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* In-app user guide (bd atc-wvp): help.html framed over the app, so closing it returns to the
+   exact screen, selection and playback it was opened from. */
+.help-modal {
+  position: fixed; inset: 0; z-index: 1100; display: flex; justify-content: center; align-items: stretch;
+  background: rgba(0,0,0,.7);
+}
+.help-modal iframe { border: 0; width: 100%; max-width: 760px; height: 100%; background: var(--bg); }
+@media (min-width: 800px) {
+  .help-modal { align-items: center; }
+  .help-modal iframe { height: 92vh; border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: 0 10px 40px rgba(0,0,0,.6); }
 }
 
 /* ================================================================== */
@@ -1023,6 +1046,7 @@ body {
           <a class="btn btn-drive" data-testid="drive-btn" target="_blank" rel="noopener" aria-label="Open this folder in Google Drive" title="Open this folder in Google Drive">📂</a>
           <button class="btn btn-links" data-testid="links-btn" aria-label="Links to learn by" title="Links to learn by">🔗</button>
           <button class="btn btn-schedule" data-testid="schedule-btn" aria-label="Choir schedule" title="Choir schedule">📅</button>
+          <button class="btn btn-help" data-testid="help-btn" aria-label="How to use Practice Mix" title="How to use Practice Mix">?</button>
         </div>
       </header>
 
@@ -1112,6 +1136,7 @@ body {
           <a class="btn btn-drive" data-testid="drive-btn-playback" target="_blank" rel="noopener" aria-label="Open this folder in Google Drive" title="Open this folder in Google Drive">📂</a>
           <button class="btn btn-links" data-testid="links-btn-playback" aria-label="Links to learn by" title="Links to learn by">🔗</button>
           <button class="btn btn-schedule" data-testid="schedule-btn-playback" aria-label="Choir schedule" title="Choir schedule">📅</button>
+          <button class="btn btn-help" data-testid="help-btn-playback" aria-label="How to use Practice Mix" title="How to use Practice Mix">?</button>
         </div>
       </div>
 
@@ -1276,10 +1301,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.14";
+var STATIC_BUILD_VERSION_ = "1.6.15";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-10-04T19:21:24.878Z";
+var STATIC_BUILD_DATE_ = "2026-10-05T08:03:22.009Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -5409,6 +5434,10 @@ const UI = (() => {
     </div>
   </div>
 
+  <div id="help-modal" data-testid="help-modal" class="help-modal hidden" role="dialog" aria-modal="true" aria-label="How to use Practice Mix">
+    <iframe id="help-frame" data-testid="help-frame" title="How to use Practice Mix"></iframe>
+  </div>
+
 <script>
 /**
  * Doc popups (choir schedule, links to learn by). Pure helpers are exported for unit tests; DOM
@@ -5695,6 +5724,52 @@ if (typeof document !== 'undefined') {
     defaultTitle: 'Links to Learn By', loadingText: 'Loading links…', failText: 'The links could not be loaded.',
     render: renderLinksList
   });
+  initHelpGuide();
+}
+
+/**
+ * Help (?) — bd atc-wvp. Frames help.html?from=app over the app so the screen underneath is never
+ * left. The guide asks to close with postMessage {type:'pmix-help-close'} (its X, its "Back to
+ * Practice Mix" button, Escape); Escape here, a backdrop click and the browser/phone back gesture
+ * close it too. Opening pushes a history entry so Back closes the guide instead of leaving the app.
+ */
+function initHelpGuide() {
+  const modal = document.getElementById('help-modal');
+  const frame = document.getElementById('help-frame');
+  let opener = null;
+  const isOpen = () => !modal.classList.contains('hidden');
+
+  function open(btn) {
+    if (isOpen()) return;
+    opener = btn;
+    if (!frame.getAttribute('src')) frame.src = 'help.html?from=app';
+    else { try { frame.contentWindow.scrollTo(0, 0); } catch (e) { /* not loaded yet */ } }
+    modal.classList.remove('hidden');
+    history.pushState({ pmixHelp: true }, '');
+    frame.focus();
+  }
+
+  function hide() {
+    if (!isOpen()) return;
+    modal.classList.add('hidden');
+    if (opener && typeof opener.focus === 'function') opener.focus();
+    opener = null;
+  }
+
+  // Unwind the entry open() pushed; popstate then hides the guide.
+  function close() {
+    if (!isOpen()) return;
+    if (history.state && history.state.pmixHelp) history.back();
+    else hide();
+  }
+
+  document.querySelectorAll('.btn-help').forEach((b) => b.addEventListener('click', () => open(b)));
+  window.addEventListener('popstate', hide);
+  window.addEventListener('message', (e) => {
+    if (e.source === frame.contentWindow && e.data && e.data.type === 'pmix-help-close') close();
+  });
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 }
 </script>
 </body>
