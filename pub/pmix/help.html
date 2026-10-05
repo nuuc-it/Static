@@ -45,6 +45,12 @@
     .step p, .step ul { font-size: 15px; }
     .step ul { margin: 6px 0 0 20px; }
     .text p + p { margin-top: 8px; }
+    .step ul.icons { list-style: none; margin: 6px 0 0; }
+    .icons li { display: flex; gap: 10px; align-items: flex-start; margin-top: 6px; }
+    .icons .icon {
+      flex: none; width: 32px; height: 32px; border-radius: 8px; background: var(--surface-2);
+      border: 1px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
+    }
     .step strong { color: var(--text); }
     .focus { color: var(--green); font-weight: 600; }
     figure { margin-top: 12px; text-align: center; }
@@ -81,6 +87,12 @@
     <div class="step-body">
       <div class="text">
         <p>It opens on the current season folder. Tap a song's folder to go in.</p>
+        <p>The buttons at the top right:</p>
+        <ul class="icons" data-testid="help-icons">
+          <li><span class="icon">📂</span><span><strong>Folder</strong> opens the <strong>CURRENT CHOIR SEASON</strong> folder in Google Drive.</span></li>
+          <li><span class="icon">🔗</span><span><strong>Links</strong> opens Kathryn's helpful <strong>Links to Learn By</strong> document.</span></li>
+          <li><span class="icon">📅</span><span><strong>Calendar</strong> opens the <strong>Choir Schedule</strong> with upcoming choir dates and activities.</span></li>
+        </ul>
       </div>
       <figure>
         <img src="help/folder.png" alt="The season folder with a list of song folders" data-testid="help-shot-folder" width="390" height="844">
