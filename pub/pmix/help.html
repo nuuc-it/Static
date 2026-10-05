@@ -95,7 +95,7 @@
         </ul>
       </div>
       <figure>
-        <img src="help/folder.png" alt="The season folder with a list of song folders" data-testid="help-shot-folder" width="390" height="844">
+        <img data-src="help/folder.png" alt="The season folder with a list of song folders" data-testid="help-shot-folder" width="390" height="844">
         <figcaption>Season folder: tap a song.</figcaption>
       </figure>
     </div>
@@ -109,7 +109,7 @@
         <p>Then tap the other parts or the accompaniment you want to sing against. These are <strong>background tracks</strong> and play quieter.</p>
       </div>
       <figure>
-        <img src="help/song.png" alt="A song folder with one focus track and two background tracks selected" data-testid="help-shot-song" width="390" height="844">
+        <img data-src="help/song.png" alt="A song folder with one focus track and two background tracks selected" data-testid="help-shot-song" width="390" height="844">
         <figcaption>Song folder: your part first, then the others.</figcaption>
       </figure>
     </div>
@@ -129,7 +129,7 @@
         </ul>
       </div>
       <figure>
-        <img src="help/mixer.png" alt="The mixer with transport, speed and per-track controls" data-testid="help-shot-mixer" width="390" height="844">
+        <img data-src="help/mixer.png" alt="The mixer with transport, speed and per-track controls" data-testid="help-shot-mixer" width="390" height="844">
         <figcaption>The mixer.</figcaption>
       </figure>
     </div>
@@ -150,6 +150,13 @@
 <script>
 (function () {
   var params = new URLSearchParams(location.search);
+
+  // The app opens the guide as help.html?v=<build stamp> (bd atc-z6u); the screenshots carry the
+  // same stamp so a deploy never shows the previous build's images from a browser or CDN cache.
+  var v = params.get('v');
+  Array.prototype.forEach.call(document.querySelectorAll('img[data-src]'), function (img) {
+    img.src = img.getAttribute('data-src') + (v ? '?v=' + encodeURIComponent(v) : '');
+  });
   var framed = window.parent !== window;
   var hasOpener = !!window.opener;
   var closeBtn = document.getElementById('help-close');
