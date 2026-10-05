@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2026 Stuart Donaldson. Licensed under MIT License. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Practice Mix — How to Use</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+    :root {
+      --bg: #0b0d10; --surface-1: #161a20; --surface-2: #1d2229; --border: #262c35; --border-strong: #3a4452;
+      --text: #f5f7fa; --text-2: #c0c8d4; --text-3: #8a93a1;
+      --green: oklch(0.72 0.16 155); --blue: oklch(0.72 0.14 240); --amber: oklch(0.78 0.14 70);
+      --radius: 10px; --spacing: 16px;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      line-height: 1.5; color: var(--text-2); background: var(--bg); overflow-x: hidden;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: var(--spacing); padding-bottom: 40px; position: relative; }
+    header { text-align: center; padding: 8px 40px 4px; }
+    h1 { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .sub { font-size: 14px; color: var(--text-3); }
+    .intro { margin: 16px 0; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 8px; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px;
+      border-radius: var(--radius); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none;
+      border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+    }
+    .btn-primary { background: var(--green); border-color: var(--green); color: #06130c; flex: 1 1 200px; }
+    .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    #help-close {
+      position: fixed; z-index: 10; top: 12px; right: 12px; width: 44px; height: 44px; min-height: 0; padding: 0;
+      font-size: 22px; line-height: 1; border-radius: 50%;
+    }
+    #help-close[hidden] { display: none; }
+    .step { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--spacing); margin-top: 16px; }
+    .step h2 { font-size: 16px; color: var(--text); margin-bottom: 6px; display: flex; gap: 10px; align-items: center; }
+    .num {
+      flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--blue); color: #08121c;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700;
+    }
+    .step p, .step ul { font-size: 15px; }
+    .step ul { margin: 6px 0 0 20px; }
+    .text p + p { margin-top: 8px; }
+    .step ul.icons { list-style: none; margin: 6px 0 0; }
+    .icons li { display: flex; gap: 10px; align-items: flex-start; margin-top: 6px; }
+    .icons .icon {
+      flex: none; width: 32px; height: 32px; border-radius: 8px; background: var(--surface-2);
+      border: 1px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
+    }
+    .step strong { color: var(--text); }
+    .focus { color: var(--green); font-weight: 600; }
+    figure { margin-top: 12px; text-align: center; }
+    img { display: block; width: 240px; max-width: 100%; height: auto; margin: 0 auto; border: 1px solid var(--border); border-radius: var(--radius); }
+    figcaption { font-size: 12px; color: var(--text-3); margin-top: 6px; }
+    .tips { margin-top: 20px; }
+    .tips h2 { font-size: 16px; color: var(--text); margin-bottom: 6px; }
+    .tips ul { margin-left: 20px; font-size: 15px; }
+    footer { margin-top: 20px; font-size: 12px; color: var(--text-3); text-align: center; }
+    @media (min-width: 600px) {
+      .step-body { display: grid; grid-template-columns: 1fr 240px; gap: 20px; align-items: start; }
+      .step-body figure { margin-top: 0; }
+    }
+    @media print { #help-close, .actions { display: none; } }
+  </style>
+</head>
+<body>
+<main class="wrap" data-testid="help-page">
+  <button id="help-close" class="btn" data-testid="help-close" aria-label="Close guide" title="Close" hidden>&times;</button>
+
+  <header>
+    <h1>Practice Mix</h1>
+    <p class="sub">How to use it</p>
+  </header>
+
+  <p class="intro">Practice Mix lets you listen to your choir's practice tracks and mix them: bring your own voice part forward and keep the other parts quieter in the background.</p>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="./" data-testid="help-open-app">Open Practice Mix</a>
+  </div>
+
+  <section class="step">
+    <h2><span class="num">1</span>Open the app</h2>
+    <div class="step-body">
+      <div class="text">
+        <p>It opens on the current season folder. Tap a song's folder to go in.</p>
+        <p>The buttons at the top right:</p>
+        <ul class="icons" data-testid="help-icons">
+          <li><span class="icon">📂</span><span><strong>Folder</strong> opens the <strong>CURRENT CHOIR SEASON</strong> folder in Google Drive.</span></li>
+          <li><span class="icon">🔗</span><span><strong>Links</strong> opens Kathryn's helpful <strong>Links to Learn By</strong> document.</span></li>
+          <li><span class="icon">📅</span><span><strong>Calendar</strong> opens the <strong>Choir Schedule</strong> with upcoming choir dates and activities.</span></li>
+        </ul>
+      </div>
+      <figure>
+        <img data-src="help/folder.png" alt="The season folder with a list of song folders" data-testid="help-shot-folder" width="390" height="844">
+        <figcaption>Season folder: tap a song.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">2</span>Pick your tracks</h2>
+    <div class="step-body">
+      <div class="text">
+        <p><span class="focus">Tap your own part first.</span> The first track you select is your <strong>focus track</strong> and plays at normal level.</p>
+        <p>Then tap the other parts or the accompaniment you want to sing against. These are <strong>background tracks</strong> and play quieter.</p>
+      </div>
+      <figure>
+        <img data-src="help/song.png" alt="A song folder with one focus track and two background tracks selected" data-testid="help-shot-song" width="390" height="844">
+        <figcaption>Song folder: your part first, then the others.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">3</span>Play Selected</h2>
+    <div class="step-body">
+      <div class="text">
+        <p>Tap <strong>▶ Play Selected</strong> to open the mixer, then practise:</p>
+        <ul>
+          <li><strong>Speed</strong> from 0.7x to 1.3x, with the pitch preserved</li>
+          <li><strong>Level and pan</strong> for each track</li>
+          <li><strong>Solo or mute</strong> any part</li>
+          <li><strong>Repeat</strong> with the Loop switch</li>
+          <li><strong>Export</strong> your mix as a WAV file</li>
+        </ul>
+      </div>
+      <figure>
+        <img data-src="help/mixer.png" alt="The mixer with transport, speed and per-track controls" data-testid="help-shot-mixer" width="390" height="844">
+        <figcaption>The mixer.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="tips">
+    <h2>Tips</h2>
+    <ul>
+      <li>The app remembers your part in this browser, so next time it is ready first.</li>
+      <li>Tracks are saved on your device, so return visits load fast.</li>
+      <li>Works on a phone or a computer in a modern browser. Nothing to install.</li>
+    </ul>
+  </section>
+
+  <footer>Practice Mix user guide</footer>
+</main>
+
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+
+  // The app opens the guide as help.html?v=<build stamp> (bd atc-z6u); the screenshots carry the
+  // same stamp so a deploy never shows the previous build's images from a browser or CDN cache.
+  var v = params.get('v');
+  Array.prototype.forEach.call(document.querySelectorAll('img[data-src]'), function (img) {
+    img.src = img.getAttribute('data-src') + (v ? '?v=' + encodeURIComponent(v) : '');
+  });
+  var framed = window.parent !== window;
+  var hasOpener = !!window.opener;
+  var closeBtn = document.getElementById('help-close');
+
+  var fromApp = params.get('from') === 'app' || hasOpener || framed;
+  if (fromApp) closeBtn.hidden = false;
+
+  function closeGuide() {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'pmix-help-close' }, '*');
+    } else if (window.opener) {
+      window.close();
+    } else if (history.length > 1) {
+      history.back();
+    } else {
+      location.href = './';
+    }
+  }
+  closeBtn.addEventListener('click', closeGuide);
+
+  // Launched from the app: the primary button returns to it rather than opening a second copy.
+  if (fromApp) {
+    var appLink = document.querySelector('[data-testid="help-open-app"]');
+    appLink.textContent = 'Back to Practice Mix';
+    appLink.addEventListener('click', function (e) { e.preventDefault(); closeGuide(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeGuide(); });
+  }
+
+})();
+</script>
+</body>
+</html>
