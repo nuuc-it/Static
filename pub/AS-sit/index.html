@@ -295,9 +295,10 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.2.5.120";
-var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzVloY3corgO5F9AV7XvAbkL1oaTaehcE1kXwmFdJsXZPBBCm3xJ4ONJsZADHH9Hm4/exec";
+var STATIC_BUILD_VERSION_ = "0.1.0.41";
+var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
+var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
 
 // Backend targets. NUUC_DISPATCH_URL is a separate project (NUUC-Dispatch)
 // and not part of this repo's deploy/stamp pipeline — confirm its current
@@ -308,7 +309,7 @@ var STATIC_ENV_LABEL_ = "SIT";
 // and PROD always calls PROD-WEB-APP — no manual URL-swap step.
 const NUUC_DISPATCH_URL = 'https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec';
 const GACTIONSHEET_URL  = STATIC_WEBAPP_URL_;
-const ASSERTION_AUD = 'gactionsheet';
+const ASSERTION_AUD = STATIC_ASSERTION_AUD_;
 
 // ---- version footer + stale-client prompt -------------------------------
 // GAS-Core best-practices/gas-static-frontend, "The static page interface contract"
