@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Northlake UU Tool Suite — User Guide</title>
+  <style>
+    body { font-family: sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; background: #fff; }
+    h1 { color: #1E3A5F; display: flex; align-items: center; gap: 12px; }
+    h1 img { width: 48px; height: 48px; }
+    h2 { color: #2563EB; margin-top: 2em; }
+    h3 { color: #1E3A5F; margin-bottom: 0.3em; }
+    p, li { line-height: 1.7; }
+    code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #cbd5e1; padding: 6px 10px; text-align: left; vertical-align: top; line-height: 1.5; }
+    th { background: #f1f5f9; }
+    .status img { width: 18px; height: 18px; vertical-align: middle; margin-right: 6px; }
+    .note { color: #475569; font-size: 0.95em; }
+  </style>
+</head>
+<body>
+  <h1><img src="../assets/product-details/northlake-uu-emblem.png" alt="">Northlake UU Tool Suite — User Guide</h1>
+
+  <p>The Northlake UU Tool Suite (NUUTS) is one Google Workspace add-on that adds Northlake UU's
+  working tools to Google Docs and Sheets. It currently includes three features:</p>
+  <ul>
+    <li><a href="#action-items">Action Items</a> — capture action items in meeting notes and track them in a shared spreadsheet.</li>
+    <li><a href="#format">Format</a> — apply the standard GC formatting rules to a document.</li>
+    <li><a href="#export">Export</a> — export a document to a structured file, with an optional PDF snapshot.</li>
+  </ul>
+
+  <h2 id="where">Where to find the suite</h2>
+  <p>After the add-on is installed, the suite appears in four places in Google Docs (and the
+  Action Items spreadsheet):</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Place</th><th>How to open it</th><th>What it offers</th></tr>
+    <tr><td>Side panel</td><td>Click the suite's icon in the right-hand panel of a Doc</td><td>Action Items buttons (Sync, Import, Notify, Insert Tracker), this User Guide, and the version number</td></tr>
+    <tr><td>Extensions menu</td><td><strong>Extensions</strong> → the suite's add-on menu</td><td>Menu items from each feature (listed under each feature below) and <strong>About NUUTS</strong></td></tr>
+    <tr><td>@-menu</td><td>Type <code>@create action</code> on a new line</td><td>A form to insert a new action item</td></tr>
+    <tr><td>Action chips</td><td>Click (or hover over) an action item's link in a Doc</td><td>A preview card showing the action's status and assignee, where the status can be changed</td></tr>
+  </table>
+  </div>
+
+  <h2 id="action-items">Action Items</h2>
+  <p>Action Items captures to-dos written in your Google Docs meeting notes and rolls them up into a
+  shared spreadsheet (the <strong>Actions sheet</strong>), so anyone can see what is open, who owns it,
+  and in which document it was assigned.</p>
+
+  <h3>Getting started</h3>
+  <p>Start a paragraph with <code>AI:</code>, optionally followed by an email address (or a person
+  chip) for the assignee, then the action text — for example
+  <code>AI: someone@northlakeuu.org Order the new projector</code>. Then click <strong>Sync</strong> in the
+  side panel. Sync gives the action a permanent number (<code>AI:</code> becomes <code>AI-3:</code>) and
+  records it in the Actions sheet. You can also type <code>@create action</code> and fill in the form.</p>
+
+  <h3>Status</h3>
+  <p>Each action ends with its status in parentheses, such as <code>(Open)</code> or
+  <code>(Done)</code>. Sync adds <code>(Open)</code> if you leave it off. To change a status, click the
+  action's chip and choose a new one, or edit the text in the parentheses and Sync.</p>
+  <div class="table-wrap">
+  <table class="status">
+    <tr><td><img src="../assets/product-details/status-open.png" alt="">Open</td>
+        <td><img src="../assets/product-details/status-in-progress.png" alt="">In Progress</td>
+        <td><img src="../assets/product-details/status-review.png" alt="">In Review</td></tr>
+    <tr><td><img src="../assets/product-details/status-done.png" alt="">Done</td>
+        <td><img src="../assets/product-details/status-closed.png" alt="">Closed</td>
+        <td><img src="../assets/product-details/status-other.png" alt="">Any other text</td></tr>
+  </table>
+  </div>
+
+  <h3>Side panel buttons</h3>
+  <ul>
+    <li><strong>Sync</strong> — scans this document for actions and reconciles them with the Actions sheet.
+      A background sync also runs about every 30 minutes, so edits made by people without the add-on are still picked up.</li>
+    <li><strong>Import</strong> — shows open actions from other documents in your team and brings selected ones into this document.</li>
+    <li><strong>Notify</strong> — reviews this document's actions as tracked in the sheet and notifies their assignees.</li>
+    <li><strong>Insert Tracker</strong> — inserts or refreshes a summary table of this document's actions at the top of the document.</li>
+  </ul>
+  <p>The same tasks are on the Extensions menu as <strong>Action Sync</strong>, <strong>Insert Tracker</strong> and
+  <strong>Force Refresh Style</strong>. In the Actions spreadsheet, the menu offers <strong>Spreadsheet Sync All</strong>,
+  <strong>Ensure Sheet Structure</strong> and <strong>Run Archive</strong>.</p>
+
+  <h3>Teams</h3>
+  <p>The first time a document is synced, it is assigned to a team based on the Drive folder it lives
+  in. Import only shows actions from documents in the same team.</p>
+  <p class="note">Allow 10–20 seconds for a sync to settle before assuming it did not work.</p>
+
+  <h2 id="format">Format</h2>
+  <p>Format applies the GC formatting rules to the open document. From the Extensions menu,
+  <strong>GC Format</strong> opens a dialog where you choose which formatting rules to apply.
+  <strong>GC Format (Again)</strong> applies the same choices again without the dialog.</p>
+
+  <h2 id="export">Export</h2>
+  <p>Export saves the open document as a structured file that includes its text, comments, revisions and
+  images, with an optional PDF snapshot, into an export folder in Google Drive. Start it from
+  <strong>Extensions → Export…</strong>. A dialog shows progress until the export finishes.</p>
+
+  <h2 id="about">About NUUTS</h2>
+  <p><strong>Extensions → About NUUTS</strong> shows which version of the suite and its features is
+  running. Include this when you report a problem.</p>
+</body>
+</html>
