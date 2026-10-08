@@ -183,12 +183,13 @@
 // gts-79dw.4.23/Unit D) — stamped by scripts/build-static-portal.js from
 // src/Version.js's BUILD_INFO immediately before publish, identically to
 // index.html. Left null here in the unbuilt source.
-var STATIC_BUILD_VERSION_ = "0.1.5.3";
+var STATIC_BUILD_VERSION_ = "0.1.5.4";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
+var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
 
-const NUUC_DISPATCH_URL = 'https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec';
+const NUUC_DISPATCH_URL = STATIC_DISPATCH_URL_; // stamped per env from the Shell gas-project.json pin (google-resources.md section 9); null = unbuilt page
 const GACTIONSHEET_URL  = STATIC_WEBAPP_URL_;
 const ASSERTION_AUD = STATIC_ASSERTION_AUD_;
 
@@ -369,6 +370,11 @@ function showAppShell(subMsg){
 function onGoogleSignIn(credentialResponse){
   state.idToken = credentialResponse.credential;
   $('signinError').style.display = 'none';
+  if (!NUUC_DISPATCH_URL) {
+    $('signinError').style.display = 'block';
+    $('signinError').textContent = 'This page was not built with a NUUC-Dispatch URL (build-time stamp missing); sign-in is disabled.';
+    return;
+  }
   showLaunch('Signing you in…');
 
   postJson(NUUC_DISPATCH_URL, { action: 'verify_identity', idToken: state.idToken, aud: ASSERTION_AUD })
