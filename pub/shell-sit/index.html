@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Northlake UU Tool Suite — Admin</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root { --fg:#1a1a1a; --bg:#fff; --muted:#475569; --line:#cbd5e1; --head:#1E3A5F; --link:#2563EB; --panel:#f1f5f9; --bad:#b91c1c; --ok:#166534; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e5e7eb; --bg:#111827; --muted:#9ca3af; --line:#374151; --head:#93c5fd; --link:#93c5fd; --panel:#1f2937; --bad:#fca5a5; --ok:#86efac; }
+  }
+  body { font-family: sans-serif; max-width: 760px; margin: 32px auto; padding: 0 16px; color: var(--fg); background: var(--bg); }
+  h1 { color: var(--head); display: flex; align-items: center; gap: 12px; font-size: 1.6em; }
+  h1 img { width: 48px; height: 48px; }
+  h2 { color: var(--head); margin-top: 1.8em; }
+  a { color: var(--link); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; line-height: 1.5; }
+  th { background: var(--panel); }
+  .muted { color: var(--muted); font-size: 0.95em; }
+  .bad { color: var(--bad); }
+  .ok { color: var(--ok); }
+  .action { border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin: 12px 0; background: var(--panel); }
+  .action label { display: block; font-weight: bold; margin-bottom: 6px; }
+  .action input[type=text] { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; }
+  .action button { margin-top: 8px; padding: 6px 14px; font: inherit; cursor: pointer; }
+  .result { margin-top: 8px; white-space: pre-wrap; word-break: break-word; }
+  .hidden { display: none; }
+  .signin { border: 1px dashed var(--line); border-radius: 6px; padding: 12px; margin: 12px 0; }
+  .buildbadge { margin-top: 2em; color: var(--muted); font-size: 0.85em; }
+</style>
+</head>
+<body>
+<h1><img src="assets/product-details/northlake-uu-emblem.png" alt="">Northlake UU Tool Suite — Admin</h1>
+<p class="muted">What is running, where its web pages are, and document operations. Viewing this page needs no sign-in;
+you sign in with Google only when you run a document action.
+See also the <a href="user-guide/">User Guide</a>, <a href="privacy/">Privacy</a> and <a href="terms/">Terms</a>.</p>
+
+<h2>About</h2>
+<div id="aboutMsg" class="muted">Loading…</div>
+<div class="table-wrap"><table id="featuresTable" class="hidden">
+  <thead><tr><th>Feature</th><th>Version</th></tr></thead>
+  <tbody id="featuresBody"></tbody>
+</table></div>
+
+<h2>Web pages</h2>
+<ul id="webUiList"></ul>
+<div id="webUiEmpty" class="muted hidden">No features have published a web page.</div>
+
+<h2>Document actions</h2>
+<p class="muted">Paste a Google Doc URL or ID. You need edit access to the document.</p>
+<div id="docActions"></div>
+<div id="docActionsEmpty" class="muted hidden">No document actions are registered.</div>
+
+<div id="signinBox" class="signin hidden">
+  <p id="signinMsg">Sign in with Google to run this action. Your identity is verified by NUUC-Dispatch and kept in this browser for up to 45 days.</p>
+  <div id="g_signin_button"></div>
+  <div id="signinError" class="bad"></div>
+</div>
+<div id="whoBox" class="muted hidden">Signed in as <span id="whoEmail"></span> · <a href="#" id="signOutLink">Sign out</a></div>
+
+<div class="buildbadge" id="buildBadge"></div>
+
+<script>
+// Build-time stamps — gas-static (scripts/static-pages.js) replaces these literals per env. Left null in the
+// unbuilt source, which has no backend to call.
+var STATIC_BUILD_VERSION_ = "0.1.0";
+var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
+var STATIC_ENV_LABEL_ = "SIT";
+var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
+
+// NUUC-Dispatch is a separate project, not part of this repo's stamp pipeline (same value as NUUTS-Track's team portal).
+const NUUC_DISPATCH_URL = 'https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec';
+const GOOGLE_CLIENT_ID = '657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com';
+const SHELL_URL = STATIC_WEBAPP_URL_;
+const ASSERTION_AUD = STATIC_ASSERTION_AUD_;
+
+// pub/shell and pub/shell-sit share one origin (nuuc-it.github.io), so every storage key is scoped to this build's
+// assertion audience (NT-8oa); unscoped, each portal would reuse the other's records.
+const STORAGE_SCOPE_ = ASSERTION_AUD ? ':' + ASSERTION_AUD : '';
+const AUTH_STORAGE_KEY = 'nuutsShellAuth.v1' + STORAGE_SCOPE_;
+const AUTH_RENEW_SKEW_SECONDS = 300;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// A server-supplied href is only ever linked when it is an https URL under the published Static host.
+const SAFE_HREF_PREFIX = 'https://nuuc-it.github.io/Static/pub/';
+const isSafeHref = (h) => typeof h === 'string' && h.indexOf(SAFE_HREF_PREFIX) === 0 && !/[?#"'<>\s]/.test(h);
+
+const state = { assertion: null, sub: '', email: '', pending: null };
+
+// ---- transport: text/plain keeps these CORS-simple requests (the GAS WebApps implement no OPTIONS) --------------
+function postJson(url, payload) {
+  const body = (url === SHELL_URL) ? Object.assign({ clientVersion: STATIC_BUILD_VERSION_ }, payload) : payload;
+  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) })
+    .then((r) => r.text()).then((text) => {
+      try { return JSON.parse(text); }
+      catch (e) { throw new Error('Non-JSON response — the deployment may be mid-propagation: ' + text.slice(0, 200)); }
+    });
+}
+
+// ---- auth caching (ADR-0003, NUUC-Dispatch: 45-day assertion TTL), ported from the NUUTS-Track team portal ------
+function decodeJwtPayload_(jwt) {
+  try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
+  catch (e) { return null; }
+}
+function saveCachedAuth() {
+  const payload = decodeJwtPayload_(state.assertion);
+  if (!payload || typeof payload.exp !== 'number') return;
+  try {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+      assertion: state.assertion, exp: payload.exp, sub: state.sub, email: state.email }));
+  } catch (e) { /* storage blocked: the session just will not persist */ }
+}
+function clearCachedAuth() { try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch (e) { /* ignore */ } }
+function loadCachedAuth() {
+  let cached;
+  try { cached = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null'); } catch (e) { return null; }
+  if (!cached || typeof cached.exp !== 'number' || !cached.assertion) return null;
+  if (Math.floor(Date.now() / 1000) >= cached.exp - AUTH_RENEW_SKEW_SECONDS) return null;
+  return cached;
+}
+function showWho_() {
+  $('whoEmail').textContent = state.email;
+  $('whoBox').classList.toggle('hidden', !state.assertion);
+}
+function signOut() {
+  state.assertion = null; state.sub = ''; state.email = ''; state.pending = null;
+  clearCachedAuth();
+  showWho_();
+  $('signinBox').classList.add('hidden');
+  if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+}
+$('signOutLink').addEventListener('click', (e) => { e.preventDefault(); signOut(); });
+
+// ---- sign-in, only when a document action is run ------------------------------------------------------------------
+let gisReady_ = false;
+function showSignIn_(msg) {
+  $('signinError').textContent = msg || '';
+  $('signinBox').classList.remove('hidden');
+  if (!(window.google && google.accounts && google.accounts.id)) {
+    $('signinError').textContent = 'Google sign-in is still loading. Try again in a moment.';
+    return;
+  }
+  if (!gisReady_) {
+    google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onGoogleSignIn, auto_select: false });
+    google.accounts.id.renderButton($('g_signin_button'), { type: 'standard', shape: 'pill' });
+    gisReady_ = true;
+  }
+}
+function onGoogleSignIn(credentialResponse) {
+  $('signinError').textContent = '';
+  $('signinMsg').textContent = 'Signing you in…';
+  postJson(NUUC_DISPATCH_URL, { action: 'verify_identity', idToken: credentialResponse.credential, aud: ASSERTION_AUD })
+    .then((res) => {
+      if (!res.verified || !res.assertion) {
+        throw new Error('Google verified your sign-in, but NUUC-Dispatch could not issue an identity assertion (' +
+          (res.error || 'not verified') + ').');
+      }
+      state.assertion = res.assertion; state.sub = res.sub; state.email = res.email;
+      saveCachedAuth();
+      showWho_();
+      $('signinBox').classList.add('hidden');
+      const p = state.pending; state.pending = null;
+      if (p) runDocAction_(p.entry, p.input, p.resultEl, p.button);
+    })
+    .catch((err) => {
+      $('signinMsg').textContent = 'Sign in with Google to run this action.';
+      $('signinError').textContent = err.message || String(err);
+    });
+}
+
+// ---- document action ----------------------------------------------------------------------------------------------
+function runDocAction_(entry, input, resultEl, button) {
+  const doc = input.value.trim();
+  resultEl.className = 'result';
+  if (!doc) { resultEl.className = 'result bad'; resultEl.textContent = 'Paste a document URL or ID first.'; return; }
+  if (!state.assertion) {
+    state.pending = { entry, input, resultEl, button };
+    resultEl.textContent = 'Sign in to continue.';
+    showSignIn_();
+    return;
+  }
+  button.disabled = true;
+  resultEl.textContent = 'Running…';
+  postJson(SHELL_URL, { action: 'feature_doc_invoke', assertion: state.assertion, doc, id: entry.id, item: entry.item })
+    .then((res) => {
+      if (res && res.ok === false && res.error === 'unauthorized') {
+        // Cached assertion no longer accepted (expired / rotated key / wrong audience): sign in again.
+        clearCachedAuth(); state.assertion = null; showWho_();
+        state.pending = { entry, input, resultEl, button };
+        resultEl.textContent = 'Your saved sign-in is no longer accepted. Sign in again to continue.';
+        showSignIn_();
+        return;
+      }
+      if (res && (res.ok === false || res.error)) {
+        resultEl.className = 'result bad';
+        resultEl.textContent = 'Failed: ' + (res.error || 'unknown error');
+        return;
+      }
+      resultEl.className = 'result ok';
+      resultEl.textContent = 'Done. ' + JSON.stringify(res, null, 2);
+    })
+    .catch((err) => { resultEl.className = 'result bad'; resultEl.textContent = 'Failed: ' + (err.message || String(err)); })
+    .then(() => { button.disabled = false; });
+}
+
+// ---- render ---------------------------------------------------------------------------------------------------------
+function renderAbout_(about) {
+  const features = Array.isArray(about.features) ? about.features : [];
+  $('featuresBody').innerHTML = features.map((f) => {
+    const name = f.caption || f.id;
+    const ver = (f.reachable === false || !f.version)
+      ? '<span class="bad">unreachable</span>' : 'v' + esc(String(f.version).replace(/^v/, ''));
+    return '<tr><td>' + esc(name) + '</td><td>' + ver + '</td></tr>';
+  }).join('');
+  $('featuresTable').classList.toggle('hidden', features.length === 0);
+  $('aboutMsg').textContent = features.length ? '' : 'No feature information was returned.';
+
+  const webUi = Array.isArray(about.webUi) ? about.webUi : [];
+  $('webUiList').innerHTML = webUi.filter((w) => isSafeHref(w.href)).map((w) =>
+    '<li><a href="' + esc(w.href) + '" rel="noopener">' + esc(w.caption || w.item) + '</a></li>').join('');
+  $('webUiEmpty').classList.toggle('hidden', $('webUiList').children.length > 0);
+
+  const docs = Array.isArray(about.docActions) ? about.docActions : [];
+  const host = $('docActions');
+  host.innerHTML = '';
+  docs.forEach((d, i) => {
+    const box = document.createElement('div'); box.className = 'action';
+    const label = document.createElement('label'); label.setAttribute('for', 'doc' + i); label.textContent = d.caption || d.item;
+    const input = document.createElement('input'); input.type = 'text'; input.id = 'doc' + i;
+    input.placeholder = 'Google Doc URL or ID'; input.autocomplete = 'off';
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Run';
+    const resultEl = document.createElement('div'); resultEl.className = 'result'; resultEl.setAttribute('role', 'status');
+    button.addEventListener('click', () => runDocAction_({ id: d.id, item: d.item }, input, resultEl, button));
+    box.appendChild(label); box.appendChild(input); box.appendChild(button); box.appendChild(resultEl);
+    host.appendChild(box);
+  });
+  $('docActionsEmpty').classList.toggle('hidden', docs.length > 0);
+}
+
+function loadAbout_() {
+  if (!SHELL_URL) { $('aboutMsg').textContent = 'This unbuilt page has no backend to call.'; return; }
+  fetch(SHELL_URL + (SHELL_URL.indexOf('?') < 0 ? '?' : '&') + 'cmd=about')
+    .then((r) => r.text()).then((text) => {
+      let about;
+      try { about = JSON.parse(text); } catch (e) { throw new Error('Non-JSON response from the Shell.'); }
+      renderAbout_(about);
+      const v = about.version ? 'Shell v' + about.version : '';
+      $('buildBadge').textContent = [STATIC_ENV_LABEL_, v].filter(Boolean).join(' · ') +
+        (STATIC_BUILD_VERSION_ ? ' · page build ' + STATIC_BUILD_VERSION_ : '');
+    })
+    .catch((err) => { $('aboutMsg').className = 'bad'; $('aboutMsg').textContent = 'Could not load About: ' + (err.message || String(err)); });
+}
+
+(function init() {
+  const cached = loadCachedAuth();
+  if (cached) { state.assertion = cached.assertion; state.sub = cached.sub; state.email = cached.email; showWho_(); }
+  loadAbout_();
+})();
+</script>
+</body>
+</html>
