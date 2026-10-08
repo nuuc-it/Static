@@ -303,7 +303,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.0.45";
+var STATIC_BUILD_VERSION_ = "0.1.2.2";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -327,7 +327,10 @@ const ASSERTION_AUD = STATIC_ASSERTION_AUD_;
 // diverge afterwards: a CDN edge serving the previous page, a visitor holding a cached
 // document, a backend later rolled back. These requirements close the RUNTIME window by
 // making the page itself say which halves are actually running.
-const UPDATE_DISMISS_KEY_ = 'nuucAsUpdateDismissed';
+// NT-8oa: pub/AS and pub/AS-sit share one origin (nuuc-it.github.io), so every localStorage key is
+// scoped to this build's assertion audience; unscoped, each portal reused the other's records.
+const STORAGE_SCOPE_ = STATIC_ASSERTION_AUD_ ? ':' + STATIC_ASSERTION_AUD_ : '';
+const UPDATE_DISMISS_KEY_ = 'nuucAsUpdateDismissed' + STORAGE_SCOPE_;
 const $buildBadge_ = document.getElementById('buildBadge');
 const $updateBanner_ = document.getElementById('updateBanner');
 let serverVersion_ = null;
@@ -459,7 +462,7 @@ if (QUERY_DOC) {
 // The assertion is the only session artifact (no refresh token) — cache it
 // client-side and reuse it directly until it's within RENEW_SKEW_SECONDS of
 // its own exp, at which point a normal sign-in mints a fresh 45-day one.
-const AUTH_STORAGE_KEY = 'nuucAsAuth.v1';
+const AUTH_STORAGE_KEY = 'nuucAsAuth.v1' + STORAGE_SCOPE_; // NT-8oa: per audience (see STORAGE_SCOPE_)
 const AUTH_RENEW_SKEW_SECONDS = 300; // treat as expired 5min early to avoid edge-of-expiry races
 
 function _decodeJwtPayload(jwt){
@@ -590,10 +593,10 @@ $('signOutBtn').addEventListener('click', signOut);
 
 // ---- resume a cached session (skip Google + verify_identity entirely) --
 // loadTeams() never rejects (transport errors are caught internally and
-// surface as a banner) — a cached assertion the server no longer accepts
-// resolves as an empty team list (R6 fail-closed), same as any other
-// teamless visitor. Nothing to distinguish here; sign-in view stays
-// available underneath if the visitor needs to re-auth.
+// surface as a banner). A cached assertion the server no longer accepts
+// (error 'unauthorized': expired key, rotated key, wrong audience) clears the
+// cache and returns to the sign-in view (NT-8oa) rather than reading as an
+// empty team list.
 //
 // No Google prompt happens on this path at all, so from first paint this
 // must show something other than the raw sign-in view or a blank page
@@ -619,6 +622,13 @@ function loadTeams(){
   setBusy(true);
   return postJson(GACTIONSHEET_URL, { action: 'list_my_teams', assertion: state.assertion })
     .then(res => {
+      if (res && res.ok === false && res.error === 'unauthorized') {
+        setBusy(false);
+        signOut();
+        $('signinError').textContent = 'Your saved sign-in is no longer accepted. Please sign in again.';
+        $('signinError').style.display = 'block';
+        return;
+      }
       state.teams = res.teams || [];
       $('launchView').classList.add('hidden');
       $('signinView').classList.add('hidden');
@@ -866,8 +876,10 @@ function scanStatusLine(sc){
     const where = sc.status === 'running' ? 'Finding docs' : 'Finding docs (queued)';
     return `<span class="dot ${sc.status === 'running' ? 'run' : 'wait'}"></span>${where} — ${found} found so far${teamProgress}${updated}`;
   }
-  if (sc.complete) return `<span class="dot"></span>Done — scanned ${n}${sc.allTeams ? ' across all teams' : ' of ' + sc.total}, ${sc.matched || 0} match(es)${updated}`;
-  const total = (typeof sc.total === 'number') ? sc.total : '?';
+  // NT-3x0: a completed scan can carry total null/0 (enumeration did not record it); never print 'of null'.
+  const knownTotal = (typeof sc.total === 'number' && sc.total > 0) ? sc.total : null;
+  if (sc.complete) return `<span class="dot"></span>Done — scanned ${n}${sc.allTeams ? ' across all teams' : (knownTotal !== null ? ' of ' + knownTotal : '')}, ${sc.matched || 0} match(es)${updated}`;
+  const total = knownTotal !== null ? knownTotal : '?';
   if (sc.status === 'stale') return `<span class="dot err"></span>Stalled at ${n} of ${total} — no update in over 7 min, Resume to continue${teamProgress}${updated}`;
   const verb = sc.status === 'running' ? 'Scanning' : 'Queued — next pass within a minute;';
   return `<span class="dot ${sc.status === 'running' ? 'run' : 'wait'}"></span>${verb} ${n} of ${total}${teamProgress}${updated}`;
