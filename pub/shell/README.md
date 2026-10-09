@@ -1,6 +1,6 @@
 # static-portal/src — NUUTS-Shell static site (published)
 
-Source of truth for the Shell static site: runtime assets, terms, privacy. Built and
+Source of truth for the Shell static site: the admin page (`index.html`, nuuts-yox, ADR-0038), runtime assets, terms, privacy. Built and
 published through GAS-Core's shared `gas-static` package, configured by
 `scripts/static-pages.js` — see that file's header and
 `packages/gas-static/README.md` (GAS-Core) for the stamping/publish mechanics.
