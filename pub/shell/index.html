@@ -29,6 +29,12 @@
   .result { margin-top: 8px; white-space: pre-wrap; word-break: break-word; }
   .hidden { display: none; }
   .signin { border: 1px dashed var(--line); border-radius: 6px; padding: 12px; margin: 12px 0; }
+  .dlg-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+  .dlg-panel { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; max-width: 100%; max-height: 100%; display: flex; flex-direction: column; }
+  .dlg-bar { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .dlg-bar button { font: inherit; cursor: pointer; }
+  .dlg-panel iframe { border: 0; max-width: 100%; background: #fff; }
+  body.dialogOpen #signinBox { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1100; background: var(--bg); max-width: 90%; }
   .buildbadge { margin-top: 2em; color: var(--muted); font-size: 0.85em; }
 </style>
 </head>
@@ -54,6 +60,11 @@ See also the <a href="user-guide/">User Guide</a>, <a href="privacy/">Privacy</a
 <div id="docActions"></div>
 <div id="docActionsEmpty" class="muted hidden">No document actions are registered.</div>
 
+<h2>Dialogs</h2>
+<p class="muted">Feature dialogs run against a Google Doc. Paste a Google Doc URL or ID. You need at least view access to the document.</p>
+<div id="dialogs"></div>
+<div id="dialogsEmpty" class="muted hidden">No feature dialogs are registered.</div>
+
 <div id="signinBox" class="signin hidden">
   <p id="signinMsg">Sign in with Google to run this action. Your identity is verified by NUUC-Dispatch and kept in this browser for up to 45 days.</p>
   <div id="g_signin_button"></div>
@@ -66,7 +77,7 @@ See also the <a href="user-guide/">User Guide</a>, <a href="privacy/">Privacy</a
 <script>
 // Build-time stamps — gas-static (scripts/static-pages.js) replaces these literals per env. Left null in the
 // unbuilt source, which has no backend to call.
-var STATIC_BUILD_VERSION_ = "0.1.6";
+var STATIC_BUILD_VERSION_ = "0.1.7";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbxXl_7EmMdsEDU2ISsJ5NTXnPTUjucaZ4y2U_hASOc2l3zoeS_DvPMwK00mbWP047JTtA/exec";
 var STATIC_ENV_LABEL_ = "PROD";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell";
@@ -171,7 +182,8 @@ function onGoogleSignIn(credentialResponse) {
       showWho_();
       $('signinBox').classList.add('hidden');
       const p = state.pending; state.pending = null;
-      if (p) runDocAction_(p.entry, p.input, p.resultEl, p.button);
+      if (p && typeof p.resume === 'function') p.resume();
+      else if (p) runDocAction_(p.entry, p.input, p.resultEl, p.button);
     })
     .catch((err) => {
       $('signinMsg').textContent = 'Sign in with Google to run this action.';
@@ -214,6 +226,175 @@ function runDocAction_(entry, input, resultEl, button) {
     .then(() => { button.disabled = false; });
 }
 
+// ---- feature dialogs (feature-ui-contract rev 3.0, ADR-0039 section 6) ---------------------------------------------
+const DIALOG_ACTION_RE = /^[a-z][a-z0-9_]{1,63}$/;
+const DIALOG_MAX_PAYLOAD_CHARS = 50000;
+const DIALOG_RETRY_MAX_ATTEMPTS = 5;
+const DIALOG_RETRY_WAIT_MS = 2000;
+const DIALOG_RETRY_BUDGET_MS = 240000;
+let activeDialog_ = null;   // one dialog open at a time
+
+const sleep_ = (ms) => new Promise((r) => setTimeout(r, ms));
+const newRunId_ = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
+const clampDim_ = (v) => Math.max(200, Math.min(1200, Math.round(v)));
+const isPlainObject_ = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+// Re-POST a lost response (HTTP error, network failure or non-JSON body) with the SAME body (hence the same
+// runId, so the feature's replay cache absorbs it): up to 5 attempts, 2 s apart, within 240 s.
+// An HTTP error status counts as a lost response too (postJson only rejects on non-JSON).
+const postJsonStrict_ = (url, body) =>
+  fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ clientVersion: STATIC_BUILD_VERSION_ }, body)) })
+    .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then((text) => { try { return JSON.parse(text); } catch (e) { throw new Error('Non-JSON response'); } });
+function shellCall_(body) {
+  const first = Date.now();
+  const attempt = (n) => postJsonStrict_(SHELL_URL, body).catch((err) => {
+    if (n >= DIALOG_RETRY_MAX_ATTEMPTS || Date.now() - first + DIALOG_RETRY_WAIT_MS >= DIALOG_RETRY_BUDGET_MS) throw err;
+    return sleep_(DIALOG_RETRY_WAIT_MS).then(() => attempt(n + 1));
+  });
+  return attempt(1);
+}
+
+// Prelude injected ahead of the feature HTML inside the iframe (host API, contract section 3).
+const WEB_PRELUDE_ = '<script>(function () {' +
+  'var parentWin = window.parent, pending = {}, nextId = 1;' +
+  'var N = { contract: "3", host: "web",' +
+  ' relay: function (action, payload) { return new Promise(function (resolve, reject) {' +
+  ' var id = nextId++; pending[id] = { resolve: resolve, reject: reject };' +
+  ' try { parentWin.postMessage({ nuuts: 3, id: id, type: "relay", action: action, payload: payload === undefined ? {} : payload }, "*"); }' +
+  ' catch (e) { delete pending[id]; reject(new Error("relay failed: " + (e && e.message || e))); } }); },' +
+  ' close: function () { parentWin.postMessage({ nuuts: 3, type: "close" }, "*"); },' +
+  ' resize: function (width, height) { parentWin.postMessage({ nuuts: 3, type: "resize", width: width, height: height }, "*"); } };' +
+  'window.addEventListener("message", function (e) {' +
+  ' if (e.source !== parentWin) return; var m = e.data;' +
+  ' if (!m || m.nuuts !== 3 || typeof m.id !== "number" || !pending[m.id]) return;' +
+  ' var p = pending[m.id]; delete pending[m.id];' +
+  ' if (m.ok === true) p.resolve(m.body); else p.reject(new Error(String(m.error || "relay failed"))); });' +
+  'Object.defineProperty(window, "NUUTS", { value: Object.freeze(N) });' +
+  '})();<' + '/script>';
+
+function replyToDialog_(dlg, msg) {
+  if (dlg.closed || activeDialog_ !== dlg) return;
+  try { dlg.iframe.contentWindow.postMessage(Object.assign({ nuuts: 3 }, msg), '*'); } catch (e) { /* iframe gone */ }
+}
+function closeDialog_() {
+  if (!activeDialog_) return;
+  const dlg = activeDialog_;
+  dlg.closed = true; activeDialog_ = null;
+  window.removeEventListener('message', onDialogMessage_);
+  dlg.overlay.remove();
+  document.body.classList.remove('dialogOpen');
+}
+
+// Bridge: accept a message only from the live iframe window and only with the exact shape (contract section 6.2).
+function validBridgeMessage_(m) {
+  if (!isPlainObject_(m) || m.nuuts !== 3) return false;
+  const keys = Object.keys(m).sort().join(',');
+  if (m.type === 'relay') {
+    if (keys !== 'action,id,nuuts,payload,type' || !Number.isInteger(m.id)) return false;
+    if (typeof m.action !== 'string' || !DIALOG_ACTION_RE.test(m.action) || !isPlainObject_(m.payload)) return false;
+    try { return JSON.stringify(m.payload).length <= DIALOG_MAX_PAYLOAD_CHARS; } catch (e) { return false; }
+  }
+  if (m.type === 'close') return keys === 'nuuts,type';
+  if (m.type === 'resize') {
+    return keys === 'height,nuuts,type,width' && Number.isFinite(m.width) && Number.isFinite(m.height);
+  }
+  return false;
+}
+function onDialogMessage_(event) {
+  const dlg = activeDialog_;
+  if (!dlg || dlg.closed || event.source !== dlg.iframe.contentWindow) return;   // not the dialog: no reply, no call
+  const m = event.data;
+  if (!validBridgeMessage_(m)) {
+    if (isPlainObject_(m) && m.nuuts === 3 && Number.isInteger(m.id)) replyToDialog_(dlg, { id: m.id, ok: false, error: 'invalid request' });
+    return;
+  }
+  if (m.type === 'close') { closeDialog_(); return; }
+  if (m.type === 'resize') {
+    dlg.iframe.style.width = clampDim_(m.width) + 'px'; dlg.iframe.style.height = clampDim_(m.height) + 'px';
+    return;
+  }
+  relayFromDialog_(dlg, m);
+}
+function relayFromDialog_(dlg, m) {
+  if (!state.assertion) {
+    showSignIn_('Sign in again to continue.');
+    replyToDialog_(dlg, { id: m.id, ok: true, body: { ok: false, error: 'sign-in required' } });
+    return;
+  }
+  // One runId per bridge request, reused by every re-POST of it.
+  shellCall_({ action: 'feature_dialog_relay', assertion: state.assertion, doc: dlg.doc, id: dlg.entry.id, item: dlg.entry.item,
+    featureAction: m.action, payload: m.payload, runId: newRunId_() })
+    .then((res) => {
+      if (res && res.ok === false && res.error === 'unauthorized') {
+        clearCachedAuth(); state.assertion = null; showWho_();
+        showSignIn_('Your saved sign-in is no longer accepted. Sign in again to continue.');
+        replyToDialog_(dlg, { id: m.id, ok: true, body: { ok: false, error: 'sign-in required' } });
+        return;
+      }
+      replyToDialog_(dlg, { id: m.id, ok: true, body: res });
+    })
+    .catch(() => replyToDialog_(dlg, { id: m.id, ok: false, error: 'relay: response lost' }));
+}
+
+function showDialog_(entry, doc, result) {
+  const overlay = document.createElement('div'); overlay.className = 'dlg-overlay';
+  const panel = document.createElement('div'); panel.className = 'dlg-panel';
+  panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true');
+  const bar = document.createElement('div'); bar.className = 'dlg-bar';
+  const title = document.createElement('strong'); title.textContent = result.title || entry.caption || entry.item;
+  const closeBtn = document.createElement('button'); closeBtn.type = 'button'; closeBtn.textContent = 'Close';
+  closeBtn.addEventListener('click', closeDialog_);
+  bar.appendChild(title); bar.appendChild(closeBtn);
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('sandbox', 'allow-scripts');          // no other token: opaque origin, no popups/forms/modals/top-nav
+  iframe.setAttribute('title', title.textContent);
+  iframe.style.width = clampDim_(entry.width || 600) + 'px'; iframe.style.height = clampDim_(entry.height || 400) + 'px';
+  panel.appendChild(bar); panel.appendChild(iframe); overlay.appendChild(panel);
+  const dlg = { entry, doc, iframe, overlay, closed: false };
+  activeDialog_ = dlg;
+  document.body.appendChild(overlay);
+  document.body.classList.add('dialogOpen');
+  window.addEventListener('message', onDialogMessage_);
+  iframe.srcdoc = '<!DOCTYPE html>' + WEB_PRELUDE_ + String(result.html || '');
+}
+
+function openDialog_(entry, input, resultEl, button) {
+  const doc = input.value.trim();
+  resultEl.className = 'result';
+  if (activeDialog_) { resultEl.className = 'result bad'; resultEl.textContent = 'Close the open dialog first.'; return; }
+  if (!doc) { resultEl.className = 'result bad'; resultEl.textContent = 'Paste a document URL or ID first.'; return; }
+  const resume = () => openDialog_(entry, input, resultEl, button);
+  if (!state.assertion) {
+    state.pending = { resume };
+    resultEl.textContent = 'Sign in to continue.';
+    showSignIn_();
+    return;
+  }
+  button.disabled = true;
+  resultEl.textContent = 'Opening…';
+  shellCall_({ action: 'feature_dialog_open', assertion: state.assertion, doc, id: entry.id, item: entry.item, runId: newRunId_() })
+    .then((res) => {
+      if (res && res.ok === false && res.error === 'unauthorized') {
+        clearCachedAuth(); state.assertion = null; showWho_();
+        state.pending = { resume };
+        resultEl.textContent = 'Your saved sign-in is no longer accepted. Sign in again to continue.';
+        showSignIn_();
+        return;
+      }
+      if (!res || res.ok !== true || typeof res.html !== 'string') {
+        resultEl.className = 'result bad';
+        resultEl.textContent = 'Failed: ' + ((res && res.error) || 'unknown error');
+        return;
+      }
+      resultEl.textContent = '';
+      showDialog_(entry, doc, res);
+    })
+    .catch((err) => { resultEl.className = 'result bad'; resultEl.textContent = 'Failed: ' + (err.message || String(err)); })
+    .then(() => { button.disabled = false; });
+}
+
 // ---- render ---------------------------------------------------------------------------------------------------------
 function renderAbout_(about) {
   const features = Array.isArray(about.features) ? about.features : [];
@@ -246,6 +427,23 @@ function renderAbout_(about) {
     host.appendChild(box);
   });
   $('docActionsEmpty').classList.toggle('hidden', docs.length > 0);
+
+  const dialogs = Array.isArray(about.dialogs) ? about.dialogs : [];
+  const dhost = $('dialogs');
+  dhost.innerHTML = '';
+  dialogs.forEach((d, i) => {
+    const box = document.createElement('div'); box.className = 'action';
+    const label = document.createElement('label'); label.setAttribute('for', 'dlg' + i); label.textContent = d.caption || d.item;
+    const input = document.createElement('input'); input.type = 'text'; input.id = 'dlg' + i;
+    input.placeholder = 'Google Doc URL or ID'; input.autocomplete = 'off';
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Open';
+    const resultEl = document.createElement('div'); resultEl.className = 'result'; resultEl.setAttribute('role', 'status');
+    const entry = { id: d.id, item: d.item, caption: d.caption, width: d.width, height: d.height };
+    button.addEventListener('click', () => openDialog_(entry, input, resultEl, button));
+    box.appendChild(label); box.appendChild(input); box.appendChild(button); box.appendChild(resultEl);
+    dhost.appendChild(box);
+  });
+  $('dialogsEmpty').classList.toggle('hidden', dialogs.length > 0);
 }
 
 function loadAbout_() {
