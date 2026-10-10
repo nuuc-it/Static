@@ -325,7 +325,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.8.2";
+var STATIC_BUILD_VERSION_ = "0.1.8.3";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -1120,11 +1120,9 @@ const isCanonical = (status) => state.statusOptions.some(o => o.status === statu
 function statusChip(row, editable){
   const cls = 'status bucket-' + row.status_bucket.toLowerCase() +
               (row.status_resolved ? ' bucket-closed' : '') + (editable ? ' mine' : '');
-  const note = isCanonical(row.status) ? ''
-    : ` <span class="bucketlabel">(counts as ${row.status_resolved ? 'closed' : 'open'})</span>`;
   return `<span class="${cls}" data-status-for="${row.global_id}"
             title="${editable ? 'Click to change status' : 'Only the assignee can change this'}"
-          ><img src="${row.status_icon}" alt="" />${escape(row.status)}${note}${editable ? ' ▾' : ''}</span>`;
+          ><img src="${row.status_icon}" alt="" />${escape(row.status)}${editable ? ' ▾' : ''}</span>`;
 }
 
 function isMine(row){ return state.email && row.assignee_email &&
@@ -1328,12 +1326,33 @@ function rowHtml(r, tier){
 }
 
 // ---- edit form (gts-79dw.4.21 — LIVE, calls team_edit_action) ---------
+// NT-qxh: soft returns (\v, U+2028) and any CR/LF display as line breaks in the textarea;
+// the server stores every line break as \v.
+function softToLines(t){ return String(t || '').replace(/\r\n|[\r\v\u2028\u2029]/g, '\n'); }
+function linesToSoft(t){ return String(t || '').replace(/\r\n|[\r\n\u2028\u2029]/g, '\v'); }
+const OTHER_STATUS = '__other__';
+function statusSelectHtml(r){
+  const cur = r.status || '';
+  const opts = state.statusOptions.map(o => ({ status: o.status, icon: o.icon }));
+  if (cur && !isCanonical(cur)) opts.push({ status: cur, icon: r.status_icon });
+  return `<select class="sel" data-field="status" onchange="onEditStatusChange(this)">` +
+    opts.map(o => `<option value="${escape(o.status)}" style="background-image:url('${escape(o.icon || '')}')"${o.status === cur ? ' selected' : ''}>${escape(o.status)}</option>`).join('') +
+    `<option value="${OTHER_STATUS}">other…</option></select>`;
+}
+function onEditStatusChange(sel){
+  const other = sel.closest('.rowmeta').querySelector('[data-field="status_other"]');
+  other.classList.toggle('hidden', sel.value !== OTHER_STATUS);
+  if (sel.value === OTHER_STATUS) other.focus();
+}
 function editRowHtml(r){
   return `
     <div class="row">
       <div class="aiN">${escape(r.action_id || '')}</div>
       <div class="rowmain">
-        <input class="sel" style="width:100%" data-field="action_text" value="${escape(r.action_text)}" />
+        <textarea class="sel" style="width:100%" rows="3" data-field="action_text">${escape(softToLines(r.action_text))}</textarea>
+        <div class="rowmeta" style="margin-top:6px">${statusSelectHtml(r)}
+          <input class="sel hidden" data-field="status_other" placeholder="Type any status" style="flex:1;min-width:140px" />
+        </div>
         <div class="rowmeta" style="margin-top:6px">
           <input class="sel" data-field="assignee_name" placeholder="Assignee name"
                  value="${escape(r.assignee_name || '')}" style="flex:1;min-width:120px" />
@@ -1353,10 +1372,15 @@ function onSaveEditClick(e){
   const globalId = btn.dataset.saveEdit;
   const rowEl = btn.closest('.row');
   const fields = {
-    action_text:    rowEl.querySelector('[data-field="action_text"]').value,
+    action_text:    linesToSoft(rowEl.querySelector('[data-field="action_text"]').value),
     assignee_name:  rowEl.querySelector('[data-field="assignee_name"]').value,
     assignee_email: rowEl.querySelector('[data-field="assignee_email"]').value
   };
+  const selEl = rowEl.querySelector('select[data-field="status"]');
+  let newStatus = selEl ? selEl.value : '';
+  if (newStatus === OTHER_STATUS) newStatus = rowEl.querySelector('[data-field="status_other"]').value.trim();
+  const curRow = rowByGlobalId(globalId);
+  if (newStatus && curRow && newStatus !== curRow.status) fields.status = newStatus;
   btn.disabled = true;
   postJson(GACTIONSHEET_URL, {
     action: 'team_edit_action', assertion: state.assertion, teamId: teamIdForWrite(rowByGlobalId(globalId)),
