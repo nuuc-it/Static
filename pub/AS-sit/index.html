@@ -183,9 +183,9 @@
           <div class="sub" id="sub">—</div>
         </div>
         <div class="who">
-          <label class="field hidden" id="teamField">Team
+          <div class="field hidden" id="teamField"><label for="teamSel">Team</label>
             <select class="sel" id="teamSel"></select>
-          </label>
+          </div>
           <span class="email" id="whoEmail"></span>
           <span class="tag" id="tierTag">—</span>
           <button class="linkbtn" id="signOutBtn">Sign out</button>
@@ -193,12 +193,28 @@
       </div>
 
       <div class="filters" id="filtersRow">
-        <div class="field">Status
-          <div class="seg" id="statusSeg">
-            <button data-status="open" aria-pressed="true">Open</button>
-            <button data-status="closed" aria-pressed="false">Closed</button>
-            <button data-status="all" aria-pressed="false">All</button>
-          </div>
+        <div class="field"><label for="statusSel">Status</label>
+          <select class="sel" id="statusSel">
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+            <option value="all">All</option>
+            <option value="Open">Open only</option>
+            <option value="In Progress">In Progress</option>
+            <option value="In Review">In Review</option>
+            <option value="Done">Done</option>
+            <option value="Closed">Closed only</option>
+          </select>
+        </div>
+        <!-- NT-56r: age filter, whole months since created_date (server buckets; '' = Any). -->
+        <div class="field"><label for="ageSel">Age</label>
+          <select class="sel" id="ageSel">
+            <option value="">Any</option>
+            <option value="&lt;1">&lt; 1 month</option>
+            <option value="1-2">1-2 months</option>
+            <option value="3-5">3-5 months</option>
+            <option value="6-11">6-11 months</option>
+            <option value="12+">12+ months</option>
+          </select>
         </div>
         <div class="field">Show
           <div class="seg" id="scopeSeg">
@@ -244,6 +260,8 @@
           <button class="btn small" id="adminSyncAllBtn">Sync all documents</button>
           <button class="btn small" id="adminEnsureBtn">Ensure sheet structure</button>
           <button class="btn small" id="adminArchiveBtn">Run archive</button>
+          <!-- NT-eg2: 'Open tracker sheet' (#adminTrackerLink) and 'Tracking health' (#adminHealthBtn) are added by
+               script for an admin only (loadAdminExtras), so a non-admin's DOM never contains them. -->
           <span id="adminToolsStatus" class="scanstatus"></span>
         </div>
         <div class="field" id="countLabel"></div>
@@ -252,6 +270,10 @@
 
     <div class="banner" id="loadError"></div>
     <div class="notice hidden" id="adminScanResults"></div>
+    <!-- NT-eg2: tracking-system health panel (admin_health). Counts link to the filtered list (NT-56r). -->
+    <div class="notice hidden" id="adminHealthPanel"></div>
+    <!-- NT-56r AC6: the 'Showing actions visible to you' note (#healthNote) is added by script only when opened
+         from an admin health-panel link (?from=health). -->
     <div class="notice hidden" id="noTeamsNotice">
       You don't currently have access to any team's actions. If you believe this is wrong,
       contact your team lead — they add members to the team's shared Drive folder.
@@ -303,7 +325,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.7.1";
+var STATIC_BUILD_VERSION_ = "0.1.8.1";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -403,6 +425,7 @@ applyVersionState_(STATIC_BUILD_VERSION_, null);
 // mirrors TEAM_LISTING_ALL_TEAMS_ID (src/TeamListing.js). Never a real
 // TeamData teamId.
 const ALL_TEAMS_ID = 'ALL';
+const isExactStatus = (v) => ['Open', 'In Progress', 'In Review', 'Done', 'Closed'].indexOf(v) !== -1; // NT-56r rev2
 
 const state = {
   idToken: null, assertion: null, sub: '', email: '',
@@ -415,6 +438,7 @@ const state = {
                        // itself, which re-checks Config!AdminUsers server-side.
   scanBusy: false,
   adminToolBusy: false,
+  trackerUrl: null, trackerUrlLoading: false,  // NT-eg2: admin_tracker_url result
   scan: null,          // gts-lgpx: last admin_scan_status payload
                        // {phase,status,scanned,total,queued,matched,candidates,
                        //  updatedAt,allTeams,teamsRemaining,...} — allTeams is
@@ -425,7 +449,7 @@ const state = {
   teamTiers: {},       // {teamId: tier} — populated in ALL-teams mode from res.teams,
                         // used to gate each row/doc-group's Sync/Edit controls per its
                         // OWN team rather than one blended state.tier (gts-zm8w)
-  status: 'open', scope: 'all', windowDays: 60,
+  status: 'open', scope: 'all', windowDays: 60, age: '',
   rows: [], statusOptions: [],
   busy: false,
   editingId: null,     // global_id of the row currently showing the edit form, or null
@@ -455,6 +479,13 @@ const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
 const QUERY_PARAMS = new URLSearchParams(location.search);
 const QUERY_TEAM = QUERY_PARAMS.get('team') || null;
 const QUERY_DOC = QUERY_PARAMS.get('doc') || null;
+// NT-56r: ?status=open|closed|all, ?age=<bucket> and ?from=health preset the filters on load (UX only; the
+// server applies the caller's own visibility to whatever is asked).
+const QUERY_STATUS = ['open', 'closed', 'all', 'Open', 'In Progress', 'In Review', 'Done', 'Closed'].indexOf(QUERY_PARAMS.get('status')) !== -1 ? QUERY_PARAMS.get('status') : null;
+const QUERY_AGE = ['<1', '1-2', '3-5', '6-11', '12+'].indexOf(QUERY_PARAMS.get('age')) !== -1 ? QUERY_PARAMS.get('age') : null;
+const QUERY_FROM_HEALTH = QUERY_PARAMS.get('from') === 'health';
+if (QUERY_STATUS) state.status = QUERY_STATUS;
+if (QUERY_AGE) state.age = QUERY_AGE;
 if (QUERY_DOC) {
   location.replace('doc.html' + location.search);
 }
@@ -657,7 +688,7 @@ function loadTeams(){
       // gts-zm8w: 'All teams' aggregate option, only meaningful with 2+ teams
       // to choose among (with exactly one team it would just duplicate that
       // team's own listing).
-      const allTeamsOption = state.teams.length > 1
+      const allTeamsOption = (state.teams.length > 1 || QUERY_TEAM === ALL_TEAMS_ID)
         ? `<option value="${ALL_TEAMS_ID}">All teams</option>` : '';
       $('teamSel').innerHTML = allTeamsOption + state.teams.map(t =>
         `<option value="${escape(t.teamId)}">${escape(t.teamName)} (${t.tier})</option>`).join('');
@@ -665,7 +696,7 @@ function loadTeams(){
       // team (list_my_teams already scoped this to the caller — a ?team=
       // for a team they can't see must not be trusted client-side); falls
       // back to the existing default otherwise (regression guard, AC3).
-      state.teamId = (QUERY_TEAM && state.teams.some(t => t.teamId === QUERY_TEAM))
+      state.teamId = (QUERY_TEAM && (QUERY_TEAM === ALL_TEAMS_ID || state.teams.some(t => t.teamId === QUERY_TEAM)))
         ? QUERY_TEAM
         : state.teams[0].teamId;
       $('teamSel').value = state.teamId;
@@ -712,7 +743,9 @@ function refreshActions(){
   // The resolved-age control is hidden (and therefore meaningless) once
   // statusFilter=open — windowDays never affects unresolved rows anyway
   // (plan §12.1 invariant 1), but omit it in that state for clarity.
-  if (state.status !== 'open') payload.windowDays = state.windowDays;
+  // NT-56r AC2: an age bucket replaces the closed-window default, so windowDays is not sent with it.
+  if (state.age) payload.ageBucket = state.age;
+  if (!state.age && !isExactStatus(state.status) && state.status !== 'open') payload.windowDays = state.windowDays;
 
   return postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...payload })
     .then(res => {
@@ -832,6 +865,88 @@ function runAdminTool(action){
 $('adminSyncAllBtn').addEventListener('click', () => runAdminTool('admin_sync_all'));
 $('adminEnsureBtn').addEventListener('click', () => runAdminTool('admin_ensure_sheet_structure'));
 $('adminArchiveBtn').addEventListener('click', () => runAdminTool('admin_run_archive'));
+
+// ---- admin: tracker sheet link and health panel (NT-eg2) ----------------------
+// admin_tracker_url / admin_health re-check Config!AdminUsers server-side; the client only gates visibility.
+function loadAdminExtras(){
+  if (!state.isAdmin) return;
+  if (!$('adminHealthBtn')) {
+    const btn = document.createElement('button');
+    btn.className = 'btn small'; btn.id = 'adminHealthBtn'; btn.textContent = 'Tracking health';
+    btn.addEventListener('click', runAdminHealth);
+    $('adminToolsField').insertBefore(btn, $('adminToolsStatus'));
+  }
+  if (state.trackerUrl !== null || state.trackerUrlLoading) return;
+  state.trackerUrlLoading = true;
+  postJson(GACTIONSHEET_URL, { action: 'admin_tracker_url', assertion: state.assertion })
+    .then(res => {
+      if (res && res.ok && res.url) {
+        state.trackerUrl = res.url;
+        const a = document.createElement('a');
+        a.className = 'btn small'; a.id = 'adminTrackerLink'; a.href = res.url;
+        a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Open tracker sheet';
+        $('adminToolsField').insertBefore(a, $('adminToolsStatus'));
+      }
+    })
+    .catch(() => {})
+    .finally(() => { state.trackerUrlLoading = false; });
+}
+// Count link into the filterable list (NT-56r): all teams, admin-health origin; the list applies the viewer's own visibility.
+function healthListHref(params){
+  const q = ['team=ALL']; // = ALL_TEAMS_ID
+  Object.keys(params).forEach(k => q.push(k + '=' + encodeURIComponent(params[k])));
+  q.push('from=health');
+  return '?' + q.join('&');
+}
+function healthCountLink(n, params, attr, val){
+  return '<a class="health-link" target="_blank" rel="noopener" data-' + attr + '="' + escape(val) + '" href="' +
+    escape(healthListHref(params)) + '">' + escape(n) + '</a>';
+}
+function healthWhen(rec, extra){
+  if (!rec) return 'none recorded';
+  return escape(rec.at) + ' — ' + (rec.ok ? 'ok' : 'failed') + (extra ? extra(rec) : '');
+}
+const HEALTH_EXACT_STATUSES = ['Open', 'In Progress', 'In Review', 'Done', 'Closed'];
+function renderHealth(h){
+  const box = $('adminHealthPanel');
+  const statuses = Object.keys(h.actionsByStatus || {}).map(k =>
+    escape(k) + ': ' + (HEALTH_EXACT_STATUSES.indexOf(k) === -1 ? escape(h.actionsByStatus[k])
+      : healthCountLink(h.actionsByStatus[k], { status: k }, 'status', k))).join(' &nbsp; ');
+  const ages = Object.keys(h.openActionsByAge || {}).map(k =>
+    escape(k) + ': ' + healthCountLink(h.openActionsByAge[k], { status: 'open', age: k }, 'age', k)).join(' &nbsp; ');
+  const triggers = (h.triggers || []).map(t =>
+    escape(t.handler) + ': ' + (t.present ? 'present' : 'MISSING')).join(' &nbsp; ');
+  const errs = (h.recentErrors || []).length
+    ? '<ul>' + h.recentErrors.map(e => '<li>' + escape(e.at) + ' ' + escape(e.tag) +
+        (e.docId ? ' [' + escape(e.docId) + ']' : '') + ' — ' + escape(e.message) + '</li>').join('') + '</ul>'
+    : 'none';
+  box.innerHTML =
+    '<div><strong>Tracking health</strong></div>' +
+    '<div id="healthLastSync">Last sync all: ' + healthWhen(h.lastSyncAll, r =>
+      ' (' + escape(r.docs) + ' docs, ' + escape(r.errors) + ' errors, ' + escape(r.source) + ')') + '</div>' +
+    '<div id="healthLastNightly">Last nightly scan: ' + healthWhen(h.lastNightlyScan) + '</div>' +
+    '<div id="healthTriggers">Triggers: ' + triggers + '</div>' +
+    '<div id="healthStatuses">Actions by status: ' + statuses + '</div>' +
+    '<div id="healthDocsTracked">Documents tracked: ' + escape(h.documentsTracked) + '</div>' +
+    '<div id="healthDocsDeleted">Documents deleted: ' + escape(h.documentsDeleted) + '</div>' +
+    '<div id="healthAges">Open actions by age (months): ' + ages + '</div>' +
+    '<div id="healthErrors">Recent errors: ' + errs + '</div>';
+  box.classList.remove('hidden');
+}
+function runAdminHealth(){
+  if (state.adminToolBusy) return;
+  state.adminToolBusy = true;
+  const out = $('adminToolsStatus');
+  out.textContent = 'Working...';
+  postJson(GACTIONSHEET_URL, { action: 'admin_health', assertion: state.assertion })
+    .then(res => {
+      if (!res.ok) { out.textContent = 'Denied: ' + (res.reason || 'unknown error'); return; }
+      out.textContent = '';
+      renderHealth(res.health || {});
+    })
+    .catch(err => { out.textContent = 'Failed: ' + (err.message || err); })
+    .finally(() => { state.adminToolBusy = false; });
+}
 
 // Resolves a teamId to its display name (falls back to the raw id when no
 // TeamData display name column exists — src/AccessControl.js's teamName
@@ -1041,6 +1156,8 @@ function render(){
   const showScan = state.isAdmin;
   $('adminScanField').classList.toggle('hidden', !showScan);
   $('adminToolsField').classList.toggle('hidden', !state.isAdmin);
+  if (!state.isAdmin) $('adminHealthPanel').classList.add('hidden');
+  loadAdminExtras();
   // gts-lgpx: the scan lives server-side in a Script Property, so on load (and
   // on every team switch) ask what it is doing rather than assuming idle — a
   // scan started in a previous session may still be running right now.
@@ -1067,7 +1184,14 @@ function render(){
                               : state.tier === 'VIEW' ? 'VIEW — read only' : 'NONE';
     $('tierTag').className = 'tag ' + state.tier.toLowerCase();
   }
-  $('windowField').style.display = state.status === 'open' ? 'none' : '';
+  $('windowField').style.display = (state.status === 'open' || state.age || isExactStatus(state.status)) ? 'none' : '';
+  if (QUERY_FROM_HEALTH && !$('healthNote')) {
+    const note = document.createElement('div');
+    note.className = 'notice';
+    note.id = 'healthNote';
+    note.textContent = 'Showing actions visible to you';
+    $('adminScanResults').insertAdjacentElement('afterend', note);
+  }
   // gts-zeti: Expand/Collapse-all only make sense when there's a team layer
   // to collapse — single-team mode has nothing above the doc-groups.
   $('collapseAllField').classList.toggle('hidden', !isAllTeams);
@@ -1324,7 +1448,17 @@ function bindSegment(el, key){
     refreshActions();
   }));
 }
-bindSegment($('statusSeg'), 'status');
+// NT-56r: reflect the ?status= / ?age= presets in the controls before the first query.
+$('statusSel').value = state.status;
+$('statusSel').addEventListener('change', e => {
+  state.status = e.target.value;
+  refreshActions();
+});
+$('ageSel').value = state.age;
+$('ageSel').addEventListener('change', e => {
+  state.age = e.target.value;
+  refreshActions();
+});
 bindSegment($('scopeSeg'), 'scope');
 $('windowSel').addEventListener('change', e => {
   state.windowDays = Number(e.target.value) || 60;
