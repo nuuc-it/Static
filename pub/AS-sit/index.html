@@ -76,6 +76,7 @@
   .status{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
           border:1px solid var(--line);background:#f9fafb;white-space:nowrap;font-size:13px}
   .status img{width:14px;height:14px;display:block}
+  .status.disabled{opacity:.5;cursor:not-allowed}
   .status.bucket-open{background:var(--blue2);border-color:#bfdbfe}
   .status.bucket-inprogress{background:var(--amber2);border-color:#fde68a}
   .status.bucket-waiting{background:var(--amber2);border-color:#fde68a}
@@ -181,6 +182,7 @@
         <div>
           <h1>Team actions <span id="titleSpinner" class="spinner hidden" style="margin-left:8px;vertical-align:middle"></span></h1>
           <div class="sub" id="sub">—</div>
+          <div class="sub hidden" id="staleTag" role="status">Showing your last saved data — refreshing…</div>
         </div>
         <div class="who">
           <div class="field hidden" id="teamField"><label for="teamSel">Team</label>
@@ -188,6 +190,8 @@
           </div>
           <span class="email" id="whoEmail"></span>
           <span class="tag" id="tierTag">—</span>
+          <button class="btn small" id="refreshAccessBtn" title="Re-read your Drive access now (normally cached for up to 6 hours)">Refresh my access</button>
+          <span class="email" id="refreshAccessMsg" role="status" aria-live="polite"></span>
           <button class="linkbtn" id="signOutBtn">Sign out</button>
         </div>
       </div>
@@ -325,7 +329,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.8.4";
+var STATIC_BUILD_VERSION_ = "0.1.8.5";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -452,6 +456,7 @@ const state = {
   status: 'open', scope: 'all', windowDays: 60, age: '',
   rows: [], statusOptions: [],
   busy: false,
+  stale: false,        // NT-8al: true while the rendered teams/rows came from local storage and fresh data has not arrived yet; Edit, status and Sync stay disabled
   editingId: null,     // global_id of the row currently showing the edit form, or null
   // gts-zeti: collapse state for All-teams grouping, keyed 'team:<teamId>' /
   // 'doc:<docId>'. Absent = expanded (default). Kept across render()/
@@ -512,6 +517,65 @@ function saveCachedAuth(){
 
 function clearCachedAuth(){
   localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+// ---- NT-8al: last-data cache (stale-while-revalidate) --------------------
+// Key nuuts.portal.v1.<STORAGE_SCOPE_>.<sub> (PROD and TEST never share it). Holds the last teams + rows for that user so a repeat visit renders
+// at once while the real calls run. Every access is try/catch: a storage failure (private mode,
+// quota) just means the normal load. Cleared on sign-out and on unauthorized/rejected responses.
+const PORTAL_CACHE_PREFIX_ = 'nuuts.portal.v1.';
+function portalCacheKey_(sub){ return PORTAL_CACHE_PREFIX_ + STORAGE_SCOPE_ + '.' + sub; } // NT-8oa: per audience
+function portalFiltersAreDefault_(){ return state.status === 'open' && state.scope === 'all' && !state.age; }
+function readPortalCache_(){
+  try {
+    if (!state.sub) return null;
+    const c = JSON.parse(localStorage.getItem(portalCacheKey_(state.sub)) || 'null');
+    if (!c || !Array.isArray(c.teams) || !c.teams.length || typeof c.teamId !== 'string' || !c.teamId) return null;
+    return c;
+  } catch (e) { return null; }
+}
+function writePortalCache_(){
+  try {
+    // Only a settled, default-filter, single-team view is worth replaying. ALL is never remembered
+    // as the last-used team (it is the slow aggregate and not the default landing view).
+    if (!state.sub || state.stale || !state.teamId || state.teamId === ALL_TEAMS_ID) return;
+    if (!portalFiltersAreDefault_() || !state.teams.length) return;
+    localStorage.setItem(portalCacheKey_(state.sub), JSON.stringify({
+      teams: state.teams, teamId: state.teamId, tier: state.tier,
+      rows: state.rows, statusOptions: state.statusOptions, savedAt: Date.now()
+    }));
+  } catch (e) { /* storage unavailable: normal load */ }
+}
+function clearPortalCache_(sub){
+  try { if (sub) localStorage.removeItem(portalCacheKey_(sub)); } catch (e) { /* ignore */ }
+}
+function setStale_(on, msg){
+  state.stale = on;
+  if (on) $('appView').setAttribute('data-refreshing', 'true'); else $('appView').removeAttribute('data-refreshing');
+  $('staleTag').classList.toggle('hidden', !on);
+  if (on && msg) $('staleTag').textContent = msg;
+}
+// Renders the cached view (teams, selected team, rows) and marks it refreshing. Edit/status/Sync stay
+// disabled (state.stale) until applyActions_/the no-teams branch clears it. isAdmin is deliberately
+// not cached, so no admin call fires from stale data.
+function renderCachedPortal_(){
+  const c = readPortalCache_();
+  if (!c || !portalFiltersAreDefault_()) return;
+  if (QUERY_TEAM && QUERY_TEAM !== c.teamId) return; // the URL asks for a different team than the cache holds
+  state.teams = c.teams;
+  state.teamId = c.teamId;
+  state.tier = c.tier || 'NONE';
+  state.rows = Array.isArray(c.rows) ? c.rows : [];
+  state.statusOptions = Array.isArray(c.statusOptions) ? c.statusOptions : [];
+  state.isAdmin = false;
+  state.teamTiers = {};
+  setTeamOptions_();
+  $('teamSel').value = state.teamId;
+  $('noTeamsNotice').classList.add('hidden');
+  $('listWrap').classList.remove('hidden');
+  $('filtersRow').classList.remove('hidden');
+  setStale_(true, 'Showing your last saved data — refreshing…');
+  render();
 }
 
 function loadCachedAuth(){
@@ -604,6 +668,7 @@ function onGoogleSignIn(credentialResponse){
       // Problem 2: identity is known now, before list_my_teams/
       // list_team_actions return — render it immediately.
       showAppShell();
+      renderCachedPortal_();
       return loadTeams();
     })
     .catch(err => {
@@ -615,6 +680,8 @@ function onGoogleSignIn(credentialResponse){
 }
 
 function signOut(){
+  clearPortalCache_(state.sub);
+  setStale_(false);
   state.idToken = null; state.assertion = null; state.sub = ''; state.email = '';
   state.teams = []; state.teamId = null; state.tier = 'NONE'; state.rows = [];
   state.collapsed = {};
@@ -648,17 +715,54 @@ $('signOutBtn').addEventListener('click', signOut);
   if (!cached) return;
   state.assertion = cached.assertion; state.sub = cached.sub; state.email = cached.email;
   showAppShell('Resuming your session — signed in as ' + cached.email + '…');
+  renderCachedPortal_();
   loadTeams();
 })();
 
 // ---- team discovery (R21, §12.3) ---------------------------------------
-function loadTeams(){
+function setTeamOptions_(){
+  $('teamField').classList.toggle('hidden', state.teams.length <= 1);
+  // gts-zm8w: 'All teams' aggregate option, only meaningful with 2+ teams
+  // to choose among (with exactly one team it would just duplicate that
+  // team's own listing).
+  const allTeamsOption = (state.teams.length > 1 || QUERY_TEAM === ALL_TEAMS_ID)
+    ? `<option value="${ALL_TEAMS_ID}">All teams</option>` : '';
+  $('teamSel').innerHTML = allTeamsOption + state.teams.map(t =>
+    `<option value="${escape(t.teamId)}">${escape(t.teamName)} (${t.tier})</option>`).join('');
+}
+
+function loadTeams(opts){
+  // NT-41i: opts.refreshAccess asks the server to bypass its access-fact cache for this caller
+  // (the slow path); the speculative last-team prefetch is skipped so the actions load after it.
+  const refreshAccess = !!(opts && opts.refreshAccess);
   // showAppShell() already ran (caller's job) so identity is visible;
   // this call's own latency is now covered by the title-line spinner
   // rather than a withheld view.
   setBusy(true);
-  return postJson(GACTIONSHEET_URL, { action: 'list_my_teams', assertion: state.assertion })
+  // NT-8al AC1: start the last-used team's list_team_actions at the same moment as list_my_teams.
+  // A ?team= in the URL wins over the remembered team. The result is only used if that team turns
+  // out to be in the returned list (the server authorizes each call independently, so a wrong guess
+  // is simply discarded). The guess is read from the cache record, never trusted for access.
+  const cached = readPortalCache_();
+  const guessTeamId = QUERY_TEAM || (cached && cached.teamId) || null;
+  let prefetch = null;
+  if (guessTeamId && !refreshAccess) {
+    const payload = listPayload_(guessTeamId);
+    prefetch = {
+      teamId: guessTeamId, key: JSON.stringify(payload),
+      p: postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...payload })
+           .then(res => ({ res }), () => ({ res: null }))
+    };
+  }
+  const myTeamsBody = { action: 'list_my_teams', assertion: state.assertion };
+  if (refreshAccess) myTeamsBody.refreshAccess = true;
+  return postJson(GACTIONSHEET_URL, myTeamsBody)
     .then(res => {
+      if (refreshAccess) {
+        $('refreshAccessMsg').textContent = (res && res.rateLimited)
+          ? 'Access was refreshed recently; try again in a minute'
+          : (res && res.accessRefreshed ? 'Access refreshed' : '');
+      }
       if (res && res.ok === false && res.error === 'unauthorized') {
         setBusy(false);
         signOut();
@@ -666,13 +770,19 @@ function loadTeams(){
         $('signinError').style.display = 'block';
         return;
       }
-      state.teams = res.teams || [];
+      if (res && res.ok === false) { // rejected for any other reason: do not keep replaying saved data
+        clearPortalCache_(state.sub);
+      }
+      state.teams = (res && res.teams) || [];
       $('launchView').classList.add('hidden');
       $('signinView').classList.add('hidden');
       $('appView').classList.remove('hidden');
       $('whoEmail').textContent = state.email;
 
       if (state.teams.length === 0) {
+        clearPortalCache_(state.sub);
+        setStale_(false);
+        state.rows = []; state.teamId = null; state.tier = 'NONE';
         $('noTeamsNotice').classList.remove('hidden');
         $('listWrap').classList.add('hidden');
         $('filtersRow').classList.add('hidden');
@@ -684,31 +794,49 @@ function loadTeams(){
       $('listWrap').classList.remove('hidden');
       $('filtersRow').classList.remove('hidden');
 
-      $('teamField').classList.toggle('hidden', state.teams.length <= 1);
-      // gts-zm8w: 'All teams' aggregate option, only meaningful with 2+ teams
-      // to choose among (with exactly one team it would just duplicate that
-      // team's own listing).
-      const allTeamsOption = (state.teams.length > 1 || QUERY_TEAM === ALL_TEAMS_ID)
-        ? `<option value="${ALL_TEAMS_ID}">All teams</option>` : '';
-      $('teamSel').innerHTML = allTeamsOption + state.teams.map(t =>
-        `<option value="${escape(t.teamId)}">${escape(t.teamName)} (${t.tier})</option>`).join('');
+      setTeamOptions_();
       // ?team= preselects only if the caller actually has access to that
       // team (list_my_teams already scoped this to the caller — a ?team=
       // for a team they can't see must not be trusted client-side); falls
       // back to the existing default otherwise (regression guard, AC3).
+      // NT-8al: with no ?team=, the remembered last-used team is next if still listed.
       state.teamId = (QUERY_TEAM && (QUERY_TEAM === ALL_TEAMS_ID || state.teams.some(t => t.teamId === QUERY_TEAM)))
         ? QUERY_TEAM
-        : state.teams[0].teamId;
+        : (cached && state.teams.some(t => t.teamId === cached.teamId))
+          ? cached.teamId
+          : state.teams[0].teamId;
       $('teamSel').value = state.teamId;
 
+      if (prefetch && prefetch.teamId === state.teamId) {
+        return prefetch.p.then(r => {
+          // Use it only when it succeeded and the filters it was fetched with still apply.
+          if (r.res && r.res.ok !== false && prefetch.key === JSON.stringify(listPayload_(state.teamId))) {
+            applyActions_(r.res);
+            setBusy(false);
+            return;
+          }
+          return refreshActions();
+        });
+      }
       return refreshActions();
     })
     .catch(err => {
       $('loadError').style.display = 'block';
       $('loadError').textContent = 'Could not load your teams: ' + (err.message || err);
+      if (state.stale) setStale_(true, 'Showing your last saved data — could not refresh');
       setBusy(false);
     });
 }
+
+$('refreshAccessBtn').addEventListener('click', () => {
+  const btn = $('refreshAccessBtn');
+  if (btn.disabled || !state.assertion) return;
+  btn.disabled = true;
+  $('refreshAccessMsg').textContent = 'Refreshing access…';
+  Promise.resolve(loadTeams({ refreshAccess: true }))
+    .catch(() => { $('refreshAccessMsg').textContent = 'Could not refresh access'; })
+    .then(() => { btn.disabled = false; });
+});
 
 $('teamSel').addEventListener('change', e => {
   state.teamId = e.target.value;
@@ -729,14 +857,10 @@ $('expandAllBtn').addEventListener('click', () => setAllGroupsCollapsed(false));
 $('collapseAllBtn').addEventListener('click', () => setAllGroupsCollapsed(true));
 
 // ---- action listing (§12.1) --------------------------------------------
-function refreshActions(){
-  if (!state.teamId) return Promise.resolve();
-  setBusy(true);
-  $('loadError').style.display = 'none';
-
+function listPayload_(teamId){
   const payload = {
     assertion: state.assertion,
-    teamId: state.teamId,
+    teamId: teamId,
     statusFilter: state.status,
     scope: state.scope
   };
@@ -746,23 +870,39 @@ function refreshActions(){
   // NT-56r AC2: an age bucket replaces the closed-window default, so windowDays is not sent with it.
   if (state.age) payload.ageBucket = state.age;
   if (!state.age && !isExactStatus(state.status) && state.status !== 'open') payload.windowDays = state.windowDays;
+  return payload;
+}
 
-  return postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...payload })
+// Applies a successful list_team_actions response: fresh data replaces any cached view and re-enables controls.
+function applyActions_(res){
+  setStale_(false);
+  state.rows = res.actions || [];
+  state.statusOptions = res.statusOptions || [];
+  state.tier = res.tier || 'NONE';
+  state.isAdmin = !!res.isAdmin;
+  // gts-zm8w: only the ALL-teams response carries `teams` — a per-team
+  // tier map so each doc group can gate Sync/Edit by ITS OWN team's
+  // tier rather than the single blended state.tier above.
+  state.teamTiers = {};
+  (res.teams || []).forEach(t => { state.teamTiers[t.teamId] = t.tier; });
+  render();
+  writePortalCache_();
+}
+
+function refreshActions(){
+  if (!state.teamId) return Promise.resolve();
+  setBusy(true);
+  $('loadError').style.display = 'none';
+
+  return postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...listPayload_(state.teamId) })
     .then(res => {
-      state.rows = res.actions || [];
-      state.statusOptions = res.statusOptions || [];
-      state.tier = res.tier || 'NONE';
-      state.isAdmin = !!res.isAdmin;
-      // gts-zm8w: only the ALL-teams response carries `teams` — a per-team
-      // tier map so each doc group can gate Sync/Edit by ITS OWN team's
-      // tier rather than the single blended state.tier above.
-      state.teamTiers = {};
-      (res.teams || []).forEach(t => { state.teamTiers[t.teamId] = t.tier; });
-      render();
+      if (res && res.ok === false) clearPortalCache_(state.sub); // rejected: do not replay saved data
+      applyActions_(res);
     })
     .catch(err => {
       $('loadError').style.display = 'block';
       $('loadError').textContent = 'Could not load actions: ' + (err.message || err);
+      if (state.stale) setStale_(true, 'Showing your last saved data — could not refresh');
     })
     .finally(() => setBusy(false));
 }
@@ -925,6 +1065,7 @@ function renderHealth(h){
     '<div id="healthLastSync">Last sync all: ' + healthWhen(h.lastSyncAll, r =>
       ' (' + escape(r.docs) + ' docs, ' + escape(r.errors) + ' errors, ' + escape(r.source) + ')') + '</div>' +
     '<div id="healthLastNightly">Last nightly scan: ' + healthWhen(h.lastNightlyScan) + '</div>' +
+    '<div id="healthLastAccessRefresh">Last access refresh: ' + (h.lastAccessRefresh ? escape(h.lastAccessRefresh) : 'none recorded') + '</div>' +
     '<div id="healthTriggers">Triggers: ' + triggers + '</div>' +
     '<div id="healthStatuses">Actions by status: ' + statuses + '</div>' +
     '<div id="healthDocsTracked">Documents tracked: ' + escape(h.documentsTracked) + '</div>' +
@@ -1119,9 +1260,9 @@ const isCanonical = (status) => state.statusOptions.some(o => o.status === statu
 
 function statusChip(row, editable){
   const cls = 'status bucket-' + row.status_bucket.toLowerCase() +
-              (row.status_resolved ? ' bucket-closed' : '') + (editable ? ' mine' : '');
-  return `<span class="${cls}" data-status-for="${row.global_id}"
-            title="${editable ? 'Click to change status' : 'Only the assignee can change this'}"
+              (row.status_resolved ? ' bucket-closed' : '') + (editable ? ' mine' : '') + (editable && state.stale ? ' disabled' : '');
+  return `<span class="${cls}" data-status-for="${row.global_id}" ${editable && state.stale ? 'aria-disabled="true"' : ''}
+            title="${editable && state.stale ? 'Available once fresh data has loaded' : editable ? 'Click to change status' : 'Only the assignee can change this'}"
           ><img src="${row.status_icon}" alt="" />${escape(row.status)}${editable ? ' ▾' : ''}</span>`;
 }
 
@@ -1267,7 +1408,7 @@ function render(){
     render();
   }));
   listEl.querySelectorAll('[data-save-edit]').forEach(b => b.addEventListener('click', onSaveEditClick));
-  listEl.querySelectorAll('.status.mine').forEach(c => c.addEventListener('click', openStatusMenu));
+  listEl.querySelectorAll('.status.mine').forEach(c => { if (!state.stale) c.addEventListener('click', openStatusMenu); });
 }
 
 // gts-zeti: one doc-group's markup, shared by the flat (single-team) and
@@ -1294,8 +1435,8 @@ function docGroupHtml(docId, docRows, inTeamGroup){
           >${escape(first.doc_name || '(untitled document)')}</a></div>
         <div class="controls">
           <span class="tag">${docRows.length} shown</span>
-          <button class="btn small" data-sync="${docId}" ${tier === 'EDIT' ? '' : 'disabled'}
-            title="${tier === 'EDIT' ? 'Re-sync this document with the sheet'
+          <button class="btn small" data-sync="${docId}" ${tier === 'EDIT' && !state.stale ? '' : 'disabled'}
+            title="${state.stale ? 'Available once fresh data has loaded' : tier === 'EDIT' ? 'Re-sync this document with the sheet'
                                      : 'Syncing needs EDIT access to this document’s folder'}"
           >Sync this document</button>
         </div>
@@ -1320,7 +1461,7 @@ function rowHtml(r, tier){
       <div class="controls">
         ${statusChip(r, mine)}
         ${tier === 'EDIT'
-          ? `<button class="btn small" data-edit="${r.global_id}">Edit</button>` : ''}
+          ? `<button class="btn small" data-edit="${r.global_id}" ${state.stale ? 'disabled title="Available once fresh data has loaded"' : ''}>Edit</button>` : ''}
       </div>
     </div>`;
 }
