@@ -28,6 +28,17 @@
   .action button { margin-top: 8px; padding: 6px 14px; font: inherit; cursor: pointer; }
   .result { margin-top: 8px; white-space: pre-wrap; word-break: break-word; }
   .hidden { display: none; }
+  .menu-group { border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px 8px; margin: 12px 0; background: var(--panel); }
+  .menu-group h3 { color: var(--head); margin: 8px 0; font-size: 1.05em; }
+  .menu-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 6px 0; }
+  .menu-row button { padding: 6px 14px; font: inherit; cursor: pointer; }
+  .menu-row button[disabled] { cursor: not-allowed; opacity: 0.55; }
+  .menu-row .result { margin-top: 0; flex: 1 1 200px; }
+  .menu-row.excluded { color: var(--muted); }
+  .doc-box { border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin: 12px 0; background: var(--panel); }
+  .doc-box label { display: block; font-weight: bold; margin-bottom: 6px; }
+  .doc-box input[type=text] { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; }
+  .doc-box button { margin-top: 8px; padding: 6px 14px; font: inherit; cursor: pointer; }
   .signin { border: 1px dashed var(--line); border-radius: 6px; padding: 12px; margin: 12px 0; }
   .dlg-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
   .dlg-panel { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; max-width: 100%; max-height: 100%; display: flex; flex-direction: column; }
@@ -55,15 +66,17 @@ See also the <a href="user-guide/">User Guide</a>, <a href="privacy/">Privacy</a
 <ul id="webUiList"></ul>
 <div id="webUiEmpty" class="muted hidden">No features have published a web page.</div>
 
-<h2>Document actions</h2>
-<p class="muted">Paste a Google Doc URL or ID. You need edit access to the document.</p>
-<div id="docActions"></div>
-<div id="docActionsEmpty" class="muted hidden">No document actions are registered.</div>
-
-<h2>Dialogs</h2>
-<p class="muted">Feature dialogs run against a Google Doc. Paste a Google Doc URL or ID. You need at least view access to the document.</p>
-<div id="dialogs"></div>
-<div id="dialogsEmpty" class="muted hidden">No feature dialogs are registered.</div>
+<h2>Document</h2>
+<div class="doc-box">
+  <label for="doc-input">Google Doc URL or ID</label>
+  <input type="text" id="doc-input" placeholder="Google Doc URL or ID" autocomplete="off">
+  <button type="button" id="doc-check">Check</button>
+  <div role="status"><strong id="doc-title"></strong> <span id="doc-level" class="muted"></span> <span id="doc-check-msg" class="result"></span></div>
+</div>
+<p class="muted">The menu below is the add-on menu. Every button runs against the document above; the server checks your
+access on every run. Buttons that need more access than you have are disabled, with the reason.</p>
+<div id="menuGroups"></div>
+<div id="menuEmpty" class="muted hidden">No menu items are listed.</div>
 
 <div id="signinBox" class="signin hidden">
   <p id="signinMsg">Sign in with Google to run this action. Your identity is verified by NUUC-Dispatch and kept in this browser for up to 45 days.</p>
@@ -77,7 +90,7 @@ See also the <a href="user-guide/">User Guide</a>, <a href="privacy/">Privacy</a
 <script>
 // Build-time stamps — gas-static (scripts/static-pages.js) replaces these literals per env. Left null in the
 // unbuilt source, which has no backend to call.
-var STATIC_BUILD_VERSION_ = "0.1.8.3";
+var STATIC_BUILD_VERSION_ = "0.1.8.4";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -395,7 +408,160 @@ function openDialog_(entry, input, resultEl, button) {
     .then(() => { button.disabled = false; });
 }
 
+// ---- document context + menu runner (admin menu runner slice 1) ------------------------------------------------------
+const LEVEL_RANK_ = { NONE: 0, VIEW: 1, COMMENT: 2, EDIT: 3, OWNER: 4 };
+const FLOOR_RANK_ = { VIEW: 1, EDIT: 3, ADMIN: 3 };   // ADMIN also needs the sub-app's admin check, made server side
+let docLevel_ = null;   // the level shown by the last successful Check, null when unknown
+
+function floorReason_(floor, level) {
+  return 'needs ' + floor + ' access; you have ' + level;
+}
+// Applies the checked level to every menu button: above-floor buttons are disabled and carry the reason.
+function applyLevel_() {
+  document.querySelectorAll('[data-item]').forEach((b) => {
+    if (b.dataset.excluded === 'true') return;
+    const floor = b.dataset.floor;
+    const blocked = docLevel_ !== null && (LEVEL_RANK_[docLevel_] || 0) < (FLOOR_RANK_[floor] || 0);
+    b.disabled = blocked;
+    const note = b.parentNode.querySelector('.why');
+    if (blocked) { b.title = floorReason_(floor, docLevel_); if (note) note.textContent = b.title; }
+    else { b.title = ''; if (note) note.textContent = ''; }
+  });
+}
+function clearLevel_() {
+  docLevel_ = null;
+  $('doc-level').textContent = ''; $('doc-title').textContent = ''; $('doc-check-msg').textContent = '';
+  applyLevel_();
+}
+$('doc-input').addEventListener('input', clearLevel_);
+
+function sessionExpired_(resultEl, resume) {
+  // Cached assertion no longer accepted (expired / rotated key / wrong audience): sign in again (feature-ui-contract 6.4).
+  clearCachedAuth(); state.assertion = null; showWho_();
+  state.pending = { resume };
+  resultEl.className = 'result';
+  resultEl.textContent = 'Your saved sign-in is no longer accepted. Sign in again to continue.';
+  showSignIn_();
+}
+
+function checkDoc_() {
+  const doc = $('doc-input').value.trim();
+  const out = $('doc-check-msg');
+  out.className = 'result';
+  if (!doc) { out.className = 'result bad'; out.textContent = 'Paste a document URL or ID first.'; return; }
+  const resume = () => checkDoc_();
+  if (!state.assertion) { state.pending = { resume }; out.textContent = 'Sign in to continue.'; showSignIn_(); return; }
+  $('doc-check').disabled = true;
+  out.textContent = 'Checking…';
+  postJson(SHELL_URL, { action: 'doc_context', assertion: state.assertion, doc })
+    .then((res) => {
+      if (res && res.ok === false && res.error === 'unauthorized') { sessionExpired_(out, resume); return; }
+      if (!res || res.ok !== true) {
+        clearLevel_();
+        out.className = 'result bad'; out.textContent = 'Failed: ' + ((res && res.error) || 'unknown error');
+        return;
+      }
+      $('doc-title').textContent = res.title || '(untitled)';
+      $('doc-level').textContent = 'Your access: ' + res.level + (res.cached ? ' (cached)' : '');
+      docLevel_ = res.level;
+      out.textContent = '';
+      applyLevel_();
+    })
+    .catch((err) => { out.className = 'result bad'; out.textContent = 'Failed: ' + (err.message || String(err)); })
+    .then(() => { $('doc-check').disabled = false; });
+}
+$('doc-check').addEventListener('click', checkDoc_);
+
+function summarize_(result) {
+  let text;
+  try { text = JSON.stringify(result); } catch (e) { text = String(result); }
+  return text && text.length > 600 ? text.slice(0, 600) + '…' : (text || '');
+}
+
+// Runs a kind:'run' menu entry through the generic Shell gate (subapp_web_invoke).
+function runMenuItem_(entry, resultEl, button) {
+  const doc = $('doc-input').value.trim();
+  resultEl.className = 'result';
+  if (!doc) { resultEl.className = 'result bad'; resultEl.textContent = 'Paste a document URL or ID first.'; return; }
+  const resume = () => runMenuItem_(entry, resultEl, button);
+  if (!state.assertion) { state.pending = { resume }; resultEl.textContent = 'Sign in to continue.'; showSignIn_(); return; }
+  button.disabled = true;
+  resultEl.textContent = 'Running…';
+  postJson(SHELL_URL, { action: 'subapp_web_invoke', assertion: state.assertion, doc, id: entry.id, item: entry.item, args: {} })
+    .then((res) => {
+      if (res && res.ok === false && res.error === 'unauthorized') { sessionExpired_(resultEl, resume); return; }
+      if (!res || res.ok !== true) {
+        resultEl.className = 'result bad';
+        resultEl.textContent = 'Error: ' + ((res && res.error) || 'unknown error');
+        return;
+      }
+      resultEl.className = 'result ok';
+      resultEl.textContent = 'ok. ' + summarize_(res.result);
+    })
+    .catch((err) => { resultEl.className = 'result bad'; resultEl.textContent = 'Error: ' + (err.message || String(err)); })
+    .then(() => { button.disabled = false; applyLevel_(); });
+}
+
 // ---- render ---------------------------------------------------------------------------------------------------------
+// One menu button. kind: run -> subapp_web_invoke; dialog -> feature dialog overlay; doc -> feature_doc_invoke.
+function menuRow_(it) {
+  const row = document.createElement('div'); row.className = 'menu-row';
+  const button = document.createElement('button'); button.type = 'button';
+  button.textContent = it.caption || it.item;
+  button.setAttribute('data-item', it.item || '');
+  button.setAttribute('data-id', it.id || '');
+  button.dataset.floor = it.floor || 'VIEW';
+  const note = document.createElement('span'); note.className = 'muted why';
+  const resultEl = document.createElement('div'); resultEl.className = 'result'; resultEl.setAttribute('role', 'status');
+  if (it.excluded) {
+    row.classList.add('excluded');
+    button.disabled = true; button.dataset.excluded = 'true';
+    button.title = it.reason || 'not available';
+    note.textContent = it.reason || 'not available';
+  } else {
+    const input = $('doc-input');
+    if (it.kind === 'dialog') {
+      button.setAttribute('aria-label', 'Open ' + (it.caption || it.item));
+      const entry = { id: it.id, item: it.item, caption: it.caption, width: it.width, height: it.height };
+      button.addEventListener('click', () => openDialog_(entry, input, resultEl, button));
+    } else if (it.kind === 'doc') {
+      button.setAttribute('aria-label', 'Run ' + (it.caption || it.item));
+      button.addEventListener('click', () => runDocAction_({ id: it.id, item: it.item }, input, resultEl, button));
+    } else {
+      button.addEventListener('click', () => runMenuItem_({ id: it.id, item: it.item }, resultEl, button));
+    }
+  }
+  row.appendChild(button); row.appendChild(note); row.appendChild(resultEl);
+  return row;
+}
+
+function renderMenu_(menu) {
+  const host = $('menuGroups');
+  host.innerHTML = '';
+  let rendered = 0;
+  (Array.isArray(menu) ? menu : []).forEach((g) => {
+    // About NUUTS is the About section above; it is not a runnable item.
+    const items = (Array.isArray(g.items) ? g.items : []).filter((it) => it.kind !== 'about');
+    if (!items.length) return;
+    const box = document.createElement('section'); box.className = 'menu-group'; box.setAttribute('data-group', g.group);
+    const h = document.createElement('h3'); h.textContent = g.group; box.appendChild(h);
+    items.forEach((it) => { box.appendChild(menuRow_(it)); rendered++; });
+    host.appendChild(box);
+  });
+  $('menuEmpty').classList.toggle('hidden', rendered > 0);
+  applyLevel_();
+}
+
+// A Shell older than about.menu: list its dialogs and doc actions as one group.
+function legacyMenu_(about) {
+  const items = [];
+  (Array.isArray(about.dialogs) ? about.dialogs : []).forEach((d) => items.push(
+    { id: d.id, item: d.item, caption: d.caption, kind: 'dialog', floor: 'VIEW', width: d.width, height: d.height }));
+  (Array.isArray(about.docActions) ? about.docActions : []).forEach((d) => items.push(
+    { id: d.id, item: d.item, caption: d.caption, kind: 'doc', floor: 'EDIT' }));
+  return items.length ? [{ group: 'Features', items }] : [];
+}
+
 function renderAbout_(about) {
   const features = Array.isArray(about.features) ? about.features : [];
   $('featuresBody').innerHTML = features.map((f) => {
@@ -412,38 +578,14 @@ function renderAbout_(about) {
     '<li><a href="' + esc(w.href) + '" rel="noopener">' + esc(w.caption || w.item) + '</a></li>').join('');
   $('webUiEmpty').classList.toggle('hidden', $('webUiList').children.length > 0);
 
-  const docs = Array.isArray(about.docActions) ? about.docActions : [];
-  const host = $('docActions');
-  host.innerHTML = '';
-  docs.forEach((d, i) => {
-    const box = document.createElement('div'); box.className = 'action';
-    const label = document.createElement('label'); label.setAttribute('for', 'doc' + i); label.textContent = d.caption || d.item;
-    const input = document.createElement('input'); input.type = 'text'; input.id = 'doc' + i;
-    input.placeholder = 'Google Doc URL or ID'; input.autocomplete = 'off';
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Run';
-    const resultEl = document.createElement('div'); resultEl.className = 'result'; resultEl.setAttribute('role', 'status');
-    button.addEventListener('click', () => runDocAction_({ id: d.id, item: d.item }, input, resultEl, button));
-    box.appendChild(label); box.appendChild(input); box.appendChild(button); box.appendChild(resultEl);
-    host.appendChild(box);
-  });
-  $('docActionsEmpty').classList.toggle('hidden', docs.length > 0);
-
-  const dialogs = Array.isArray(about.dialogs) ? about.dialogs : [];
-  const dhost = $('dialogs');
-  dhost.innerHTML = '';
-  dialogs.forEach((d, i) => {
-    const box = document.createElement('div'); box.className = 'action';
-    const label = document.createElement('label'); label.setAttribute('for', 'dlg' + i); label.textContent = d.caption || d.item;
-    const input = document.createElement('input'); input.type = 'text'; input.id = 'dlg' + i;
-    input.placeholder = 'Google Doc URL or ID'; input.autocomplete = 'off';
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Open';
-    const resultEl = document.createElement('div'); resultEl.className = 'result'; resultEl.setAttribute('role', 'status');
-    const entry = { id: d.id, item: d.item, caption: d.caption, width: d.width, height: d.height };
-    button.addEventListener('click', () => openDialog_(entry, input, resultEl, button));
-    box.appendChild(label); box.appendChild(input); box.appendChild(button); box.appendChild(resultEl);
-    dhost.appendChild(box);
-  });
-  $('dialogsEmpty').classList.toggle('hidden', dialogs.length > 0);
+  // Dialog sizes come from the legacy about.dialogs list; the menu entry carries identity, floor and exclusion.
+  const dims = {};
+  (Array.isArray(about.dialogs) ? about.dialogs : []).forEach((d) => { dims[d.id + '/' + d.item] = d; });
+  (Array.isArray(about.menu) ? about.menu : []).forEach((g) => (g.items || []).forEach((it) => {
+    const d = dims[it.id + '/' + it.item];
+    if (d && it.kind === 'dialog') { it.width = d.width; it.height = d.height; }
+  }));
+  renderMenu_(Array.isArray(about.menu) ? about.menu : legacyMenu_(about));
 }
 
 function loadAbout_() {
