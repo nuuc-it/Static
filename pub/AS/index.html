@@ -112,6 +112,7 @@
   .rowsel{margin-top:3px}
   .row.reference{opacity:.6;color:var(--muted)}
   .row.reference .ref-home{margin-left:6px;font-size:12px}
+  .rowmeta .from a{color:inherit}
   .refblock{margin-top:10px}
   .refhead{font-size:12.5px;color:var(--muted);margin:6px 0}
 
@@ -259,12 +260,17 @@
           <span class="docchip hidden" id="docFilterChip"><span id="docFilterName"></span>
             <button id="docFilterClear" type="button" aria-label="Clear document filter" title="Clear document filter">&times;</button></span>
         </div>
-        <div class="field">Show
-          <div class="seg" id="scopeSeg">
-            <button data-scope="all" aria-pressed="true" title="Show everyone's actions">Everyone</button>
-            <button data-scope="mine" aria-pressed="false" title="Show only actions assigned to you">Mine</button>
-            <button class="seam" disabled title="Open seam R13a — filter by a named person; not in this slice">Person…</button>
-          </div>
+        <!-- NT-tnh: scope control. 'person' reveals #personSelect, listing res.assignees (people with actions
+             in the teams shown); ?person=<email> presets it. The server applies the filter (assigneeEmail). -->
+        <div class="field"><label for="scopeSelect">Show</label>
+          <select class="sel" id="scopeSelect" title="Whose actions to show">
+            <option value="everyone" title="Show everyone's actions">Everyone</option>
+            <option value="mine" title="Show only actions assigned to you">Mine</option>
+            <option value="person" title="Show only actions assigned to a person you choose">A person…</option>
+          </select>
+          <select class="sel hidden" id="personSelect" title="Show only actions assigned to this person (people with actions in the teams shown)">
+            <option value="">Choose a person…</option>
+          </select>
         </div>
         <!-- Names what the server actually does: the window ages out resolved
              rows only. An open action is never hidden by it, however stale
@@ -380,7 +386,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.15";
+var STATIC_BUILD_VERSION_ = "0.1.17";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbxXl_7EmMdsEDU2ISsJ5NTXnPTUjucaZ4y2U_hASOc2l3zoeS_DvPMwK00mbWP047JTtA/exec";
 var STATIC_ENV_LABEL_ = "PROD";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell";
@@ -506,6 +512,7 @@ const state = {
                         // used to gate each row/doc-group's Sync/Edit controls per its
                         // OWN team rather than one blended state.tier (gts-zm8w)
   status: 'open', scope: 'all', windowDays: 60, age: '',
+  person: '', assignees: [],  // NT-tnh: scope 'person' filter email; res.assignees for #personSelect
   docId: '', docName: '',  // NT-71y.2: document filter (?doc=); docName arrives with each filtered response
   docDenied: false,        // NT-71y.2 C4: last filtered response was tier NONE
   docIndex: {},            // doc_name -> doc_id for the #docSearch datalist
@@ -547,6 +554,9 @@ const QUERY_ACTION = QUERY_PARAMS.get('action') || null;
 const QUERY_STATUS = ['open', 'closed', 'all', 'Open', 'In Progress', 'In Review', 'Done', 'Closed'].indexOf(QUERY_PARAMS.get('status')) !== -1 ? QUERY_PARAMS.get('status') : null;
 const QUERY_AGE = ['<1', '1-2', '3-5', '6-11', '12+'].indexOf(QUERY_PARAMS.get('age')) !== -1 ? QUERY_PARAMS.get('age') : null;
 const QUERY_FROM_HEALTH = QUERY_PARAMS.get('from') === 'health';
+// NT-tnh: ?person=<email> presets the scope control to that person (UX only; the server filters).
+const QUERY_PERSON = (QUERY_PARAMS.get('person') || '').trim().toLowerCase();
+if (QUERY_PERSON) { state.scope = 'person'; state.person = QUERY_PERSON; }
 if (QUERY_STATUS) state.status = QUERY_STATUS;
 if (QUERY_AGE) state.age = QUERY_AGE;
 if (QUERY_DOC) {
@@ -933,8 +943,9 @@ function listPayload_(teamId){
     assertion: state.assertion,
     teamId: teamId,
     statusFilter: state.status,
-    scope: state.scope
+    scope: state.scope === 'mine' ? 'mine' : 'all'
   };
+  if (state.scope === 'person' && state.person) payload.assigneeEmail = state.person; // NT-tnh
   // The resolved-age control is hidden (and therefore meaningless) once
   // statusFilter=open — windowDays never affects unresolved rows anyway
   // (plan §12.1 invariant 1), but omit it in that state for clarity.
@@ -956,6 +967,8 @@ function applyActions_(res){
   state.statusOptions = res.statusOptions || [];
   state.tier = res.tier || 'NONE';
   state.isAdmin = !!res.isAdmin;
+  state.assignees = Array.isArray(res.assignees) ? res.assignees : []; // NT-tnh
+  renderPersonOptions_();
   // gts-zm8w: only the ALL-teams response carries `teams` — a per-team
   // tier map so each doc group can gate Sync/Edit by ITS OWN team's
   // tier rather than the single blended state.tier above.
@@ -1721,6 +1734,7 @@ function renderList_(){
     render();
   }));
   listEl.querySelectorAll('[data-save-edit]').forEach(b => b.addEventListener('click', onSaveEditClick));
+  listEl.querySelectorAll('a.from-link').forEach(a => a.addEventListener('click', onRefHomeClick_)); // NT-a0t
   listEl.querySelectorAll('.status.mine').forEach(c => { if (!state.stale) c.addEventListener('click', openStatusMenu); });
   renderReferences_();
 }
@@ -1781,6 +1795,16 @@ function docGroupHtml(docId, docRows, inTeamGroup){
 
 function rowClass_(r){ return 'row' + (state.focusGid && r.global_id === state.focusGid ? ' row-focus' : ''); }
 
+// NT-a0t: an imported action's source ('From: <doc name> ACT-n'), linked to the source document's
+// view on this portal (same behaviour as a Reference's home link).
+function fromHtml_(from){
+  if (!from || !from.docId) return '';
+  const name = from.docName || from.docId;
+  return `<span class="from">From: <a class="from-link" href="${escape(refHomeHref_(from.docId))}"
+    data-home-doc="${escape(from.docId)}" data-home-name="${escape(from.docName || '')}"
+    title="${escape('Imported from ' + (from.ain || '') + ' in ' + name)}">${escape(name)} ${escape(from.ain || '')}</a></span>`;
+}
+
 function rowHtml(r, tier){
   if (state.editingId === r.global_id) return editRowHtml(r);
   const mine = isMine(r);
@@ -1794,6 +1818,7 @@ function rowHtml(r, tier){
         <div class="rowmeta">
           <span>${escape(r.assignee_name || r.assignee_email || 'Unassigned')}${mine ? ' (you)' : ''}</span>
           <span>updated ${shortDate(r.modified_date)}</span>
+          ${fromHtml_(r.from)}
         </div>
       </div>
       <div class="controls">
@@ -2125,14 +2150,6 @@ function closeMenu(){ menuEl.style.display = 'none'; }
 document.addEventListener('click', e => { if (!menuEl.contains(e.target)) closeMenu(); });
 
 // ---- filter controls -----------------------------------------------------
-function bindSegment(el, key){
-  el.querySelectorAll('button[data-' + key + ']').forEach(b => b.addEventListener('click', () => {
-    state[key] = b.dataset[key];
-    el.querySelectorAll('button[data-' + key + ']').forEach(x =>
-      x.setAttribute('aria-pressed', String(x === b)));
-    refreshActions();
-  }));
-}
 // NT-56r: reflect the ?status= / ?age= presets in the controls before the first query.
 $('statusSel').value = state.status;
 $('statusSel').addEventListener('change', e => {
@@ -2144,7 +2161,40 @@ $('ageSel').addEventListener('change', e => {
   state.age = e.target.value;
   refreshActions();
 });
-bindSegment($('scopeSeg'), 'scope');
+// NT-tnh: scope control (#scopeSelect) and person picker (#personSelect).
+function syncPersonUrl_(){
+  try {
+    const u = new URL(location.href);
+    if (state.scope === 'person' && state.person) u.searchParams.set('person', state.person);
+    else u.searchParams.delete('person');
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  } catch (e) { /* history unavailable: the filter still works */ }
+}
+function renderPersonOptions_(){
+  const sel = $('personSelect');
+  const list = state.assignees.slice();
+  // A preset/selected email not among the assignees stays selectable so the filter stays applied.
+  if (state.person && !list.some(a => a.email === state.person)) list.push({ name: '', email: state.person });
+  sel.innerHTML = '<option value="">Choose a person…</option>' + list.map(a =>
+    `<option value="${escape(a.email)}" title="${escape(a.email)}">${escape(a.name || a.email)}</option>`).join('');
+  sel.value = state.person;
+  sel.classList.toggle('hidden', state.scope !== 'person');
+}
+$('scopeSelect').value = state.scope === 'mine' ? 'mine' : state.scope === 'person' ? 'person' : 'everyone';
+renderPersonOptions_();
+$('scopeSelect').addEventListener('change', e => {
+  const v = e.target.value;
+  state.scope = v === 'mine' ? 'mine' : v === 'person' ? 'person' : 'all';
+  renderPersonOptions_();
+  syncPersonUrl_();
+  if (state.scope === 'person' && !state.person) return; // nothing changes until a person is picked
+  refreshActions();
+});
+$('personSelect').addEventListener('change', e => {
+  state.person = e.target.value || '';
+  syncPersonUrl_();
+  refreshActions();
+});
 $('windowSel').addEventListener('change', e => {
   state.windowDays = Number(e.target.value) || 60;
   refreshActions();
