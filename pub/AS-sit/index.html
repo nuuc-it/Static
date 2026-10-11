@@ -89,6 +89,13 @@
   .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
   .btn.small{padding:4px 8px;font-size:12px;border-radius:8px}
   .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .bulkbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:13px}
+  .bulkresults{margin:6px 0;padding-left:18px;font-size:12.5px;color:var(--muted)}
+  .rowsel{margin-top:3px}
+  .row.reference{opacity:.6;color:var(--muted)}
+  .row.reference .ref-home{margin-left:6px;font-size:12px}
+  .refblock{margin-top:10px}
+  .refhead{font-size:12.5px;color:var(--muted);margin:6px 0}
 
   .empty{padding:22px 14px;text-align:center;color:var(--muted)}
   .row-focus{outline:2px solid var(--blue);outline-offset:-2px;border-radius:8px;background:var(--blue2)}
@@ -300,6 +307,7 @@
       <button class="btn small" id="docNoAccessClear" type="button">Clear document filter</button>
     </div>
     <div id="listWrap">
+      <div id="bulkHost"></div>
       <div class="list" id="list"></div>
     </div>
 
@@ -346,7 +354,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.9.7";
+var STATIC_BUILD_VERSION_ = "0.1.9.8";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -477,6 +485,8 @@ const state = {
   focusN: null, focusGid: '', focusPending: false, focusScroll: false,  // NT-71y.2 C3: &action= deep link
   rows: [], statusOptions: [],
   busy: false,
+  selected: new Set(), bulkStatus: '', bulkBusy: false, bulkResults: [],  // NT-71y.6 bulk status
+  references: [], refSelected: new Set(), refBusy: false, refResults: [],  // NT-71y.8 References (document view only)
   stale: false,        // NT-8al: true while the rendered teams/rows came from local storage and fresh data has not arrived yet; Edit, status and Sync stay disabled
   editingId: null,     // global_id of the row currently showing the edit form, or null
   // gts-zeti: collapse state for All-teams grouping, keyed 'team:<teamId>' /
@@ -578,6 +588,7 @@ function setStale_(on, msg){
   if (on) $('appView').setAttribute('data-refreshing', 'true'); else $('appView').removeAttribute('data-refreshing');
   $('staleTag').classList.toggle('hidden', !on);
   if (on && msg) $('staleTag').textContent = msg;
+  updateBulkApply_();
 }
 // Renders the cached view (teams, selected team, rows) and marks it refreshing. Edit/status/Sync stay
 // disabled (state.stale) until applyActions_/the no-teams branch clears it. isAdmin is deliberately
@@ -863,6 +874,8 @@ $('refreshAccessBtn').addEventListener('click', () => {
 
 $('teamSel').addEventListener('change', e => {
   state.teamId = e.target.value;
+  state.selected.clear(); state.bulkResults = []; // NT-71y.6: a team change clears the selection
+  clearRefSelection_(); // NT-71y.8
   setDocFilter_('', ''); // NT-71y.2 C2: a team change drops the document filter
   $('adminScanResults').classList.add('hidden');
   refreshActions();
@@ -905,6 +918,7 @@ function listPayload_(teamId){
 function applyActions_(res){
   setStale_(false);
   state.rows = res.actions || [];
+  state.references = (state.docId && res.ok !== false && Array.isArray(res.references)) ? res.references : []; // NT-71y.8
   state.statusOptions = res.statusOptions || [];
   state.tier = res.tier || 'NONE';
   state.isAdmin = !!res.isAdmin;
@@ -924,6 +938,7 @@ function applyActions_(res){
 // Sets (or clears, with '') the document filter and keeps the address bar in step: 'doc' is set or
 // removed, and clearing also removes 'action'. Does not refresh; callers do.
 function setDocFilter_(docId, docName){
+  if ((docId || '') !== state.docId) { state.references = []; clearRefSelection_(); } // NT-71y.8
   const switched = !!docId && docId !== state.docId; // NT-71y.2 C5: a different document drops 'action'
   state.docId = docId || '';
   state.docName = docId ? (docName || '') : '';
@@ -1394,6 +1409,10 @@ function rowByDocId(docId){ return state.rows.find(r => r.doc_id === docId); }
 
 // ---- render ---------------------------------------------------------------
 function render(){
+  renderList_();
+  syncBulkUi_();
+}
+function renderList_(){
   const isAllTeams = state.teamId === ALL_TEAMS_ID;
   $('sub').textContent = (isAllTeams ? 'All teams' : state.teamId) + ' • signed in';
   // The scan status itself lives in ONE shared Script Property regardless of
@@ -1457,6 +1476,7 @@ function render(){
     listEl.innerHTML = `<div class="docgroup"><div class="empty">${
       state.scope === 'mine' ? 'Nothing assigned to you in this team.'
                               : 'No actions match these filters.'}</div></div>`;
+    renderReferences_();
     return;
   }
 
@@ -1521,6 +1541,7 @@ function render(){
   }));
   listEl.querySelectorAll('[data-save-edit]').forEach(b => b.addEventListener('click', onSaveEditClick));
   listEl.querySelectorAll('.status.mine').forEach(c => { if (!state.stale) c.addEventListener('click', openStatusMenu); });
+  renderReferences_();
 }
 
 // gts-zeti: one doc-group's markup, shared by the flat (single-team) and
@@ -1564,6 +1585,8 @@ function rowHtml(r, tier){
   const mine = isMine(r);
   return `
     <div class="${rowClass_(r)}" data-gid="${escape(r.global_id)}">
+      ${tier === 'EDIT'
+        ? `<input type="checkbox" class="rowsel" data-select="${escape(r.global_id)}" aria-label="Select action"${state.selected.has(r.global_id) ? ' checked' : ''} />` : ''}
       <div class="aiN">${escape(r.action_id || '')}</div>
       <div class="rowmain">
         <div class="action">${escape(r.action_text)}</div>
@@ -1704,16 +1727,185 @@ function openStatusMenu(e){
   });
   e.stopPropagation();
 }
-function submitStatusChange(globalId, newStatus){
-  postJson(GACTIONSHEET_URL, {
+// Shared request for the single-row and bulk status paths (NT-71y.6).
+function patchStatusRequest_(globalId, newStatus){
+  return postJson(GACTIONSHEET_URL, {
     action: 'team_patch_status', assertion: state.assertion, teamId: teamIdForWrite(rowByGlobalId(globalId)),
     global_id: globalId, status: newStatus
-  })
+  });
+}
+function submitStatusChange(globalId, newStatus){
+  patchStatusRequest_(globalId, newStatus)
     .then(res => {
       if (res.ok) { toast('Status updated.'); return refreshActions(); }
       toast('Status change did not apply: ' + (res.outcome || 'unknown'));
     })
     .catch(err => toast('Status change failed: ' + (err.message || err)));
+}
+
+// ---- bulk status (NT-71y.6) -------------------------------------------------
+// Selection is a Set of global ids, always pruned to the rows whose checkbox is
+// rendered (EDIT tier, visible under the active filters). Runs call
+// team_patch_status once per row, sequentially, so the server authorizes per row.
+function bulkBoxes_(){ return Array.prototype.slice.call(listEl.querySelectorAll('input[data-select]')); }
+function syncBulkUi_(){
+  const boxes = bulkBoxes_();
+  const visible = new Set(boxes.map(b => b.dataset.select));
+  Array.from(state.selected).forEach(g => { if (!visible.has(g)) state.selected.delete(g); });
+  const host = $('bulkHost');
+  if (!boxes.length){ host.innerHTML = ''; return; }
+  const n = state.selected.size;
+  const opts = state.statusOptions.map(o => `<option value="${escape(o.status)}"${o.status === state.bulkStatus ? ' selected' : ''}>${escape(o.status)}</option>`).join('');
+  host.innerHTML = `
+    <label class="bulkbar"><input type="checkbox" id="selectAll" /> Select all shown</label>
+    <div class="bulkbar${n ? '' : ' hidden'}" id="bulkBar">
+      <span id="bulkCount">${n} selected</span>
+      <select class="sel" id="bulkStatus" aria-label="Status for selected"><option value=""></option>${opts}</select>
+      <button class="btn small primary" id="bulkApply" type="button">Set status for selected</button>
+    </div>
+    <ul class="bulkresults${state.bulkResults.length ? '' : ' hidden'}" id="bulkResults">${state.bulkResults.map(r =>
+      `<li data-result-for="${escape(r.gid)}" data-outcome="${escape(r.outcome)}">${escape(r.label)}: ${escape(r.outcome)}</li>`).join('')}</ul>`;
+  boxes.forEach(b => { b.checked = state.selected.has(b.dataset.select); });
+  $('selectAll').checked = state.selected.size > 0 && boxes.every(b => state.selected.has(b.dataset.select));
+  $('selectAll').addEventListener('change', e => {
+    boxes.forEach(b => { b.checked = e.target.checked; if (e.target.checked) state.selected.add(b.dataset.select); else state.selected.delete(b.dataset.select); });
+    syncBulkUi_();
+  });
+  $('bulkStatus').addEventListener('change', e => { state.bulkStatus = e.target.value; updateBulkApply_(); });
+  $('bulkApply').addEventListener('click', runBulkStatus_);
+  updateBulkApply_();
+}
+function updateBulkApply_(){
+  const b = $('bulkApply');
+  if (b) b.disabled = !state.bulkStatus || !state.selected.size || state.bulkBusy || state.stale;
+}
+listEl.addEventListener('click', e => {
+  const box = e.target.closest && e.target.closest('input[data-select]');
+  if (box) e.stopPropagation();
+});
+listEl.addEventListener('change', e => {
+  const box = e.target.closest && e.target.closest('input[data-select]');
+  if (!box) return;
+  if (box.checked) state.selected.add(box.dataset.select); else state.selected.delete(box.dataset.select);
+  syncBulkUi_();
+});
+function runBulkStatus_(){
+  const status = state.bulkStatus;
+  const gids = bulkBoxes_().map(b => b.dataset.select).filter(g => state.selected.has(g));
+  if (!status || !gids.length || state.bulkBusy || state.stale) return;
+  state.bulkBusy = true; state.bulkResults = []; updateBulkApply_();
+  let okCount = 0;
+  const step = (i) => {
+    if (i >= gids.length) return Promise.resolve();
+    const gid = gids[i];
+    return patchStatusRequest_(gid, status)
+      .then(res => (res && res.ok) ? 'ok' : ((res && res.outcome) || 'error'), () => 'network_error')
+      .then(outcome => {
+        if (outcome === 'ok'){ okCount++; state.selected.delete(gid); }
+        const r = rowByGlobalId(gid);
+        state.bulkResults.push({ gid, outcome, label: (r && r.action_id) || gid });
+        return step(i + 1);
+      });
+  };
+  step(0).then(() => {
+    state.bulkBusy = false;
+    toast('Status set on ' + okCount + ' of ' + gids.length + '.');
+    syncBulkUi_();
+    return refreshActions();
+  });
+}
+// ---- References (NT-71y.8) -------------------------------------------------
+// Document-filtered view only. Reference rows are greyed and read-only: no [data-select] (bulk status never
+// includes them), no status control, no edit. At EDIT each has [data-ref-select] and #importRefs imports them.
+function clearRefSelection_(){ state.refSelected.clear(); state.refResults = []; }
+function refBoxes_(){ return Array.prototype.slice.call(listEl.querySelectorAll('input[data-ref-select]')); }
+function refHomeHref_(homeDocId){
+  let base = location.pathname;
+  try { base = new URL(location.href).pathname; } catch (e) { /* use location.pathname */ }
+  return base + '?doc=' + encodeURIComponent(homeDocId || '');
+}
+function referenceRowHtml_(ref, tier){
+  const found = ref.found !== false;
+  const sid = ref.source_global_id;
+  return `
+    <div class="row reference" data-readonly="true" data-ref="${escape(sid)}">
+      ${tier === 'EDIT'
+        ? `<input type="checkbox" class="rowsel" data-ref-select="${escape(sid)}" aria-label="Select reference"${state.refSelected.has(sid) ? ' checked' : ''} />` : ''}
+      <div class="aiN">${escape(ref.action_id || '')}</div>
+      <div class="rowmain">
+        <div class="action">${found ? escape(ref.action_text) : 'Not found'}</div>
+        <div class="rowmeta">
+          ${found ? `<span class="ref-status">${escape(ref.status || '')}</span>` : ''}
+          <a class="ref-home" href="${escape(refHomeHref_(ref.home_doc_id))}" data-home-doc="${escape(ref.home_doc_id || '')}" data-home-name="${escape(ref.home_doc_name || '')}">${escape(ref.home_doc_name || ref.home_doc_id || '')}</a>
+        </div>
+      </div>
+    </div>`;
+}
+function renderReferences_(){
+  const refs = state.references;
+  if (!state.docId || state.docDenied || !refs.length) { state.refSelected.clear(); return; }
+  const tier = state.tier;
+  const present = new Set(refs.map(r => r.source_global_id));
+  Array.from(state.refSelected).forEach(g => { if (tier !== 'EDIT' || !present.has(g)) state.refSelected.delete(g); });
+  const edit = tier === 'EDIT';
+  const results = state.refResults.map(r =>
+    `<li data-result-for="${escape(r.sid)}" data-outcome="${escape(r.outcome)}">${escape(r.label)}: ${escape(r.outcome)}</li>`).join('');
+  listEl.insertAdjacentHTML('beforeend', `
+    <div class="refblock" id="refBlock">
+      <div class="refhead">References</div>
+      ${refs.map(r => referenceRowHtml_(r, tier)).join('')}
+      ${edit ? `<div class="bulkbar"><button class="btn small primary" id="importRefs" type="button">Import selected</button></div>` : ''}
+      ${edit ? `<ul class="bulkresults${state.refResults.length ? '' : ' hidden'}" id="importResults">${results}</ul>` : ''}
+    </div>`);
+  listEl.querySelectorAll('a.ref-home').forEach(a => a.addEventListener('click', onRefHomeClick_));
+  if (edit) $('importRefs').addEventListener('click', runImportReferences_);
+  updateImportRefs_();
+}
+function onRefHomeClick_(e){
+  if (e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; // modifier clicks keep native link behaviour
+  const a = e.currentTarget;
+  e.preventDefault();
+  setDocFilter_(a.dataset.homeDoc, a.dataset.homeName);
+  refreshActions();
+}
+function updateImportRefs_(){
+  const b = $('importRefs');
+  if (b) b.disabled = !state.refSelected.size || state.refBusy || state.stale;
+}
+listEl.addEventListener('click', e => {
+  const box = e.target.closest && e.target.closest('input[data-ref-select]');
+  if (box) e.stopPropagation();
+});
+listEl.addEventListener('change', e => {
+  const box = e.target.closest && e.target.closest('input[data-ref-select]');
+  if (!box) return;
+  if (box.checked) state.refSelected.add(box.dataset.refSelect); else state.refSelected.delete(box.dataset.refSelect);
+  updateImportRefs_();
+});
+function runImportReferences_(){
+  const ids = refBoxes_().map(b => b.dataset.refSelect).filter(g => state.refSelected.has(g));
+  if (!ids.length || state.refBusy || state.stale || !state.docId) return;
+  state.refBusy = true; state.refResults = []; updateImportRefs_();
+  const labelOf = sid => { const r = state.references.find(x => x.source_global_id === sid); return (r && r.action_id) || sid; };
+  postJson(GACTIONSHEET_URL, { action: 'team_import_references', assertion: state.assertion, docId: state.docId, sourceGlobalIds: ids })
+    .catch(() => ({ ok: false, outcome: 'network_error' }))
+    .then(res => {
+      const out = [];
+      let n = 0;
+      if (res && res.ok) {
+        const by = {};
+        (res.imported || []).forEach(i => { by[i.sourceGlobalId] = 'imported'; n++; });
+        (res.refused || []).forEach(f => { by[f.sourceGlobalId] = f.reason; });
+        ids.forEach(sid => out.push({ sid, outcome: by[sid] || 'not_imported', label: labelOf(sid) }));
+      } else {
+        const oc = (res && (res.error || res.outcome)) || 'error';
+        ids.forEach(sid => out.push({ sid, outcome: oc, label: labelOf(sid) }));
+      }
+      state.refResults = out;
+      state.refBusy = false;
+      toast('Imported ' + n + ' of ' + ids.length + '.');
+      return refreshActions();
+    });
 }
 function closeMenu(){ menuEl.style.display = 'none'; }
 document.addEventListener('click', e => { if (!menuEl.contains(e.target)) closeMenu(); });
