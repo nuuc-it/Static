@@ -329,7 +329,7 @@
       contact your team lead — they add members to the team's shared Drive folder.
     </div>
     <div class="notice hidden" id="docNoAccess">
-      You don't have access to this document's actions.
+      <span id="docNoAccessMsg">You don't have access to this document's actions.</span>
       <button class="btn small" id="docNoAccessClear" type="button" title="Remove the document filter and show the team's actions">Clear document filter</button>
     </div>
     <div id="listWrap">
@@ -380,7 +380,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.13.2";
+var STATIC_BUILD_VERSION_ = "0.1.13.3";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -994,6 +994,10 @@ function applyDocFilterResponse_(res){
   rows.forEach(r => { if (r.doc_name && !state.docIndex[r.doc_name]) state.docIndex[r.doc_name] = r.doc_id; });
   if (!state.docId || (res && res.ok === false)) { state.docDenied = false; return; }
   state.docDenied = (res.tier || 'NONE') === 'NONE';
+  // NT-vhl: a teamless document the caller can't open gets its own message (reason 'no_document_access').
+  $('docNoAccessMsg').textContent = state.docDenied && res.reason === 'no_document_access'
+    ? "This document isn't assigned to a team and you can't open it."
+    : "You don't have access to this document's actions.";
   state.docName = state.docDenied ? '' : (res.docName || '');
   if (res.teamId && state.teams.some(t => t.teamId === res.teamId)) {
     state.teamId = res.teamId;
