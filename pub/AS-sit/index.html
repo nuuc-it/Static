@@ -112,6 +112,7 @@
   .rowsel{margin-top:3px}
   .row.reference{opacity:.6;color:var(--muted)}
   .row.reference .ref-home{margin-left:6px;font-size:12px}
+  .rowmeta .from a{color:inherit}
   .refblock{margin-top:10px}
   .refhead{font-size:12.5px;color:var(--muted);margin:6px 0}
 
@@ -385,7 +386,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.15.1";
+var STATIC_BUILD_VERSION_ = "0.1.15.2";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -1733,6 +1734,7 @@ function renderList_(){
     render();
   }));
   listEl.querySelectorAll('[data-save-edit]').forEach(b => b.addEventListener('click', onSaveEditClick));
+  listEl.querySelectorAll('a.from-link').forEach(a => a.addEventListener('click', onRefHomeClick_)); // NT-a0t
   listEl.querySelectorAll('.status.mine').forEach(c => { if (!state.stale) c.addEventListener('click', openStatusMenu); });
   renderReferences_();
 }
@@ -1793,6 +1795,16 @@ function docGroupHtml(docId, docRows, inTeamGroup){
 
 function rowClass_(r){ return 'row' + (state.focusGid && r.global_id === state.focusGid ? ' row-focus' : ''); }
 
+// NT-a0t: an imported action's source ('From: <doc name> ACT-n'), linked to the source document's
+// view on this portal (same behaviour as a Reference's home link).
+function fromHtml_(from){
+  if (!from || !from.docId) return '';
+  const name = from.docName || from.docId;
+  return `<span class="from">From: <a class="from-link" href="${escape(refHomeHref_(from.docId))}"
+    data-home-doc="${escape(from.docId)}" data-home-name="${escape(from.docName || '')}"
+    title="${escape('Imported from ' + (from.ain || '') + ' in ' + name)}">${escape(name)} ${escape(from.ain || '')}</a></span>`;
+}
+
 function rowHtml(r, tier){
   if (state.editingId === r.global_id) return editRowHtml(r);
   const mine = isMine(r);
@@ -1806,6 +1818,7 @@ function rowHtml(r, tier){
         <div class="rowmeta">
           <span>${escape(r.assignee_name || r.assignee_email || 'Unassigned')}${mine ? ' (you)' : ''}</span>
           <span>updated ${shortDate(r.modified_date)}</span>
+          ${fromHtml_(r.from)}
         </div>
       </div>
       <div class="controls">
