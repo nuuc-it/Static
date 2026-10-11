@@ -91,6 +91,10 @@
   .btn[disabled]{opacity:.45;cursor:not-allowed}
 
   .empty{padding:22px 14px;text-align:center;color:var(--muted)}
+  .row-focus{outline:2px solid var(--blue);outline-offset:-2px;border-radius:8px;background:var(--blue2)}
+  .docchip{display:inline-flex;align-items:center;gap:6px;padding:3px 6px 3px 10px;border:1px solid #bfdbfe;
+           border-radius:999px;background:var(--blue2);font-size:13px}
+  .docchip button{border:0;background:transparent;cursor:pointer;font-size:14px;line-height:1;color:var(--muted)}
   .banner{margin-top:14px;padding:12px 14px;border-radius:12px;border:1px solid #fecaca;
           background:#fef2f2;color:#991b1b;display:none}
   .banner code{background:#fff;border:1px solid #fecaca;border-radius:6px;padding:1px 5px}
@@ -221,6 +225,14 @@
             <option value="12+">12+ months</option>
           </select>
         </div>
+        <!-- NT-71y.2: document filter. #docSearch lists the doc names of the loaded rows (#docSearchList);
+             #docFilterChip names the active document and #docFilterClear removes the filter. -->
+        <div class="field"><label for="docSearch">Document</label>
+          <input class="sel" id="docSearch" type="search" list="docSearchList" placeholder="Search documents" autocomplete="off" />
+          <datalist id="docSearchList"></datalist>
+          <span class="docchip hidden" id="docFilterChip"><span id="docFilterName"></span>
+            <button id="docFilterClear" type="button" aria-label="Clear document filter" title="Clear document filter">&times;</button></span>
+        </div>
         <div class="field">Show
           <div class="seg" id="scopeSeg">
             <button data-scope="all" aria-pressed="true">Everyone</button>
@@ -283,6 +295,10 @@
       You don't currently have access to any team's actions. If you believe this is wrong,
       contact your team lead — they add members to the team's shared Drive folder.
     </div>
+    <div class="notice hidden" id="docNoAccess">
+      You don't have access to this document's actions.
+      <button class="btn small" id="docNoAccessClear" type="button">Clear document filter</button>
+    </div>
     <div id="listWrap">
       <div class="list" id="list"></div>
     </div>
@@ -330,7 +346,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.9.3";
+var STATIC_BUILD_VERSION_ = "0.1.9.4";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -455,6 +471,10 @@ const state = {
                         // used to gate each row/doc-group's Sync/Edit controls per its
                         // OWN team rather than one blended state.tier (gts-zm8w)
   status: 'open', scope: 'all', windowDays: 60, age: '',
+  docId: '', docName: '',  // NT-71y.2: document filter (?doc=); docName arrives with each filtered response
+  docDenied: false,        // NT-71y.2 C4: last filtered response was tier NONE
+  docIndex: {},            // doc_name -> doc_id for the #docSearch datalist
+  focusN: null, focusGid: '', focusPending: false, focusScroll: false,  // NT-71y.2 C3: &action= deep link
   rows: [], statusOptions: [],
   busy: false,
   stale: false,        // NT-8al: true while the rendered teams/rows came from local storage and fresh data has not arrived yet; Edit, status and Sync stay disabled
@@ -476,15 +496,15 @@ const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
 // at load; routing is UX only — the server re-resolves tier itself on every
 // call regardless of these params.
 //
-// ?doc= now routes straight to View B (doc.html, gts-79dw.4.23) instead of
-// the interim docViewNotice placeholder Unit C shipped (View B didn't exist
-// yet at that point) — location.replace (not .href) so the redirect doesn't
-// leave this dead-end page in browser history. The rest of this page's init
-// (auth resume, team loading) is skipped in that case; doc.html re-derives
-// everything it needs itself.
+// NT-71y.2: ?doc= no longer redirects to doc.html — it filters this page to
+// that document (every list_team_actions call carries docId; the server
+// re-resolves team and tier from it, R8). &action=<ACT-N|AI-N|ACTION-N>
+// focuses one row of that document.
 const QUERY_PARAMS = new URLSearchParams(location.search);
 const QUERY_TEAM = QUERY_PARAMS.get('team') || null;
 const QUERY_DOC = QUERY_PARAMS.get('doc') || null;
+const ACTION_REF_RE = /^(?:ACT|AI|ACTION)-(\d+)$/i;
+const QUERY_ACTION = QUERY_PARAMS.get('action') || null;
 // NT-56r: ?status=open|closed|all, ?age=<bucket> and ?from=health preset the filters on load (UX only; the
 // server applies the caller's own visibility to whatever is asked).
 const QUERY_STATUS = ['open', 'closed', 'all', 'Open', 'In Progress', 'In Review', 'Done', 'Closed'].indexOf(QUERY_PARAMS.get('status')) !== -1 ? QUERY_PARAMS.get('status') : null;
@@ -493,7 +513,10 @@ const QUERY_FROM_HEALTH = QUERY_PARAMS.get('from') === 'health';
 if (QUERY_STATUS) state.status = QUERY_STATUS;
 if (QUERY_AGE) state.age = QUERY_AGE;
 if (QUERY_DOC) {
-  location.replace('doc.html' + location.search);
+  state.docId = QUERY_DOC;
+  if (!QUERY_STATUS) state.status = 'all'; // a document's closed actions matter as much as its open ones
+  const m = QUERY_ACTION && ACTION_REF_RE.exec(QUERY_ACTION);
+  if (m) { state.focusN = Number(m[1]); state.focusPending = true; }
 }
 
 // ---- auth caching (ADR-0003, NUUC-Dispatch: 45-day assertion TTL) -----
@@ -526,7 +549,7 @@ function clearCachedAuth(){
 // quota) just means the normal load. Cleared on sign-out and on unauthorized/rejected responses.
 const PORTAL_CACHE_PREFIX_ = 'nuuts.portal.v1.';
 function portalCacheKey_(sub){ return PORTAL_CACHE_PREFIX_ + STORAGE_SCOPE_ + '.' + sub; } // NT-8oa: per audience
-function portalFiltersAreDefault_(){ return state.status === 'open' && state.scope === 'all' && !state.age; }
+function portalFiltersAreDefault_(){ return state.status === 'open' && state.scope === 'all' && !state.age && !state.docId; }
 function readPortalCache_(){
   try {
     if (!state.sub) return null;
@@ -711,7 +734,6 @@ $('signOutBtn').addEventListener('click', signOut);
 // identity-less showLaunch() state — that's strictly more informative and
 // still satisfies "distinct state from first paint".
 (function initAuth(){
-  if (QUERY_DOC) return; // redirecting to doc.html — see QUERY_DOC handling above
   const cached = loadCachedAuth();
   if (!cached) return;
   state.assertion = cached.assertion; state.sub = cached.sub; state.email = cached.email;
@@ -841,6 +863,7 @@ $('refreshAccessBtn').addEventListener('click', () => {
 
 $('teamSel').addEventListener('change', e => {
   state.teamId = e.target.value;
+  setDocFilter_('', ''); // NT-71y.2 C2: a team change drops the document filter
   $('adminScanResults').classList.add('hidden');
   refreshActions();
 });
@@ -869,6 +892,10 @@ function listPayload_(teamId){
   // statusFilter=open — windowDays never affects unresolved rows anyway
   // (plan §12.1 invariant 1), but omit it in that state for clarity.
   // NT-56r AC2: an age bucket replaces the closed-window default, so windowDays is not sent with it.
+  if (state.docId) { // NT-71y.2 S1: the server ignores the age window for a document
+    payload.docId = state.docId;
+    return payload;
+  }
   if (state.age) payload.ageBucket = state.age;
   if (!state.age && !isExactStatus(state.status) && state.status !== 'open') payload.windowDays = state.windowDays;
   return payload;
@@ -886,9 +913,91 @@ function applyActions_(res){
   // tier rather than the single blended state.tier above.
   state.teamTiers = {};
   (res.teams || []).forEach(t => { state.teamTiers[t.teamId] = t.tier; });
+  applyDocFilterResponse_(res);
   render();
+  syncDocControls_();
   writePortalCache_();
+  scrollToFocusRow_();
 }
+
+// ---- document filter (NT-71y.2) -------------------------------------------
+// Sets (or clears, with '') the document filter and keeps the address bar in step: 'doc' is set or
+// removed, and clearing also removes 'action'. Does not refresh; callers do.
+function setDocFilter_(docId, docName){
+  const switched = !!docId && docId !== state.docId; // NT-71y.2 C5: a different document drops 'action'
+  state.docId = docId || '';
+  state.docName = docId ? (docName || '') : '';
+  state.docDenied = false;
+  if (!docId || switched) { state.focusPending = false; state.focusGid = ''; state.focusN = null; }
+  try {
+    const u = new URL(location.href);
+    if (docId) { u.searchParams.set('doc', docId); if (switched) u.searchParams.delete('action'); }
+    else { u.searchParams.delete('doc'); u.searchParams.delete('action'); }
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  } catch (e) { /* history unavailable: the filter still works */ }
+  syncDocControls_();
+}
+
+// Per-response handling of a filtered list: team selector, doc name, access, and the &action= target.
+function applyDocFilterResponse_(res){
+  const rows = state.rows;
+  if (!state.docId) state.docIndex = {};
+  rows.forEach(r => { if (r.doc_name && !state.docIndex[r.doc_name]) state.docIndex[r.doc_name] = r.doc_id; });
+  if (!state.docId || (res && res.ok === false)) { state.docDenied = false; return; }
+  state.docDenied = (res.tier || 'NONE') === 'NONE';
+  state.docName = state.docDenied ? '' : (res.docName || '');
+  if (res.teamId && state.teams.some(t => t.teamId === res.teamId)) {
+    state.teamId = res.teamId;
+    $('teamSel').value = res.teamId;
+  }
+  if (state.focusPending) { // first fresh response only (cached views never reach here)
+    state.focusPending = false;
+    const target = rows.find(r => r.global_id === state.docId + '/' + QUERY_ACTION) ||
+      rows.find(r => r.doc_id === state.docId && Number((ACTION_REF_RE.exec(r.action_id || '') || [])[1]) === state.focusN);
+    if (target) {
+      state.focusGid = target.global_id;
+      state.collapsed['doc:' + target.doc_id] = false;
+      state.collapsed['team:' + target.team_id] = false;
+      if (state.tier === 'EDIT' && !state.stale) state.editingId = target.global_id;
+      state.focusScroll = true;
+    }
+  }
+}
+
+function scrollToFocusRow_(){
+  if (!state.focusScroll) return;
+  state.focusScroll = false;
+  const el = listEl.querySelector('.row-focus');
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' });
+}
+
+function syncDocControls_(){
+  const chip = !!(state.docId && state.docName);
+  $('docFilterChip').classList.toggle('hidden', !chip);
+  $('docFilterName').textContent = chip ? state.docName : '';
+  $('docSearch').value = chip ? state.docName : '';
+  $('docNoAccess').classList.toggle('hidden', !state.docDenied);
+  $('docSearchList').innerHTML = Object.keys(state.docIndex).sort().map(n => `<option value="${escape(n)}"></option>`).join('');
+}
+
+function clearDocFilter_(){
+  if (!state.docId) { $('docSearch').value = ''; return; }
+  setDocFilter_('', '');
+  refreshActions();
+}
+$('docFilterClear').addEventListener('click', clearDocFilter_);
+$('docNoAccessClear').addEventListener('click', clearDocFilter_);
+$('docSearch').addEventListener('change', e => {
+  const v = e.target.value.trim();
+  if (!v) { clearDocFilter_(); return; }
+  const id = state.docIndex[v];
+  if (id && id !== state.docId) {
+    setDocFilter_(id, v);
+    refreshActions();
+  } else {
+    e.target.value = state.docName; // unknown name or unchanged: keep the current filter
+  }
+});
 
 function refreshActions(){
   if (!state.teamId) return Promise.resolve();
@@ -1324,7 +1433,7 @@ function render(){
                               : state.tier === 'VIEW' ? 'VIEW — read only' : 'NONE';
     $('tierTag').className = 'tag ' + state.tier.toLowerCase();
   }
-  $('windowField').style.display = (state.status === 'open' || state.age || isExactStatus(state.status)) ? 'none' : '';
+  $('windowField').style.display = (state.docId || state.status === 'open' || state.age || isExactStatus(state.status)) ? 'none' : '';
   if (QUERY_FROM_HEALTH && !$('healthNote')) {
     const note = document.createElement('div');
     note.className = 'notice';
@@ -1342,6 +1451,8 @@ function render(){
   }
 
   listEl.innerHTML = '';
+  $('docNoAccess').classList.toggle('hidden', !state.docDenied);
+  if (state.docDenied) return; // NT-71y.2 C4: distinct from the empty-filter message; no rows
   if (!rows.length){
     listEl.innerHTML = `<div class="docgroup"><div class="empty">${
       state.scope === 'mine' ? 'Nothing assigned to you in this team.'
@@ -1446,11 +1557,13 @@ function docGroupHtml(docId, docRows, inTeamGroup){
     </div>`;
 }
 
+function rowClass_(r){ return 'row' + (state.focusGid && r.global_id === state.focusGid ? ' row-focus' : ''); }
+
 function rowHtml(r, tier){
   if (state.editingId === r.global_id) return editRowHtml(r);
   const mine = isMine(r);
   return `
-    <div class="row">
+    <div class="${rowClass_(r)}" data-gid="${escape(r.global_id)}">
       <div class="aiN">${escape(r.action_id || '')}</div>
       <div class="rowmain">
         <div class="action">${escape(r.action_text)}</div>
@@ -1488,7 +1601,7 @@ function onEditStatusChange(sel){
 }
 function editRowHtml(r){
   return `
-    <div class="row">
+    <div class="${rowClass_(r)}" data-gid="${escape(r.global_id)}">
       <div class="aiN">${escape(r.action_id || '')}</div>
       <div class="rowmain">
         <textarea class="sel" style="width:100%" rows="3" data-field="action_text">${escape(softToLines(r.action_text))}</textarea>
