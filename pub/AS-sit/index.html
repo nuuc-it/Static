@@ -28,13 +28,24 @@
   .title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
   .title h1{font-size:19px;margin:0}
   .sub{color:var(--muted);font-size:13px;margin-top:3px}
-  .who{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
   .tag{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
        border:1px solid var(--line);background:#f9fafb;font-size:12px;color:var(--muted)}
   .tag.edit{background:var(--green2);border-color:#a7f3d0;color:#065f46}
   .tag.view{background:var(--slate2);border-color:#d1d5db}
   .email{font-size:12.5px;color:var(--muted)}
   .linkbtn{border:0;background:none;color:var(--blue);cursor:pointer;font:inherit;padding:0}
+  /* NT-ja4: account controls stacked top-right; the title row never wraps them below the heading */
+  .title{flex-wrap:nowrap}
+  .title > :first-child{flex:1;min-width:0}
+  .accountbox{display:flex;flex-direction:column;align-items:flex-end;gap:4px;text-align:right;
+              max-width:55%;overflow-wrap:anywhere}
+  /* NT-ja4: one visually distinct, labelled group for admin-only controls */
+  .adminpanel{margin-top:14px;padding:12px 14px;border:1px solid #fde68a;border-radius:14px;background:#fffdf5}
+  .adminhead{font-weight:700;font-size:13px;color:#92400e;margin:0 0 8px}
+  .adminrow{display:flex;gap:10px 16px;align-items:center;flex-wrap:wrap}
+  .adminrow .field{flex-wrap:wrap}
+  .adminpanel .scanstatus{white-space:normal}
+  .adminpanel .notice{margin-top:10px}
 
   .filters{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px;
            padding-top:12px;border-top:1px solid var(--line)}
@@ -64,6 +75,13 @@
   .teamname{font-weight:700;flex:1}
   .teamdocs{display:flex;flex-direction:column;gap:10px}
   .teamgroup.collapsed .teamdocs{display:none}
+  /* NT-3fj: unwrapped bodies (the scan list's groups) hide everything but the header on collapse */
+  .teamgroup.collapsed > :not(.teamhead){display:none}
+  .scanteam{gap:6px;margin-top:8px}
+  .scanfolder{gap:2px;margin-left:24px}
+  .scanfolder .teamname{font-weight:600}
+  .scanfolder > li{list-style:none;margin-left:30px}
+  .scanmodified{margin-left:8px;font-size:12px;color:var(--muted)}
   .collapsebtn{border:1px solid var(--line);background:#fff;border-radius:6px;width:22px;height:22px;
                padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
                font-size:11px;line-height:1;color:var(--muted);flex:none;transition:transform .12s}
@@ -196,19 +214,20 @@
           <div class="sub" id="sub">—</div>
           <div class="sub hidden" id="staleTag" role="status">Showing your last saved data — refreshing…</div>
         </div>
-        <div class="who">
-          <div class="field hidden" id="teamField"><label for="teamSel">Team</label>
-            <select class="sel" id="teamSel"></select>
-          </div>
+        <!-- NT-ja4: signed-in identity, Refresh my access and Sign out stacked in the top-right corner. -->
+        <div class="accountbox" id="accountBox">
           <span class="email" id="whoEmail"></span>
           <span class="tag" id="tierTag">—</span>
           <button class="btn small" id="refreshAccessBtn" title="Re-read your Drive access now (normally cached for up to 6 hours)">Refresh my access</button>
           <span class="email" id="refreshAccessMsg" role="status" aria-live="polite"></span>
-          <button class="linkbtn" id="signOutBtn">Sign out</button>
+          <button class="linkbtn" id="signOutBtn" title="Sign out and forget the saved sign-in on this browser">Sign out</button>
         </div>
       </div>
 
       <div class="filters" id="filtersRow">
+        <div class="field hidden" id="teamField"><label for="teamSel">Team</label>
+          <select class="sel" id="teamSel"></select>
+        </div>
         <div class="field"><label for="statusSel">Status</label>
           <select class="sel" id="statusSel">
             <option value="open">Open</option>
@@ -242,8 +261,8 @@
         </div>
         <div class="field">Show
           <div class="seg" id="scopeSeg">
-            <button data-scope="all" aria-pressed="true">Everyone</button>
-            <button data-scope="mine" aria-pressed="false">Mine</button>
+            <button data-scope="all" aria-pressed="true" title="Show everyone's actions">Everyone</button>
+            <button data-scope="mine" aria-pressed="false" title="Show only actions assigned to you">Mine</button>
             <button class="seam" disabled title="Open seam R13a — filter by a named person; not in this slice">Person…</button>
           </div>
         </div>
@@ -260,9 +279,19 @@
           </select>
         </div>
         <div class="field hidden" id="collapseAllField" style="margin-left:auto">
-          <button class="btn small" id="expandAllBtn">Expand all</button>
-          <button class="btn small" id="collapseAllBtn">Collapse all</button>
+          <button class="btn small" id="expandAllBtn" title="Expand every team, document and folder group">Expand all</button>
+          <button class="btn small" id="collapseAllBtn" title="Collapse every team, document and folder group">Collapse all</button>
         </div>
+        <div class="field" id="countLabel"></div>
+      </div>
+    </div>
+
+    <div class="banner" id="loadError"></div>
+    <!-- NT-ja4: every admin-only control and its output lives in this one labelled panel, shown only when
+         state.isAdmin (UX only; every admin route re-checks Config!AdminUsers server-side). -->
+    <div class="adminpanel hidden" id="adminPanel">
+      <h2 class="adminhead">Admin tools (admins only)</h2>
+      <div class="adminrow">
         <!-- gts-gwyg/gts-lgpx/nightly-all-teams: admin-only. Hidden from a
              non-admin caller (state.isAdmin comes from list_team_actions's
              server-verified isAdmin field — this toggle is UX only, real
@@ -275,27 +304,24 @@
              state (Start / Resume / running), so the operator can always
              tell whether a scan is moving without reading the log. -->
         <div class="field hidden" id="adminScanField">
-          <button class="btn small" id="adminScanBtn">Scan for untracked docs</button>
+          <button class="btn small" id="adminScanBtn" title="Scan this team's folders for Google Docs with actions that are not tracked yet">Scan for untracked docs</button>
           <span id="adminScanStatus" class="scanstatus"></span>
         </div>
         <!-- NT-g8v.29: admin tools. Same visibility as the scan panel (state.isAdmin, UX only; each route
              re-checks Config!AdminUsers server-side). -->
         <div class="field hidden" id="adminToolsField">
-          <button class="btn small" id="adminSyncAllBtn">Sync all documents</button>
-          <button class="btn small" id="adminEnsureBtn">Ensure sheet structure</button>
-          <button class="btn small" id="adminArchiveBtn">Run archive</button>
+          <button class="btn small" id="adminSyncAllBtn" title="Schedule a background sync of every tracked document">Sync all documents</button>
+          <button class="btn small" id="adminEnsureBtn" title="Create any missing tracker sheet tabs and header rows">Ensure sheet structure</button>
+          <button class="btn small" id="adminArchiveBtn" title="Move resolved action rows to the Archive tab (asks first)">Run archive</button>
           <!-- NT-eg2: 'Open tracker sheet' (#adminTrackerLink) and 'Tracking health' (#adminHealthBtn) are added by
                script for an admin only (loadAdminExtras), so a non-admin's DOM never contains them. -->
           <span id="adminToolsStatus" class="scanstatus"></span>
         </div>
-        <div class="field" id="countLabel"></div>
       </div>
+      <div class="notice hidden" id="adminScanResults"></div>
+      <!-- NT-eg2: tracking-system health panel (admin_health). Counts link to the filtered list (NT-56r). -->
+      <div class="notice hidden" id="adminHealthPanel"></div>
     </div>
-
-    <div class="banner" id="loadError"></div>
-    <div class="notice hidden" id="adminScanResults"></div>
-    <!-- NT-eg2: tracking-system health panel (admin_health). Counts link to the filtered list (NT-56r). -->
-    <div class="notice hidden" id="adminHealthPanel"></div>
     <!-- NT-56r AC6: the 'Showing actions visible to you' note (#healthNote) is added by script only when opened
          from an admin health-panel link (?from=health). -->
     <div class="notice hidden" id="noTeamsNotice">
@@ -304,7 +330,7 @@
     </div>
     <div class="notice hidden" id="docNoAccess">
       You don't have access to this document's actions.
-      <button class="btn small" id="docNoAccessClear" type="button">Clear document filter</button>
+      <button class="btn small" id="docNoAccessClear" type="button" title="Remove the document filter and show the team's actions">Clear document filter</button>
     </div>
     <div id="listWrap">
       <div id="bulkHost"></div>
@@ -342,8 +368,8 @@
 <div class="updatebanner" id="updateBanner">
   <div class="inner">
     <span id="updateBannerMsg"></span>
-    <button type="button" id="updateReloadBtn">Reload</button>
-    <button type="button" id="updateDismissBtn">Not now</button>
+    <button type="button" id="updateReloadBtn" title="Reload this page to get the latest version">Reload</button>
+    <button type="button" id="updateDismissBtn" title="Hide this notice and keep using this version">Not now</button>
   </div>
 </div>
 <div class="buildbadge" id="buildBadge"></div>
@@ -354,7 +380,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.9.8";
+var STATIC_BUILD_VERSION_ = "0.1.13.1";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -475,6 +501,7 @@ const state = {
                        //  candidates each carry their own teamId/path.
   scanPollTimer: null,
   scanTeamShown: null,   // teamId whose scan status is currently displayed
+  scanSelected: new Set(),  // NT-3fj: docIds checked in the scan list; survives collapse re-renders
   teamTiers: {},       // {teamId: tier} — populated in ALL-teams mode from res.teams,
                         // used to gate each row/doc-group's Sync/Edit controls per its
                         // OWN team rather than one blended state.tier (gts-zm8w)
@@ -613,6 +640,7 @@ function renderCachedPortal_(){
   render();
 }
 
+// NT-71y.12: preview.html repeats this sign-in check (key, exp, skew); keep the two in step.
 function loadCachedAuth(){
   let cached;
   try { cached = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null'); }
@@ -888,7 +916,13 @@ function setAllGroupsCollapsed(collapsed){
     state.collapsed['team:' + r.team_id] = collapsed;
     state.collapsed['doc:' + r.doc_id]   = collapsed;
   });
+  // NT-3fj: and the scan list's team/folder groups.
+  ((state.scan && state.scan.candidates) || []).forEach(c => {
+    state.collapsed[scanTeamKey_(c.teamId || '')] = collapsed;
+    state.collapsed[scanFolderKey_(c.teamId || '', c.path || '')] = collapsed;
+  });
   render();
+  if (state.scan) renderAdminScanResults(state.scan);
 }
 $('expandAllBtn').addEventListener('click', () => setAllGroupsCollapsed(false));
 $('collapseAllBtn').addEventListener('click', () => setAllGroupsCollapsed(true));
@@ -1138,6 +1172,7 @@ function loadAdminExtras(){
   if (!$('adminHealthBtn')) {
     const btn = document.createElement('button');
     btn.className = 'btn small'; btn.id = 'adminHealthBtn'; btn.textContent = 'Tracking health';
+    btn.title = 'Show sync, trigger, action-count and recent-error health for the tracker';
     btn.addEventListener('click', runAdminHealth);
     $('adminToolsField').insertBefore(btn, $('adminToolsStatus'));
   }
@@ -1150,6 +1185,7 @@ function loadAdminExtras(){
         const a = document.createElement('a');
         a.className = 'btn small'; a.id = 'adminTrackerLink'; a.href = res.url;
         a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Open tracker sheet';
+        a.title = 'Open the tracker spreadsheet in a new tab';
         $('adminToolsField').insertBefore(a, $('adminToolsStatus'));
       }
     })
@@ -1286,6 +1322,11 @@ function renderScanPanel(){
   // of waiting out the trigger delay. Starting FRESH needs one real team
   // (Resuming an existing scan does not — see runAdminScan).
   btn.disabled = state.scanBusy || running || (!resumable && state.teamId === ALL_TEAMS_ID);
+  // NT-ja4: the tooltip says what a click will do, or why it can't.
+  btn.title = (state.scanBusy || running) ? 'A scan pass is running now'
+    : resumable ? 'Continue the saved scan from where it stopped'
+    : state.teamId === ALL_TEAMS_ID ? 'Pick a specific team to start a manual scan (the nightly scan covers every team)'
+    : "Scan this team's folders for Google Docs with actions that are not tracked yet";
 
   $('adminScanStatus').innerHTML = scanStatusLine(sc);
   renderAdminScanResults(sc);
@@ -1294,41 +1335,159 @@ function renderScanPanel(){
 // Selection only makes sense once the candidate set is final (sc.complete) —
 // the panel re-renders every SCAN_POLL_MS while a scan is still running, which
 // would otherwise wipe checkbox state out from under the operator mid-click.
+//
+// NT-3fj: grouped team -> folder like the tracked-actions list below it, using the same
+// collapsibleGroupHtml; collapse keys 'scanteam:<teamId>' / 'scanfolder:<teamId>/<path>' live in
+// state.collapsed beside the action list's, so they survive the poll re-render. Selection lives in
+// state.scanSelected (docIds) so a collapse toggle's re-render keeps it.
+const scanPathDepth_ = c => (c.path ? String(c.path).split('/').length : 0);
+
+// NT-3fj AC5: a docId found under nested teams (an inner team's folder inside an outer team's) is
+// listed once, under the innermost team — the one whose team-relative path is shortest; a tie keeps
+// the first. AC3: then filtered to the #teamSel team unless ALL.
+function visibleScanCandidates_(candidates){
+  const byDoc = new Map();
+  candidates.forEach(c => {
+    const prev = byDoc.get(c.docId);
+    if (!prev || scanPathDepth_(c) < scanPathDepth_(prev)) byDoc.set(c.docId, c);
+  });
+  const deduped = candidates.filter(c => byDoc.get(c.docId) === c);
+  return state.teamId === ALL_TEAMS_ID ? deduped : deduped.filter(c => c.teamId === state.teamId);
+}
+
+// {teamId: {path: [candidate...]}} in first-appearance order (Maps).
+function groupScanCandidates_(candidates){
+  const byTeam = new Map();
+  candidates.forEach(c => {
+    const teamId = c.teamId || '';
+    if (!byTeam.has(teamId)) byTeam.set(teamId, new Map());
+    const byPath = byTeam.get(teamId);
+    const path = c.path || '';
+    if (!byPath.has(path)) byPath.set(path, []);
+    byPath.get(path).push(c);
+  });
+  return byTeam;
+}
+const scanTeamKey_ = teamId => 'scanteam:' + teamId;
+const scanFolderKey_ = (teamId, path) => 'scanfolder:' + teamId + '/' + path;
+const docCount_ = n => n + (n === 1 ? ' doc' : ' docs');
+
+function scanCandidateLi_(c, selectable){
+  // NT-bg6: each candidate shows its Drive last-modified date.
+  const modified = c.modified ? `<span class="scanmodified">modified ${escape(shortDate(c.modified))}</span>` : '';
+  const link = `<a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.docName)}</a>`;
+  // Every li carries its input.trackCandidate (the NT-3fj DOM contract); while the scan is still
+  // running it is disabled, since selection only applies to a complete scan.
+  return `<li><label><input type="checkbox" class="trackCandidate" data-doc-id="${escape(c.docId)}" data-doc-name="${escape(c.docName)}" data-team-id="${escape(c.teamId || '')}" data-path="${escape(c.path || '')}"` +
+    (selectable ? (state.scanSelected.has(c.docId) ? ' checked' : '') : ' disabled title="Selectable once the scan completes"') + ` /> ` +
+    `${link}</label>${modified}</li>`;
+}
+
+function groupSelectAllHtml_(cands, selectable){
+  if (!selectable) return '';
+  const all = cands.length && cands.every(c => state.scanSelected.has(c.docId));
+  return `<input type="checkbox" class="groupSelectAll" aria-label="Select all in this group"${all ? ' checked' : ''} />`;
+}
+
+function scanGroupsHtml_(candidates, selectable){
+  let html = '';
+  groupScanCandidates_(candidates).forEach((byPath, teamId) => {
+    const teamCands = [].concat(...byPath.values());
+    let folders = '';
+    byPath.forEach((cands, path) => {
+      const key = scanFolderKey_(teamId, path);
+      folders += collapsibleGroupHtml({
+        cls: 'scanfolder', attrs: `data-path="${escape(path)}"`,
+        title: path || '(team root)', collapsed: !!state.collapsed[key],
+        toggleAttr: `data-toggle-scan="${escape(key)}"`,
+        headExtra: groupSelectAllHtml_(cands, selectable),
+        countText: docCount_(cands.length),
+        body: cands.map(c => scanCandidateLi_(c, selectable)).join('')
+      });
+    });
+    const key = scanTeamKey_(teamId);
+    html += collapsibleGroupHtml({
+      cls: 'scanteam', attrs: `data-team-id="${escape(teamId)}"`,
+      title: teamDisplayName(teamId) || '(no team)', collapsed: !!state.collapsed[key],
+      toggleAttr: `data-toggle-scan="${escape(key)}"`,
+      headExtra: groupSelectAllHtml_(teamCands, selectable),
+      countText: docCount_(teamCands.length),
+      body: folders
+    });
+  });
+  return html;
+}
+
+// #collapseAllField serves both grouped lists: All-teams actions, and any rendered scan groups.
+function syncCollapseAllField_(){
+  const scanGroups = !$('adminScanResults').classList.contains('hidden') &&
+    !!$('adminScanResults').querySelector('.scanteam');
+  $('collapseAllField').classList.toggle('hidden', !(state.teamId === ALL_TEAMS_ID || scanGroups));
+}
+
 function renderAdminScanResults(sc){
   const box = $('adminScanResults');
-  const candidates = (sc && sc.candidates) || [];
-  if (!sc || sc.status === 'idle' || (!candidates.length && !sc.complete)) {
+  const allCandidates = (sc && sc.candidates) || [];
+  if (!sc || sc.status === 'idle' || (!allCandidates.length && !sc.complete)) {
     box.classList.add('hidden');
+    syncCollapseAllField_();
     return;
   }
-  // A candidate's team/path only needs to be shown once teams can mix in
-  // one list (the nightly all-teams scan) — for a single-team manual scan
-  // it's the same team every time, so skip the redundant line.
-  const candidateMeta = c => sc.allTeams
-    ? `<span class="scanmeta">${escape(teamDisplayName(c.teamId))} — ${escape(c.path || '(team root)')}</span>`
-    : (c.path ? `<span class="scanmeta">${escape(c.path)}</span>` : '');
-  if (!candidates.length) {
-    box.innerHTML = `<p>Scanned ${sc.scanned} doc(s)${sc.allTeams ? ' across all teams' : " under this team's folder(s)"} — no untracked action-looking docs found.</p>`;
+  const candidates = visibleScanCandidates_(allCandidates);
+  const shownIds = new Set(candidates.map(c => c.docId));
+  state.scanSelected.forEach(id => { if (!shownIds.has(id)) state.scanSelected.delete(id); });
+  const where = sc.allTeams ? ' across all teams' : " under this team's folder(s)";
+  if (!allCandidates.length) {
+    box.innerHTML = `<p>Scanned ${sc.scanned} doc(s)${where} — no untracked action-looking docs found.</p>`;
+  } else if (!candidates.length) {
+    box.innerHTML = `<p>${allCandidates.length} untracked doc(s) found${sc.complete ? '' : ' so far'}, none in this team — choose All teams to see them.</p>`;
   } else if (!sc.complete) {
     box.innerHTML = `<p>${candidates.length} found so far (${sc.scanned} of ${sc.total || '?'} scanned) — still running:</p>` +
-      '<ul>' + candidates.map(c =>
-        `<li><a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.docName)}</a>${candidateMeta(c)}</li>`
-      ).join('') + '</ul>';
+      scanGroupsHtml_(candidates, false);
   } else {
+    const allSel = candidates.every(c => state.scanSelected.has(c.docId));
     box.innerHTML =
       `<p>${candidates.length} untracked doc(s) look action-bearing (of ${sc.scanned} scanned):</p>` +
-      `<p><label><input type="checkbox" id="trackSelectAll" /> Select all</label></p>` +
-      '<ul class="trackable">' + candidates.map(c =>
-        `<li><label><input type="checkbox" class="trackCandidate" data-doc-id="${escape(c.docId)}" data-doc-name="${escape(c.docName)}" data-team-id="${escape(c.teamId || '')}" /> ` +
-        `<a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.docName)}</a></label>${candidateMeta(c)}</li>`
-      ).join('') + '</ul>' +
-      `<button class="btn small" id="trackSelectedBtn">Track selected</button>`;
-    $('trackSelectAll').addEventListener('change', (e) => {
-      box.querySelectorAll('.trackCandidate').forEach(cb => { cb.checked = e.target.checked; });
+      `<p><label><input type="checkbox" id="trackSelectAll"${allSel ? ' checked' : ''} /> Select all</label></p>` +
+      scanGroupsHtml_(candidates, true) +
+      `<p><button class="btn small" id="trackSelectedBtn" title="Register the selected documents for tracking">Track selected</button> ` +
+      `<button class="btn small" id="ignoreSelectedBtn" title="Hide the selected documents from scans until they are modified">Ignore selected</button></p>`;
+    const setSel = (cbs, on) => cbs.forEach(cb => {
+      cb.checked = on;
+      if (on) state.scanSelected.add(cb.dataset.docId); else state.scanSelected.delete(cb.dataset.docId);
     });
+    $('trackSelectAll').addEventListener('change', (e) => {
+      setSel(box.querySelectorAll('.trackCandidate'), e.target.checked);
+      box.querySelectorAll('.groupSelectAll').forEach(g => { g.checked = e.target.checked; });
+    });
+    box.querySelectorAll('.groupSelectAll').forEach(g => g.addEventListener('change', () => {
+      setSel(g.closest('.teamgroup').querySelectorAll('.trackCandidate'), g.checked);
+      syncScanSelectAlls_(box);
+    }));
+    box.querySelectorAll('.trackCandidate').forEach(cb => cb.addEventListener('change', () => {
+      if (cb.checked) state.scanSelected.add(cb.dataset.docId); else state.scanSelected.delete(cb.dataset.docId);
+      syncScanSelectAlls_(box);
+    }));
     $('trackSelectedBtn').addEventListener('click', trackSelectedDocs);
+    $('ignoreSelectedBtn').addEventListener('click', ignoreSelectedDocs);
   }
+  box.querySelectorAll('[data-toggle-scan]').forEach(b => b.addEventListener('click', () => {
+    const key = b.dataset.toggleScan;
+    state.collapsed[key] = !state.collapsed[key];
+    renderAdminScanResults(state.scan);
+  }));
   box.classList.remove('hidden');
+  syncCollapseAllField_();
+}
+
+// Group and overall select-alls read as checked exactly when every candidate under them is.
+function syncScanSelectAlls_(box){
+  const allChecked = cbs => cbs.length > 0 && Array.from(cbs).every(cb => cb.checked);
+  box.querySelectorAll('.groupSelectAll').forEach(g => {
+    g.checked = allChecked(g.closest('.teamgroup').querySelectorAll('.trackCandidate'));
+  });
+  const all = $('trackSelectAll');
+  if (all) all.checked = allChecked(box.querySelectorAll('.trackCandidate'));
 }
 
 // Track = cheap DocData registration only (admin_scan_track), not a full
@@ -1342,32 +1501,57 @@ function renderAdminScanResults(sc){
 // same scan (single-team or nightly all-teams) stay visible and checkable
 // without forcing a re-scan to see them again.
 function trackSelectedDocs(){
+  scanSelectionAction_({
+    action: 'admin_scan_track', resultKey: 'tracked', btnId: 'trackSelectedBtn',
+    idle: 'Track selected', working: 'Tracking…', verb: 'track', fail: 'Track failed',
+    done: n => `Tracking ${n} document(s) — they'll pick up actions on the next background sync.`
+  });
+}
+
+// NT-bg6: Ignore = record the docs in the tracker's ScanIgnore sheet (admin_scan_ignore); later
+// scans skip each one until it is modified after the ignore. Same selection, request shape and
+// client-side pruning as Track.
+function ignoreSelectedDocs(){
+  scanSelectionAction_({
+    action: 'admin_scan_ignore', resultKey: 'ignored', btnId: 'ignoreSelectedBtn',
+    idle: 'Ignore selected', working: 'Ignoring…', verb: 'ignore', fail: 'Ignore failed',
+    done: n => `Ignoring ${n} document(s) until they are modified.`
+  });
+}
+
+// Shared by Track and Ignore: POST the checked candidates, then drop the docIds the server
+// reports back (res[resultKey]) from the displayed list and the selection.
+function scanSelectionAction_(o){
   const box = $('adminScanResults');
   const checked = Array.from(box.querySelectorAll('.trackCandidate:checked'));
-  if (!checked.length) { toast('Select at least one document to track.'); return; }
-  const docs = checked.map(cb => ({ docId: cb.dataset.docId, docName: cb.dataset.docName, teamId: cb.dataset.teamId }));
+  if (!checked.length) { toast(`Select at least one document to ${o.verb}.`); return; }
+  const docs = checked.map(cb => ({ docId: cb.dataset.docId, docName: cb.dataset.docName,
+    teamId: cb.dataset.teamId, path: cb.dataset.path }));
 
-  const btn = $('trackSelectedBtn');
+  const btn = $(o.btnId);
   btn.disabled = true;
-  btn.textContent = 'Tracking…';
-  postJson(GACTIONSHEET_URL, { action: 'admin_scan_track', assertion: state.assertion, teamId: state.teamId, docs })
+  btn.textContent = o.working;
+  postJson(GACTIONSHEET_URL, { action: o.action, assertion: state.assertion, teamId: state.teamId, docs })
     .then(res => {
-      if (!res.ok) { toast('Track failed: ' + (res.reason || 'unknown error')); return; }
-      toast(`Tracking ${res.tracked.length} document(s) — they'll pick up actions on the next background sync.`);
+      if (!res.ok) { toast(o.fail + ': ' + (res.reason || 'unknown error')); return; }
+      const doneIds = res[o.resultKey] || [];
+      toast(o.done(doneIds.length));
+      const doneSet = new Set(doneIds);
+      doneIds.forEach(id => state.scanSelected.delete(id));
       if (state.scan) {
-        const trackedIds = new Set(res.tracked);
+        const kept = state.scan.candidates.filter(c => !doneSet.has(c.docId));
         state.scan = {
           ...state.scan,
-          candidates: state.scan.candidates.filter(c => !trackedIds.has(c.docId)),
-          matched: Math.max(0, state.scan.matched - res.tracked.length)
+          candidates: kept,
+          matched: Math.max(0, state.scan.matched - (state.scan.candidates.length - kept.length))
         };
       }
       renderScanPanel();
     })
-    .catch(err => toast('Track failed: ' + (err.message || err)))
+    .catch(err => toast(o.fail + ': ' + (err.message || err)))
     .finally(() => {
-      btn.disabled = false;
-      btn.textContent = 'Track selected';
+      const b = $(o.btnId); // renderScanPanel may have replaced the button
+      if (b) { b.disabled = false; b.textContent = o.idle; }
     });
 }
 
@@ -1423,6 +1607,7 @@ function renderList_(){
   // runAdminScan/renderScanPanel's button gating).
   const showScan = state.isAdmin;
   $('adminScanField').classList.toggle('hidden', !showScan);
+  $('adminPanel').classList.toggle('hidden', !state.isAdmin); // NT-ja4
   $('adminToolsField').classList.toggle('hidden', !state.isAdmin);
   if (!state.isAdmin) $('adminHealthPanel').classList.add('hidden');
   loadAdminExtras();
@@ -1458,16 +1643,17 @@ function renderList_(){
     note.className = 'notice';
     note.id = 'healthNote';
     note.textContent = 'Showing actions visible to you';
-    $('adminScanResults').insertAdjacentElement('afterend', note);
+    $('adminPanel').insertAdjacentElement('afterend', note); // NT-ja4: outside the admin-only panel
   }
   // gts-zeti: Expand/Collapse-all only make sense when there's a team layer
   // to collapse — single-team mode has nothing above the doc-groups.
-  $('collapseAllField').classList.toggle('hidden', !isAllTeams);
+  syncCollapseAllField_(); // NT-3fj: also shown while scan groups are rendered
 
   const rows = state.rows;
-  if (!state.busy) {
-    $('countLabel').textContent = rows.length + (rows.length === 1 ? ' action' : ' actions');
-  }
+  // NT-ttl: the label always counts the rows this render draws. It used to be skipped while
+  // state.busy, but applyActions_ renders fresh rows before setBusy(false), so the label kept the
+  // cached/previous count while the groups showed the new rows.
+  $('countLabel').textContent = rows.length + (rows.length === 1 ? ' action' : ' actions');
 
   listEl.innerHTML = '';
   $('docNoAccess').classList.toggle('hidden', !state.docDenied);
@@ -1494,25 +1680,16 @@ function renderList_(){
       if (!byTeam.has(teamId)) byTeam.set(teamId, new Map());
       byTeam.get(teamId).set(docId, docRows);
     });
-    const teamName = teamDisplayName; // see teamDisplayName (shared with the scan panel)
     byTeam.forEach((docsInTeam, teamId) => {
-      const teamKey = 'team:' + teamId;
-      const teamCollapsed = !!state.collapsed[teamKey];
       const teamRowCount = Array.from(docsInTeam.values()).reduce((n, r) => n + r.length, 0);
-      const teamEl = document.createElement('div');
-      teamEl.className = 'teamgroup' + (teamCollapsed ? ' collapsed' : '');
-      teamEl.innerHTML = `
-        <div class="teamhead">
-          <button class="collapsebtn" data-toggle-team="${escape(teamId)}"
-            aria-expanded="${!teamCollapsed}" title="${teamCollapsed ? 'Expand' : 'Collapse'} ${escape(teamName(teamId))}"
-          >&#9662;</button>
-          <div class="teamname">${escape(teamName(teamId))}</div>
-          <span class="tag">${teamRowCount} ${teamRowCount === 1 ? 'action' : 'actions'}</span>
-        </div>
-        <div class="teamdocs">
-          ${Array.from(docsInTeam.entries()).map(([docId, docRows]) => docGroupHtml(docId, docRows, true)).join('')}
-        </div>`;
-      listEl.appendChild(teamEl);
+      listEl.insertAdjacentHTML('beforeend', collapsibleGroupHtml({
+        title: teamDisplayName(teamId), // shared with the scan panel
+        collapsed: !!state.collapsed['team:' + teamId],
+        toggleAttr: `data-toggle-team="${escape(teamId)}"`,
+        countText: teamRowCount + (teamRowCount === 1 ? ' action' : ' actions'),
+        bodyClass: 'teamdocs',
+        body: Array.from(docsInTeam.entries()).map(([docId, docRows]) => docGroupHtml(docId, docRows, true)).join('')
+      }));
     });
   } else {
     byDoc.forEach((docRows, docId) => {
@@ -1542,6 +1719,26 @@ function renderList_(){
   listEl.querySelectorAll('[data-save-edit]').forEach(b => b.addEventListener('click', onSaveEditClick));
   listEl.querySelectorAll('.status.mine').forEach(c => { if (!state.stale) c.addEventListener('click', openStatusMenu); });
   renderReferences_();
+}
+
+// NT-3fj: one collapsible group (header: collapse button, optional extra control, name, count tag;
+// then the body). The single implementation behind the tracked-actions team groups (gts-zeti) and
+// the untracked-doc scan list's team and folder groups. o: {cls, attrs, title, collapsed,
+// toggleAttr, headExtra, countText, bodyClass, body}. With bodyClass the body is wrapped in that
+// div; without it the body's elements are direct children of the group (the scan list's
+// .scanteam > .scanfolder > li contract), hidden on collapse by the .collapsed CSS rule.
+function collapsibleGroupHtml(o){
+  return `
+    <div class="teamgroup${o.cls ? ' ' + o.cls : ''}${o.collapsed ? ' collapsed' : ''}" ${o.attrs || ''}>
+      <div class="teamhead">
+        <button class="collapsebtn" ${o.toggleAttr}
+          aria-expanded="${!o.collapsed}" title="${o.collapsed ? 'Expand' : 'Collapse'} ${escape(o.title)}"
+        >&#9662;</button>
+        ${o.headExtra || ''}<div class="teamname">${escape(o.title)}</div>
+        <span class="tag">${o.countText}</span>
+      </div>
+      ${o.bodyClass ? `<div class="${o.bodyClass}">${o.body}</div>` : o.body}
+    </div>`;
 }
 
 // gts-zeti: one doc-group's markup, shared by the flat (single-team) and
@@ -1598,7 +1795,7 @@ function rowHtml(r, tier){
       <div class="controls">
         ${statusChip(r, mine)}
         ${tier === 'EDIT'
-          ? `<button class="btn small" data-edit="${r.global_id}" ${state.stale ? 'disabled title="Available once fresh data has loaded"' : ''}>Edit</button>` : ''}
+          ? `<button class="btn small" data-edit="${r.global_id}" ${state.stale ? 'disabled title="Available once fresh data has loaded"' : 'title="Edit this action\'s text, status and assignee"'}>Edit</button>` : ''}
       </div>
     </div>`;
 }
@@ -1639,8 +1836,8 @@ function editRowHtml(r){
         </div>
       </div>
       <div class="controls">
-        <button class="btn small primary" data-save-edit="${r.global_id}">Save</button>
-        <button class="btn small" data-cancel-edit="${r.global_id}">Cancel</button>
+        <button class="btn small primary" data-save-edit="${r.global_id}" title="Save these changes to the tracker and the document">Save</button>
+        <button class="btn small" data-cancel-edit="${r.global_id}" title="Discard these changes">Cancel</button>
       </div>
     </div>`;
 }
@@ -1710,7 +1907,7 @@ function openStatusMenu(e){
   const globalId = chip.dataset.statusFor;
   menuEl.innerHTML = '<h4>Set status</h4>' +
     state.statusOptions.map(o =>
-      `<button class="opt" data-set="${escape(o.status)}" title="${escape(o.alt)}"
+      `<button class="opt" data-set="${escape(o.status)}" title="${escape(o.alt || ('Set status to ' + o.status))}"
         ><img src="${o.icon}" alt="" />${escape(o.status)}</button>`
     ).join('') +
     '<input class="custom" id="customStatus" placeholder="…or type any status" />';
@@ -1761,7 +1958,7 @@ function syncBulkUi_(){
     <div class="bulkbar${n ? '' : ' hidden'}" id="bulkBar">
       <span id="bulkCount">${n} selected</span>
       <select class="sel" id="bulkStatus" aria-label="Status for selected"><option value=""></option>${opts}</select>
-      <button class="btn small primary" id="bulkApply" type="button">Set status for selected</button>
+      <button class="btn small primary" id="bulkApply" type="button" title="Set the chosen status on every selected action">Set status for selected</button>
     </div>
     <ul class="bulkresults${state.bulkResults.length ? '' : ' hidden'}" id="bulkResults">${state.bulkResults.map(r =>
       `<li data-result-for="${escape(r.gid)}" data-outcome="${escape(r.outcome)}">${escape(r.label)}: ${escape(r.outcome)}</li>`).join('')}</ul>`;
@@ -1777,7 +1974,14 @@ function syncBulkUi_(){
 }
 function updateBulkApply_(){
   const b = $('bulkApply');
-  if (b) b.disabled = !state.bulkStatus || !state.selected.size || state.bulkBusy || state.stale;
+  if (!b) return;
+  b.disabled = !state.bulkStatus || !state.selected.size || state.bulkBusy || state.stale;
+  // NT-ja4: a disabled button says why.
+  b.title = state.stale ? 'Available once fresh data has loaded'
+    : state.bulkBusy ? 'Setting status…'
+    : !state.selected.size ? 'Select one or more actions first'
+    : !state.bulkStatus ? 'Choose a status first'
+    : 'Set the chosen status on every selected action';
 }
 listEl.addEventListener('click', e => {
   const box = e.target.closest && e.target.closest('input[data-select]');
@@ -1854,7 +2058,7 @@ function renderReferences_(){
     <div class="refblock" id="refBlock">
       <div class="refhead">References</div>
       ${refs.map(r => referenceRowHtml_(r, tier)).join('')}
-      ${edit ? `<div class="bulkbar"><button class="btn small primary" id="importRefs" type="button">Import selected</button></div>` : ''}
+      ${edit ? `<div class="bulkbar"><button class="btn small primary" id="importRefs" type="button" title="Import the selected references into this document">Import selected</button></div>` : ''}
       ${edit ? `<ul class="bulkresults${state.refResults.length ? '' : ' hidden'}" id="importResults">${results}</ul>` : ''}
     </div>`);
   listEl.querySelectorAll('a.ref-home').forEach(a => a.addEventListener('click', onRefHomeClick_));
@@ -1870,7 +2074,13 @@ function onRefHomeClick_(e){
 }
 function updateImportRefs_(){
   const b = $('importRefs');
-  if (b) b.disabled = !state.refSelected.size || state.refBusy || state.stale;
+  if (!b) return;
+  b.disabled = !state.refSelected.size || state.refBusy || state.stale;
+  // NT-ja4: a disabled button says why.
+  b.title = state.stale ? 'Available once fresh data has loaded'
+    : state.refBusy ? 'Importing…'
+    : !state.refSelected.size ? 'Select one or more references first'
+    : 'Import the selected references into this document';
 }
 listEl.addEventListener('click', e => {
   const box = e.target.closest && e.target.closest('input[data-ref-select]');
