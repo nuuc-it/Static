@@ -151,6 +151,8 @@
              border:1px solid var(--line);background:#fff;border-radius:9px;text-align:left;cursor:pointer}
   .menu .opt img{width:14px;height:14px}
   .menu .custom{width:100%;margin-top:6px;padding:7px 9px;border:1px solid var(--line);border-radius:9px}
+  .menu hr.menudiv{border:0;border-top:1px solid var(--line);margin:8px 0}
+  .bulkbar .bulkdiv{align-self:stretch;border-left:1px solid var(--line);margin:0 2px}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;
          padding:9px 13px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
   .toast.show{opacity:1}
@@ -386,7 +388,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.17";
+var STATIC_BUILD_VERSION_ = "0.1.18";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbxXl_7EmMdsEDU2ISsJ5NTXnPTUjucaZ4y2U_hASOc2l3zoeS_DvPMwK00mbWP047JTtA/exec";
 var STATIC_ENV_LABEL_ = "PROD";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell";
@@ -1588,7 +1590,7 @@ function statusChip(row, editable){
   const cls = 'status bucket-' + row.status_bucket.toLowerCase() +
               (row.status_resolved ? ' bucket-closed' : '') + (editable ? ' mine' : '') + (editable && state.stale ? ' disabled' : '');
   return `<span class="${cls}" data-status-for="${row.global_id}" ${editable && state.stale ? 'aria-disabled="true"' : ''}
-            title="${editable && state.stale ? 'Available once fresh data has loaded' : editable ? 'Click to change status' : 'Only the assignee can change this'}"
+            title="${editable && state.stale ? 'Status changes are available once fresh data has loaded; click to copy' : editable ? 'Click to change status or copy' : 'Only the assignee can change this; click to copy'}"
           ><img src="${row.status_icon}" alt="" />${escape(row.status)}${editable ? ' ▾' : ''}</span>`;
 }
 
@@ -1735,7 +1737,9 @@ function renderList_(){
   }));
   listEl.querySelectorAll('[data-save-edit]').forEach(b => b.addEventListener('click', onSaveEditClick));
   listEl.querySelectorAll('a.from-link').forEach(a => a.addEventListener('click', onRefHomeClick_)); // NT-a0t
-  listEl.querySelectorAll('.status.mine').forEach(c => { if (!state.stale) c.addEventListener('click', openStatusMenu); });
+  // NT-hy1: every status chip opens the Actions menu; Set status is offered only on the
+  // assignee's own chips with fresh data, the Copy items on every chip.
+  listEl.querySelectorAll('.status[data-status-for]').forEach(c => c.addEventListener('click', openStatusMenu));
   renderReferences_();
 }
 
@@ -1931,27 +1935,124 @@ function onSyncClick(e){
 }
 
 // ---- assignee status control (gts-79dw.4.22 — LIVE, calls team_patch_status) -
+// NT-hy1: the row's Actions menu -- Set status (assignee's own chip, fresh data) then, below a
+// divider, Copy as Reference / Copy for Import. When the row is part of a multi-selection the
+// Copy items copy the whole selection.
 function openStatusMenu(e){
   const chip = e.currentTarget, box = chip.getBoundingClientRect();
   const globalId = chip.dataset.statusFor;
-  menuEl.innerHTML = '<h4>Set status</h4>' +
+  const canSet = chip.classList.contains('mine') && !state.stale;
+  const targets = copyTargets_(globalId);
+  const nNote = targets.length > 1 ? ' (all ' + targets.length + ' selected actions)' : '';
+  menuEl.innerHTML = (canSet ? '<h4>Set status</h4>' +
     state.statusOptions.map(o =>
       `<button class="opt" data-set="${escape(o.status)}" title="${escape(o.alt || ('Set status to ' + o.status))}"
         ><img src="${o.icon}" alt="" />${escape(o.status)}</button>`
     ).join('') +
-    '<input class="custom" id="customStatus" placeholder="…or type any status" />';
+    '<input class="custom" id="customStatus" placeholder="…or type any status" />' +
+    '<hr class="menudiv" />' : '<h4>Actions</h4>') +
+    `<button class="opt" data-copy="reference" title="Copy as a Reference: pasted into a document, it stays a live link to the action${nNote}">Copy as Reference</button>` +
+    `<button class="opt" data-copy="import" title="Copy for Import: pasted into a document, the next sync moves the action there${nNote}">Copy for Import</button>`;
   menuEl.style.left = Math.min(box.left + window.scrollX, window.innerWidth - 245) + 'px';
   menuEl.style.top  = (box.bottom + window.scrollY + 6) + 'px';
   menuEl.style.display = 'block';
   menuEl.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => {
     submitStatusChange(globalId, b.dataset.set); closeMenu();
   }));
-  $('customStatus').addEventListener('keydown', ev => {
+  menuEl.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => {
+    closeMenu(); copyActions_(targets, b.dataset.copy === 'import');
+  }));
+  if (canSet) $('customStatus').addEventListener('keydown', ev => {
     if (ev.key === 'Enter' && ev.target.value.trim()){
       submitStatusChange(globalId, ev.target.value.trim()); closeMenu();
     }
   });
   e.stopPropagation();
+}
+
+// ---- Copy as Reference / Copy for Import (NT-hy1) ----------------------------
+// Clipboard = text/html + text/plain, one paragraph per action, rendered as a Reference appears in
+// a document: token 'ACT/<label>/N:' linked to the action's chip URL, assignee list, action text,
+// '(Status)' at the end of the header line, then the ADR-0027 field lines the listing carries
+// (From:). Copy for Import starts the action text with the Import-pending label and adds import=1
+// to the token link; sync imports it (gas/AIT_SyncManager.js AIT_processImportPending).
+// Mirrors gas/AIT_ActionToken.js AIT_ACTION_CHIP_URL_BASE / AIT_buildChipUrl /
+// AIT_referenceLabelFromTitle / AIT_IMPORT_PENDING_LABEL -- keep in step.
+const ACTION_CHIP_URL_BASE = 'https://northlakeuu.org/NUUTS';
+const IMPORT_PENDING_LABEL = '\u21E2 Import pending';
+function chipUrlFor_(docId, ain, forImport){
+  return ACTION_CHIP_URL_BASE + '?cmd=preview&docId=' + encodeURIComponent(docId || '') +
+    '&ain=' + encodeURIComponent(ain || '') + (forImport ? '&import=1' : '');
+}
+function referenceLabel_(title){
+  const s = String(title == null ? '' : title).trim();
+  if (!s) return '<not_found>';
+  return s.replace(/\s+/g, '_').replace(/[\/:]/g, '-').slice(0, 24);
+}
+// Rows to copy for the row `globalId`: the multi-selection when the row is part of one, else the row.
+function copyTargets_(globalId){
+  if (state.selected.has(globalId) && state.selected.size > 1) return selectedRowsInOrder_();
+  const r = rowByGlobalId(globalId);
+  return r ? [r] : [];
+}
+function selectedRowsInOrder_(){
+  return bulkBoxes_().map(b => b.dataset.select).filter(g => state.selected.has(g))
+    .map(rowByGlobalId).filter(Boolean);
+}
+// One action -> {html, text}.
+function actionClipboard_(r, forImport){
+  const slash = String(r.global_id || '').lastIndexOf('/');
+  const docId = r.doc_id || (slash > 0 ? r.global_id.slice(0, slash) : '');
+  const ain = r.action_id || (slash > 0 ? r.global_id.slice(slash + 1) : '');
+  const n = (/-(\d+)$/.exec(ain) || [])[1] || '';
+  const token = 'ACT/' + referenceLabel_(r.doc_name) + '/' + n + ':';
+  const url = chipUrlFor_(docId, ain, forImport);
+  const lines = String(r.action_text || '').split(/\r\n|[\r\n\v\u2028\u2029]/);
+  const who = r.assignee_name || r.assignee_email || '';
+  const head = (forImport ? IMPORT_PENDING_LABEL + ' ' : '') + (who ? '(' + who + ') ' : '') +
+    lines[0] + ' (' + (r.status || 'Open') + ')';
+  const htmlLines = [`<a href="${escape(url)}">${escape(token)}</a> ${escape(head)}`];
+  const textLines = [token + ' ' + head + ' <' + url + '>'];
+  for (let i = 1; i < lines.length; i++){ htmlLines.push(escape(lines[i])); textLines.push(lines[i]); }
+  const from = r.from;
+  if (from && from.docId && from.ain){
+    const fromName = from.docName || from.docId;
+    const fromUrl = chipUrlFor_(from.docId, from.ain, false);
+    htmlLines.push(`<b>From:</b> ${escape(fromName)} <a href="${escape(fromUrl)}">${escape(from.ain)}</a>`);
+    textLines.push('From:\t' + fromName + ' ' + from.ain + ' <' + fromUrl + '>');
+  }
+  return { html: '<p>' + htmlLines.join('<br>') + '</p>', text: textLines.join('\n') };
+}
+function actionsClipboard_(rows, forImport){
+  const parts = rows.map(r => actionClipboard_(r, forImport));
+  return {
+    html: '<meta charset="utf-8">' + parts.map(p => p.html).join(''),
+    text: parts.map(p => p.text).join('\n')
+  };
+}
+function writeClipboard_(html, text){
+  if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== 'undefined'){
+    return navigator.clipboard.write([new ClipboardItem({
+      'text/html':  new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([text], { type: 'text/plain' })
+    })]);
+  }
+  return new Promise((resolve, reject) => {
+    const onCopy = ev => { ev.clipboardData.setData('text/html', html); ev.clipboardData.setData('text/plain', text); ev.preventDefault(); };
+    document.addEventListener('copy', onCopy);
+    try { if (document.execCommand('copy')) resolve(); else reject(new Error('copy was blocked')); }
+    catch (err) { reject(err); }
+    finally { document.removeEventListener('copy', onCopy); }
+  });
+}
+function copyActions_(rows, forImport){
+  if (!rows.length){ toast('Nothing to copy.'); return Promise.resolve(); }
+  const clip = actionsClipboard_(rows, forImport);
+  const what = rows.length === 1 ? '1 action' : rows.length + ' actions';
+  return writeClipboard_(clip.html, clip.text)
+    .then(() => toast('Copied ' + what + (forImport ? ' for Import. Paste into the target document; its next sync imports it.'
+                                                    : ' as Reference.')))
+    .catch(err => toast('Copy failed: ' + ((err && err.message) || err)));
 }
 // Shared request for the single-row and bulk status paths (NT-71y.6).
 function patchStatusRequest_(globalId, newStatus){
@@ -1988,6 +2089,9 @@ function syncBulkUi_(){
       <span id="bulkCount">${n} selected</span>
       <select class="sel" id="bulkStatus" aria-label="Status for selected"><option value=""></option>${opts}</select>
       <button class="btn small primary" id="bulkApply" type="button" title="Set the chosen status on every selected action">Set status for selected</button>
+      <span class="bulkdiv" aria-hidden="true"></span>
+      <button class="btn small" id="bulkCopyRef" type="button" data-copy="reference" title="Copy the selected actions as References">Copy as Reference</button>
+      <button class="btn small" id="bulkCopyImport" type="button" data-copy="import" title="Copy the selected actions for Import into another document">Copy for Import</button>
     </div>
     <ul class="bulkresults${state.bulkResults.length ? '' : ' hidden'}" id="bulkResults">${state.bulkResults.map(r =>
       `<li data-result-for="${escape(r.gid)}" data-outcome="${escape(r.outcome)}">${escape(r.label)}: ${escape(r.outcome)}</li>`).join('')}</ul>`;
@@ -1999,6 +2103,8 @@ function syncBulkUi_(){
   });
   $('bulkStatus').addEventListener('change', e => { state.bulkStatus = e.target.value; updateBulkApply_(); });
   $('bulkApply').addEventListener('click', runBulkStatus_);
+  $('bulkCopyRef').addEventListener('click', () => copyActions_(selectedRowsInOrder_(), false));     // NT-hy1
+  $('bulkCopyImport').addEventListener('click', () => copyActions_(selectedRowsInOrder_(), true));  // NT-hy1
   updateBulkApply_();
 }
 function updateBulkApply_(){
