@@ -388,7 +388,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.18.1";
+var STATIC_BUILD_VERSION_ = "0.1.19.1";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -1590,12 +1590,15 @@ function statusChip(row, editable){
   const cls = 'status bucket-' + row.status_bucket.toLowerCase() +
               (row.status_resolved ? ' bucket-closed' : '') + (editable ? ' mine' : '') + (editable && state.stale ? ' disabled' : '');
   return `<span class="${cls}" data-status-for="${row.global_id}" ${editable && state.stale ? 'aria-disabled="true"' : ''}
-            title="${editable && state.stale ? 'Status changes are available once fresh data has loaded; click to copy' : editable ? 'Click to change status or copy' : 'Only the assignee can change this; click to copy'}"
+            title="${editable && state.stale ? 'Status changes are available once fresh data has loaded; click to copy' : editable ? 'Click to change status or copy' : 'You do not have write access to this document; click to copy'}"
           ><img src="${row.status_icon}" alt="" />${escape(row.status)}${editable ? ' ▾' : ''}</span>`;
 }
 
 function isMine(row){ return state.email && row.assignee_email &&
   row.assignee_email.toLowerCase() === state.email.toLowerCase(); }
+// NT-6g1: Set status is offered when the server says the caller can write the row's document
+// (row.canWrite) or the caller is its assignee (the server's assignee bypass). No client guessing.
+function canSetStatus_(row){ return !!row && (row.canWrite === true || !!isMine(row)); }
 
 // gts-zm8w: every write route (team_edit_action/team_patch_status/
 // team_sync_document) authorizes against ONE real teamId
@@ -1812,10 +1815,11 @@ function fromHtml_(from){
 function rowHtml(r, tier){
   if (state.editingId === r.global_id) return editRowHtml(r);
   const mine = isMine(r);
+  // NT-6g1: every row is selectable -- bulk Copy works for any visible row; bulk Set status
+  // applies to the selected rows the caller can write and lists the rest as skipped.
   return `
     <div class="${rowClass_(r)}" data-gid="${escape(r.global_id)}">
-      ${tier === 'EDIT'
-        ? `<input type="checkbox" class="rowsel" data-select="${escape(r.global_id)}" aria-label="Select action"${state.selected.has(r.global_id) ? ' checked' : ''} />` : ''}
+      <input type="checkbox" class="rowsel" data-select="${escape(r.global_id)}" aria-label="Select action"${state.selected.has(r.global_id) ? ' checked' : ''} />
       <div class="aiN">${escape(r.action_id || '')}</div>
       <div class="rowmain">
         <div class="action">${escape(r.action_text)}</div>
@@ -1826,7 +1830,7 @@ function rowHtml(r, tier){
         </div>
       </div>
       <div class="controls">
-        ${statusChip(r, mine)}
+        ${statusChip(r, canSetStatus_(r))}
         ${tier === 'EDIT'
           ? `<button class="btn small" data-edit="${r.global_id}" ${state.stale ? 'disabled title="Available once fresh data has loaded"' : 'title="Edit this action\'s text, status and assignee"'}>Edit</button>` : ''}
       </div>
@@ -1935,7 +1939,7 @@ function onSyncClick(e){
 }
 
 // ---- assignee status control (gts-79dw.4.22 — LIVE, calls team_patch_status) -
-// NT-hy1: the row's Actions menu -- Set status (assignee's own chip, fresh data) then, below a
+// NT-hy1: the row's Actions menu -- Set status (NT-6g1: any row the caller can write, fresh data) then, below a
 // divider, Copy as Reference / Copy for Import. When the row is part of a multi-selection the
 // Copy items copy the whole selection.
 function openStatusMenu(e){
@@ -2064,7 +2068,10 @@ function patchStatusRequest_(globalId, newStatus){
 function submitStatusChange(globalId, newStatus){
   patchStatusRequest_(globalId, newStatus)
     .then(res => {
-      if (res.ok) { toast('Status updated.'); return refreshActions(); }
+      if (res.ok) {
+        toast(res.docPushed === false ? 'Status updated; the document will catch up on its next sync.' : 'Status updated.');
+        return refreshActions();
+      }
       toast('Status change did not apply: ' + (res.outcome || 'unknown'));
     })
     .catch(err => toast('Status change failed: ' + (err.message || err)));
@@ -2072,8 +2079,8 @@ function submitStatusChange(globalId, newStatus){
 
 // ---- bulk status (NT-71y.6) -------------------------------------------------
 // Selection is a Set of global ids, always pruned to the rows whose checkbox is
-// rendered (EDIT tier, visible under the active filters). Runs call
-// team_patch_status once per row, sequentially, so the server authorizes per row.
+// rendered (every row visible under the active filters, NT-6g1). A run sends one
+// items-form team_patch_status (NT-xw2); the server still authorizes per row.
 function bulkBoxes_(){ return Array.prototype.slice.call(listEl.querySelectorAll('input[data-select]')); }
 function syncBulkUi_(){
   const boxes = bulkBoxes_();
@@ -2082,14 +2089,16 @@ function syncBulkUi_(){
   const host = $('bulkHost');
   if (!boxes.length){ host.innerHTML = ''; return; }
   const n = state.selected.size;
+  // NT-6g1 addendum rev 1.1: no Set status controls unless a selected row can be written.
+  const anyWritable = bulkWritable_(Array.from(state.selected)).length > 0;
   const opts = state.statusOptions.map(o => `<option value="${escape(o.status)}"${o.status === state.bulkStatus ? ' selected' : ''}>${escape(o.status)}</option>`).join('');
   host.innerHTML = `
     <label class="bulkbar"><input type="checkbox" id="selectAll" /> Select all shown</label>
     <div class="bulkbar${n ? '' : ' hidden'}" id="bulkBar">
       <span id="bulkCount">${n} selected</span>
-      <select class="sel" id="bulkStatus" aria-label="Status for selected"><option value=""></option>${opts}</select>
+      ${anyWritable ? `<select class="sel" id="bulkStatus" aria-label="Status for selected"><option value=""></option>${opts}</select>
       <button class="btn small primary" id="bulkApply" type="button" title="Set the chosen status on every selected action">Set status for selected</button>
-      <span class="bulkdiv" aria-hidden="true"></span>
+      <span class="bulkdiv" aria-hidden="true"></span>` : ''}
       <button class="btn small" id="bulkCopyRef" type="button" data-copy="reference" title="Copy the selected actions as References">Copy as Reference</button>
       <button class="btn small" id="bulkCopyImport" type="button" data-copy="import" title="Copy the selected actions for Import into another document">Copy for Import</button>
     </div>
@@ -2101,8 +2110,10 @@ function syncBulkUi_(){
     boxes.forEach(b => { b.checked = e.target.checked; if (e.target.checked) state.selected.add(b.dataset.select); else state.selected.delete(b.dataset.select); });
     syncBulkUi_();
   });
-  $('bulkStatus').addEventListener('change', e => { state.bulkStatus = e.target.value; updateBulkApply_(); });
-  $('bulkApply').addEventListener('click', runBulkStatus_);
+  if (anyWritable){
+    $('bulkStatus').addEventListener('change', e => { state.bulkStatus = e.target.value; updateBulkApply_(); });
+    $('bulkApply').addEventListener('click', runBulkStatus_);
+  }
   $('bulkCopyRef').addEventListener('click', () => copyActions_(selectedRowsInOrder_(), false));     // NT-hy1
   $('bulkCopyImport').addEventListener('click', () => copyActions_(selectedRowsInOrder_(), true));  // NT-hy1
   updateBulkApply_();
@@ -2110,12 +2121,16 @@ function syncBulkUi_(){
 function updateBulkApply_(){
   const b = $('bulkApply');
   if (!b) return;
-  b.disabled = !state.bulkStatus || !state.selected.size || state.bulkBusy || state.stale;
+  const sel = bulkBoxes_().map(x => x.dataset.select).filter(g => state.selected.has(g));
+  const writable = bulkWritable_(sel).length; // NT-6g1
+  b.disabled = !state.bulkStatus || !state.selected.size || !writable || state.bulkBusy || state.stale;
   // NT-ja4: a disabled button says why.
   b.title = state.stale ? 'Available once fresh data has loaded'
     : state.bulkBusy ? 'Setting status…'
     : !state.selected.size ? 'Select one or more actions first'
+    : !writable ? 'You do not have write access to any selected action'
     : !state.bulkStatus ? 'Choose a status first'
+    : writable < sel.length ? 'Set the chosen status on the ' + writable + ' selected actions you can write (' + (sel.length - writable) + ' will be skipped)'
     : 'Set the chosen status on every selected action';
 }
 listEl.addEventListener('click', e => {
@@ -2128,27 +2143,40 @@ listEl.addEventListener('change', e => {
   if (box.checked) state.selected.add(box.dataset.select); else state.selected.delete(box.dataset.select);
   syncBulkUi_();
 });
+// NT-xw2 / NT-6g1: ONE team_patch_status request in the items form for the selected rows the caller
+// can write; the server writes every row then pushes each document once. Selected rows without
+// write access are listed as skipped (not sent).
+// Bulk uses the server's row.canWrite only (NT-6g1 addendum rev 1.1).
+function bulkWritable_(gids){ return gids.filter(g => { const r = rowByGlobalId(g); return !!r && r.canWrite === true; }); }
 function runBulkStatus_(){
   const status = state.bulkStatus;
   const gids = bulkBoxes_().map(b => b.dataset.select).filter(g => state.selected.has(g));
   if (!status || !gids.length || state.bulkBusy || state.stale) return;
+  const send = bulkWritable_(gids);
+  const sendSet = new Set(send);
+  const skipped = gids.filter(g => !sendSet.has(g));
+  if (!send.length) return;
   state.bulkBusy = true; state.bulkResults = []; updateBulkApply_();
-  let okCount = 0;
-  const step = (i) => {
-    if (i >= gids.length) return Promise.resolve();
-    const gid = gids[i];
-    return patchStatusRequest_(gid, status)
-      .then(res => (res && res.ok) ? 'ok' : ((res && res.outcome) || 'error'), () => 'network_error')
-      .then(outcome => {
-        if (outcome === 'ok'){ okCount++; state.selected.delete(gid); }
-        const r = rowByGlobalId(gid);
-        state.bulkResults.push({ gid, outcome, label: (r && r.action_id) || gid });
-        return step(i + 1);
-      });
-  };
-  step(0).then(() => {
+  const label = g => { const r = rowByGlobalId(g); return (r && r.action_id) || g; };
+  const first = rowByGlobalId(send[0]);
+  postJson(GACTIONSHEET_URL, {
+    action: 'team_patch_status', assertion: state.assertion, teamId: teamIdForWrite(first),
+    items: send.map(g => ({ global_id: g, status }))
+  }).then(res => res, () => null).then(res => {
+    const byGid = {};
+    ((res && res.results) || []).forEach(x => { if (x && x.global_id) byGid[x.global_id] = x; });
+    let okCount = 0, notPushed = 0;
+    send.forEach(g => {
+      const x = byGid[g];
+      const outcome = !res ? 'network_error' : x ? (x.ok ? 'ok' : (x.outcome || 'error')) : ((res && res.outcome) || 'error');
+      if (outcome === 'ok'){ okCount++; state.selected.delete(g); if (x.docPushed === false) notPushed++; }
+      state.bulkResults.push({ gid: g, outcome, label: label(g) });
+    });
+    skipped.forEach(g => state.bulkResults.push({ gid: g, outcome: 'skipped', label: label(g) }));
     state.bulkBusy = false;
-    toast('Status set on ' + okCount + ' of ' + gids.length + '.');
+    toast('Status set on ' + okCount + ' of ' + gids.length + '.' +
+      (skipped.length ? ' Skipped ' + skipped.length + ' without write access.' : '') +
+      (notPushed ? ' ' + notPushed + ' will reach the document on its next sync.' : ''));
     syncBulkUi_();
     return refreshActions();
   });
