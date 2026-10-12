@@ -152,6 +152,20 @@
   .menu .opt img{width:14px;height:14px}
   .menu .custom{width:100%;margin-top:6px;padding:7px 9px;border:1px solid var(--line);border-radius:9px}
   .menu hr.menudiv{border:0;border-top:1px solid var(--line);margin:8px 0}
+  /* NT-un4: action history dialog */
+  .histdlg{border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:0;
+           width:min(640px, calc(100vw - 32px));max-height:min(80vh, 640px)}
+  .histdlg::backdrop{background:rgba(17,24,39,.35)}
+  .histdlg .hhead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+                  padding:12px 14px;border-bottom:1px solid var(--line)}
+  .histdlg .hhead h3{margin:0;font-size:15px}
+  .histdlg .hbody{padding:6px 14px 14px;overflow:auto;max-height:calc(min(80vh, 640px) - 56px)}
+  .histdlg ol{list-style:none;margin:0;padding:0}
+  .histdlg li{padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .histdlg li:last-child{border-bottom:0}
+  .histdlg .hmeta{color:var(--muted);font-size:12px}
+  .histdlg .hchange{margin-top:2px;overflow-wrap:anywhere;white-space:pre-wrap}
+  .histdlg .hfield{font-weight:600}
   .bulkbar .bulkdiv{align-self:stretch;border-left:1px solid var(--line);margin:0 2px}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;
          padding:9px 13px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
@@ -371,6 +385,11 @@
 
 <div class="menu" id="statusMenu"><h4>Set status</h4></div>
 <div class="toast" id="toast"></div>
+<dialog class="histdlg" id="historyDlg" aria-labelledby="historyTitle">
+  <div class="hhead"><h3 id="historyTitle">History</h3>
+    <button class="btn small" id="historyClose" type="button">Close</button></div>
+  <div class="hbody" id="historyBody"></div>
+</dialog>
 <!-- Raised only when this published page's build differs from the version the WebApp
      reports on a response the page already makes (interface contract req 3). -->
 <div class="updatebanner" id="updateBanner">
@@ -388,7 +407,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.20";
+var STATIC_BUILD_VERSION_ = "0.1.21";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbxXl_7EmMdsEDU2ISsJ5NTXnPTUjucaZ4y2U_hASOc2l3zoeS_DvPMwK00mbWP047JTtA/exec";
 var STATIC_ENV_LABEL_ = "PROD";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell";
@@ -1956,7 +1975,9 @@ function openStatusMenu(e){
     '<input class="custom" id="customStatus" placeholder="…or type any status" />' +
     '<hr class="menudiv" />' : '<h4>Actions</h4>') +
     `<button class="opt" data-copy="reference" title="Copy as a Reference: pasted into a document, it stays a live link to the action${nNote}">Copy as Reference</button>` +
-    `<button class="opt" data-copy="import" title="Copy for Import: pasted into a document, the next sync moves the action there${nNote}">Copy for Import</button>`;
+    `<button class="opt" data-copy="import" title="Copy for Import: pasted into a document, the next sync moves the action there${nNote}">Copy for Import</button>` +
+    '<hr class="menudiv" />' +
+    '<button class="opt" data-history="1" title="Every recorded change to this action, newest first">History</button>';
   menuEl.style.left = Math.min(box.left + window.scrollX, window.innerWidth - 245) + 'px';
   menuEl.style.top  = (box.bottom + window.scrollY + 6) + 'px';
   menuEl.style.display = 'block';
@@ -1965,6 +1986,9 @@ function openStatusMenu(e){
   }));
   menuEl.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => {
     closeMenu(); copyActions_(targets, b.dataset.copy === 'import');
+  }));
+  menuEl.querySelectorAll('[data-history]').forEach(b => b.addEventListener('click', () => {
+    closeMenu(); openHistory_(globalId);
   }));
   if (canSet) $('customStatus').addEventListener('keydown', ev => {
     if (ev.key === 'Enter' && ev.target.value.trim()){
@@ -2281,6 +2305,48 @@ function runImportReferences_(){
     });
 }
 function closeMenu(){ menuEl.style.display = 'none'; }
+
+// ---- action history (NT-un4) --------------------------------------------------
+// Row Actions menu 'History': get_action_history {teamId, global_id} -> entries newest first
+// (time, field, old, new, who, whoBasis, source). 'lifecycle' entries show the event alone.
+const HISTORY_FIELD_LABELS = { status: 'Status', action_text: 'Action text', assignee_email: 'Assignee email',
+  assignee_name: 'Assignee name', co_assignees: 'Co-assignees', custom_fields: 'Field', lifecycle: 'Lifecycle' };
+const HISTORY_SOURCE_LABELS = { doc: 'document', portal: 'portal', sidebar: 'sidebar', sheet: 'tracker sheet',
+  import: 'import', forward: 'forward', system: 'system' };
+const historyDlg = $('historyDlg');
+$('historyClose').addEventListener('click', () => historyDlg.close());
+function historyWhen_(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString([], {year:'numeric', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+}
+function historyItem_(h){
+  const label = HISTORY_FIELD_LABELS[h.field] || h.field;
+  const change = h.field === 'lifecycle'
+    ? `<span class="hfield">${escape(String(h['new'] || '').replace(/_/g, ' '))}</span>`
+    : `<span class="hfield">${escape(label)}:</span> ${escape(h.old || '\u2014')} \u2192 ${escape(h['new'] || '\u2014')}`;
+  const who = h.who ? escape(h.who) + (h.whoBasis === 'syncer' ? ' (synced)' : '') : 'unknown';
+  return `<li><div class="hmeta">${escape(historyWhen_(h.time))} · ${who} · ${escape(HISTORY_SOURCE_LABELS[h.source] || h.source || '')}</div>` +
+    `<div class="hchange">${change}</div></li>`;
+}
+function openHistory_(globalId){
+  const r = rowByGlobalId(globalId);
+  const body = $('historyBody');
+  $('historyTitle').textContent = 'History' + (r && r.action_id ? ' \u2014 ' + r.action_id : '');
+  body.innerHTML = '<p class="hmeta"><span class="spinner"></span> Loading…</p>';
+  if (typeof historyDlg.showModal === 'function') historyDlg.showModal(); else historyDlg.setAttribute('open', '');
+  return postJson(GACTIONSHEET_URL, {
+    action: 'get_action_history', assertion: state.assertion, teamId: teamIdForWrite(r), global_id: globalId
+  })
+    .then(res => {
+      if (!res.ok) { body.innerHTML = '<p class="hmeta">History is not available: ' + escape(res.outcome || 'unknown') + '</p>'; return; }
+      const entries = res.entries || [];
+      body.innerHTML = entries.length
+        ? '<ol>' + entries.map(historyItem_).join('') + '</ol>'
+        : '<p class="hmeta">No changes recorded yet.</p>';
+    })
+    .catch(err => { body.innerHTML = '<p class="hmeta">History failed: ' + escape(err.message || err) + '</p>'; });
+}
 document.addEventListener('click', e => { if (!menuEl.contains(e.target)) closeMenu(); });
 
 // ---- filter controls -----------------------------------------------------
