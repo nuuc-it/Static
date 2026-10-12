@@ -100,6 +100,7 @@
   .status.bucket-waiting{background:var(--amber2);border-color:#fde68a}
   .status.bucket-closed,.status.bucket-delegated{background:var(--green2);border-color:#a7f3d0}
   .status.mine{cursor:pointer}
+  .removedbadge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;font-size:12px}
   .bucketlabel{color:var(--muted);font-size:11px}
 
   .controls{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
@@ -407,7 +408,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.21.7";
+var STATIC_BUILD_VERSION_ = "0.1.21.8";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -1617,7 +1618,8 @@ function isMine(row){ return state.email && row.assignee_email &&
   row.assignee_email.toLowerCase() === state.email.toLowerCase(); }
 // NT-6g1: Set status is offered when the server says the caller can write the row's document
 // (row.canWrite) or the caller is its assignee (the server's assignee bypass). No client guessing.
-function canSetStatus_(row){ return !!row && (row.canWrite === true || !!isMine(row)); }
+// NT-qp5: a row removed from its document offers no Set status (nor Edit).
+function canSetStatus_(row){ return !!row && row.removed !== true && (row.canWrite === true || !!isMine(row)); }
 
 // gts-zm8w: every write route (team_edit_action/team_patch_status/
 // team_sync_document) authorizes against ONE real teamId
@@ -1845,12 +1847,13 @@ function rowHtml(r, tier){
         <div class="rowmeta">
           <span>${escape(r.assignee_name || r.assignee_email || 'Unassigned')}${mine ? ' (you)' : ''}</span>
           <span>updated ${shortDate(r.modified_date)}</span>
+          ${r.removed ? '<span class="removedbadge" title="This action is no longer in its document">Removed from document</span>' : ''}
           ${fromHtml_(r.from)}
         </div>
       </div>
       <div class="controls">
         ${statusChip(r, canSetStatus_(r))}
-        ${tier === 'EDIT'
+        ${tier === 'EDIT' && !r.removed
           ? `<button class="btn small" data-edit="${r.global_id}" ${state.stale ? 'disabled title="Available once fresh data has loaded"' : 'title="Edit this action\'s text, status and assignee"'}>Edit</button>` : ''}
       </div>
     </div>`;
@@ -1966,6 +1969,8 @@ function openStatusMenu(e){
   const globalId = chip.dataset.statusFor;
   const canSet = chip.classList.contains('mine') && !state.stale;
   const targets = copyTargets_(globalId);
+  const menuRow = rowByGlobalId(globalId);
+  const canConfirm = !!menuRow && menuRow.removed === true && menuRow.canWrite === true && !state.stale; // NT-qp5
   const nNote = targets.length > 1 ? ' (all ' + targets.length + ' selected actions)' : '';
   menuEl.innerHTML = (canSet ? '<h4>Set status</h4>' +
     state.statusOptions.map(o =>
@@ -1977,7 +1982,8 @@ function openStatusMenu(e){
     `<button class="opt" data-copy="reference" title="Copy as a Reference: pasted into a document, it stays a live link to the action${nNote}">Copy as Reference</button>` +
     `<button class="opt" data-copy="import" title="Copy for Import: pasted into a document, the next sync moves the action there${nNote}">Copy for Import</button>` +
     '<hr class="menudiv" />' +
-    '<button class="opt" data-history="1" title="Every recorded change to this action, newest first">History</button>';
+    '<button class="opt" data-history="1" title="Every recorded change to this action, newest first">History</button>' +
+    (canConfirm ? '<hr class="menudiv" /><button class="opt" data-confirm-deleted="1" title="Confirm this action was deleted from its document: moves it to the archive">Confirm deleted</button>' : '');
   menuEl.style.left = Math.min(box.left + window.scrollX, window.innerWidth - 245) + 'px';
   menuEl.style.top  = (box.bottom + window.scrollY + 6) + 'px';
   menuEl.style.display = 'block';
@@ -1989,6 +1995,9 @@ function openStatusMenu(e){
   }));
   menuEl.querySelectorAll('[data-history]').forEach(b => b.addEventListener('click', () => {
     closeMenu(); openHistory_(globalId);
+  }));
+  menuEl.querySelectorAll('[data-confirm-deleted]').forEach(b => b.addEventListener('click', () => {
+    closeMenu(); confirmDeleted_(globalId);
   }));
   if (canSet) $('customStatus').addEventListener('keydown', ev => {
     if (ev.key === 'Enter' && ev.target.value.trim()){
@@ -2027,6 +2036,21 @@ function selectedRowsInOrder_(){
   return bulkBoxes_().map(b => b.dataset.select).filter(g => state.selected.has(g))
     .map(rowByGlobalId).filter(Boolean);
 }
+// NT-w0x: the row's assignees in order (primary, then co_assignees): {text, email} with email '' for a
+// name-only assignee. Duplicates (case-insensitive) are dropped.
+function assigneeItems_(r){
+  const out = [], seen = new Set();
+  const add = (text, email) => {
+    const t = String(text || '').trim(); if (!t) return;
+    const k = t.toLowerCase(); if (seen.has(k)) return;
+    seen.add(k); out.push({ text: t, email: email ? t : '' });
+  };
+  if (r.assignee_email) add(r.assignee_email, true); else add(r.assignee_name, false);
+  String(r.co_assignees || '').split(',').forEach(x => {
+    const t = x.trim(); add(t, /^[^\s@]+@[^\s@]+$/.test(t));
+  });
+  return out;
+}
 // One action -> {html, text}.
 function actionClipboard_(r, forImport){
   const slash = String(r.global_id || '').lastIndexOf('/');
@@ -2036,10 +2060,16 @@ function actionClipboard_(r, forImport){
   const token = 'ACT/' + referenceLabel_(r.doc_name) + '/' + n + ':';
   const url = chipUrlFor_(docId, ain, forImport);
   const lines = String(r.action_text || '').split(/\r\n|[\r\n\v\u2028\u2029]/);
-  const who = r.assignee_name || r.assignee_email || '';
-  const head = (forImport ? IMPORT_PENDING_LABEL + ' ' : '') + (who ? '(' + who + ') ' : '') +
-    lines[0] + ' (' + (r.status || 'Open') + ')';
-  const htmlLines = [`<a href="${escape(url)}">${escape(token)}</a> ${escape(head)}`];
+  // NT-w0x: assignee list '(email1, email2) ' -- primary then co-assignees, each as its email when
+  // known else its name as typed, so the existing assignee-list parser (NT-bqj) resolves the same people.
+  const items = assigneeItems_(r);
+  const whoText = items.length ? '(' + items.map(i => i.text).join(', ') + ') ' : '';
+  const whoHtml = items.length ? '(' + items.map(i => i.email
+    ? `<a href="mailto:${escape(i.email)}">${escape(i.email)}</a>` : escape(i.text)).join(', ') + ') ' : '';
+  const label = forImport ? IMPORT_PENDING_LABEL + ' ' : '';
+  const tail = lines[0] + ' (' + (r.status || 'Open') + ')';
+  const head = label + whoText + tail;
+  const htmlLines = [`<a href="${escape(url)}">${escape(token)}</a> ${escape(label)}${whoHtml}${escape(tail)}`];
   const textLines = [token + ' ' + head + ' <' + url + '>'];
   for (let i = 1; i < lines.length; i++){ htmlLines.push(escape(lines[i])); textLines.push(lines[i]); }
   const from = r.from;
@@ -2081,6 +2111,25 @@ function copyActions_(rows, forImport){
     .then(() => toast('Copied ' + what + (forImport ? ' for Import. Paste into the target document; its next sync imports it.'
                                                     : ' as Reference.')))
     .catch(err => toast('Copy failed: ' + ((err && err.message) || err)));
+}
+// NT-qp5: Confirm deleted on a row removed from its document: the server moves the row to the
+// Archive sheet; on ok the row leaves the list, on a refusal it stays and the error is shown.
+function confirmDeleted_(globalId){
+  return postJson(GACTIONSHEET_URL, {
+    action: 'confirm_action_deleted', assertion: state.assertion,
+    teamId: teamIdForWrite(rowByGlobalId(globalId)), global_id: globalId
+  })
+    .then(res => {
+      if (res && res.ok){
+        state.rows = state.rows.filter(r => r.global_id !== globalId);
+        state.selected.delete(globalId);
+        render();
+        toast('Deletion confirmed; the action was archived.');
+        return;
+      }
+      toast('Confirm deleted did not apply: ' + ((res && res.error) || 'unknown'));
+    })
+    .catch(err => toast('Confirm deleted failed: ' + (err.message || err)));
 }
 // Shared request for the single-row and bulk status paths (NT-71y.6).
 function patchStatusRequest_(globalId, newStatus){
@@ -2171,7 +2220,7 @@ listEl.addEventListener('change', e => {
 // can write; the server writes every row then pushes each document once. Selected rows without
 // write access are listed as skipped (not sent).
 // Bulk uses the server's row.canWrite only (NT-6g1 addendum rev 1.1).
-function bulkWritable_(gids){ return gids.filter(g => { const r = rowByGlobalId(g); return !!r && r.canWrite === true; }); }
+function bulkWritable_(gids){ return gids.filter(g => { const r = rowByGlobalId(g); return !!r && r.canWrite === true && r.removed !== true; }); }
 function runBulkStatus_(){
   const status = state.bulkStatus;
   const gids = bulkBoxes_().map(b => b.dataset.select).filter(g => state.selected.has(g));
