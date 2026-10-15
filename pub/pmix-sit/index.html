@@ -1030,7 +1030,20 @@ body {
 .schedule-items { margin: 0; padding-left: 20px; font-size: 14px; color: var(--text-2); }
 .schedule-items li + li { margin-top: 4px; }
 .schedule-items a, .links-notes a { color: var(--blue); }
-.schedule-cal-link { font-size: 12px; margin-left: 8px; white-space: nowrap; color: var(--blue); opacity: 0.85; }
+.schedule-cal-wrap { position: relative; display: inline-block; margin-left: 8px; }
+.schedule-cal-btn {
+  font: inherit; font-size: 12px; padding: 1px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+  background: var(--surface-2); color: var(--blue); border: 1px solid var(--border-strong);
+}
+.schedule-cal-btn:hover, .schedule-cal-btn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
+.schedule-cal-menu {
+  position: absolute; top: 100%; left: 0; margin-top: 4px; z-index: 1002; min-width: 180px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.6);
+}
+.schedule-items .schedule-cal-item { display: block; padding: 6px 10px; border-radius: 6px; font-size: 13px; white-space: nowrap; color: var(--text-2); text-decoration: none; }
+.schedule-items .schedule-cal-item:hover, .schedule-items .schedule-cal-item:focus { background: var(--surface-3); color: var(--text); }
 .schedule-section { font-size: 12px; color: var(--text-3); margin-right: 6px; }
 .links-heading { font-weight: 400; color: var(--text-2); }
 .links-notes { margin-top: var(--spacing-sm); padding-top: var(--spacing-sm); border-top: 1px solid var(--border); font-size: 13px; color: var(--text-3); }
@@ -1338,10 +1351,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.19.1";
+var STATIC_BUILD_VERSION_ = "1.6.19.2";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-15T16:24:35.848Z";
+var STATIC_BUILD_DATE_ = "2026-10-15T16:56:07.835Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -5499,17 +5512,17 @@ const UI = (() => {
 
 <script>
 /**
- * Calendar export (bd atc-73d). Each schedule item gets "add to calendar" links.
+ * Calendar export (bd atc-73d). Each schedule item gets one "+ Calendar" button opening a provider menu.
  *
  * Maintainer edits only the three tables below:
  *  - CALENDAR_CONFIG: time zone and title prefix.
  *  - CALENDAR_EVENT_RULES: ordered; each rule tests the item text (case-insensitive). When a rule
  *    matches, its matched text is removed from the working string, so later rules cannot match it
- *    again (e.g. "Dress Rehearsal" never also yields a "rehearse" entry). One entry per matching
- *    rule, in rule order; an item matching no rule becomes one all-day entry.
- *  - CALENDAR_PROVIDERS: registry of {id, label, href(entry)}. To add a provider (e.g. Apple via an
- *    .ics data/https href) add one object here; rules and render code need no change. Hrefs must
- *    be https:// to be rendered.
+ *    again (e.g. "Dress Rehearsal" never also yields a "rehearse" match). An item yields ONE event:
+ *    matched rules are combined (earliest start, latest end); no match -> one all-day event.
+ *  - CALENDAR_PROVIDERS: registry of {id, label, href(event, now), download?(event)}, in menu order. To add a
+ *    provider add one object here; rules and render code need no change. Hrefs must start with
+ *    https:// or data:text/calendar to be rendered.
  */
 const CALENDAR_CONFIG = { timeZone: 'America/Los_Angeles', titlePrefix: 'Choir: ' };
 
@@ -5521,8 +5534,17 @@ const CALENDAR_EVENT_RULES = [
 ];
 
 const CALENDAR_PROVIDERS = [
-  { id: 'google', label: 'Google Calendar', href: (entry) => googleCalendarHref(entry) },
+  { id: 'google', label: 'Google Calendar', href: (ev) => googleCalendarHref(ev) },
+  { id: 'apple', label: 'Apple / iPhone (.ics)', href: (ev, now) => icsCalendarHref(ev, now),
+    download: (ev) => ev.date + '-' + ev.type.replace(/[^a-z0-9]+/gi, '-') + '.ics' },
+  { id: 'outlook', label: 'Outlook.com', href: (ev) => outlookCalendarHref(ev) },
 ];
+
+/** Providers with the remembered one (by id) first; an unknown id changes nothing. */
+function orderedProviders(rememberedId) {
+  const first = CALENDAR_PROVIDERS.filter((p) => p.id === rememberedId);
+  return first.concat(CALENDAR_PROVIDERS.filter((p) => p.id !== rememberedId));
+}
 
 /** Rules matched by `text`, in rule order, each consuming its matched text. */
 function classifyScheduleItem(text) {
@@ -5538,47 +5560,7 @@ function classifyScheduleItem(text) {
   return out;
 }
 
-/** Calendar entries for one schedule item on `date` (YYYY-MM-DD). `schedule` supplies title/source. */
-function buildCalendarEntries(date, itemText, schedule) {
-  const sched = schedule || {};
-  const srcUrl = sched.source && sched.source.url;
-  const title = CALENDAR_CONFIG.titlePrefix + itemText;
-  const mk = (rule) => {
-    const details = [rule && rule.note, sched.title, srcUrl].filter(Boolean).join('\n');
-    return {
-      type: rule ? rule.type : 'all-day',
-      label: rule ? rule.label : 'All day',
-      title, date,
-      start: rule ? rule.start : null,
-      end: rule ? rule.end : null,
-      allDay: !rule,
-      details,
-    };
-  };
-  const rules = classifyScheduleItem(itemText);
-  return rules.length ? rules.map(mk) : [mk(null)];
-}
-
-function googleCalendarHref(entry) {
-  const compact = (iso) => iso.replace(/-/g, '');
-  let dates;
-  if (entry.allDay) {
-    const p = entry.date.split('-').map(Number);
-    const next = new Date(Date.UTC(p[0], p[1] - 1, p[2] + 1)).toISOString().slice(0, 10);
-    dates = compact(entry.date) + '/' + compact(next);
-  } else {
-    const t = (hhmm) => hhmm.replace(':', '') + '00';
-    dates = compact(entry.date) + 'T' + t(entry.start) + '/' + compact(entry.date) + 'T' + t(entry.end);
-  }
-  const enc = encodeURIComponent;
-  return 'https://calendar.google.com/calendar/render?action=TEMPLATE'
-    + '&text=' + enc(entry.title)
-    + '&dates=' + enc(dates).replace(/%2F/g, '/')
-    + '&details=' + enc(entry.details || '')
-    + '&ctz=' + enc(CALENDAR_CONFIG.timeZone);
-}
-
-/** Human time range, e.g. "9:00–11:30 AM"; empty for all-day. */
+/** Human time range, e.g. "9:00–11:30 AM"; 'all day' for all-day events. */
 function calendarTimeLabel(entry) {
   if (entry.allDay) return 'all day';
   const parse = (s) => { const p = s.split(':').map(Number); return { h: p[0], m: p[1] }; };
@@ -5588,7 +5570,108 @@ function calendarTimeLabel(entry) {
   return ap(a) === ap(b) ? f(a) + '–' + f(b) + ' ' + ap(b) : f(a) + ' ' + ap(a) + '–' + f(b) + ' ' + ap(b);
 }
 
-if (typeof module !== 'undefined') module.exports = { CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, classifyScheduleItem, buildCalendarEntries, googleCalendarHref, calendarTimeLabel };
+/**
+ * ONE combined event for a schedule item on `date` (YYYY-MM-DD): earliest start, latest end, types
+ * joined by '+'. Details: a "<label>: <time>" line per rule when several matched, then notes,
+ * schedule title, source URL. No rule matched -> an all-day event.
+ */
+function buildCalendarEvent(date, itemText, schedule) {
+  const sched = schedule || {};
+  const srcUrl = sched.source && sched.source.url;
+  const rules = classifyScheduleItem(itemText);
+  const lines = [];
+  if (rules.length > 1) rules.forEach((r) => lines.push(r.label + ': ' + calendarTimeLabel({ start: r.start, end: r.end })));
+  rules.forEach((r) => { if (r.note) lines.push(r.note); });
+  if (sched.title) lines.push(sched.title);
+  if (srcUrl) lines.push(srcUrl);
+  return {
+    type: rules.length ? rules.map((r) => r.type).join('+') : 'all-day',
+    title: CALENDAR_CONFIG.titlePrefix + itemText,
+    date,
+    start: rules.length ? rules.map((r) => r.start).sort()[0] : null,
+    end: rules.length ? rules.map((r) => r.end).sort().slice(-1)[0] : null,
+    allDay: rules.length === 0,
+    details: lines.join('\n'),
+  };
+}
+
+function calendarNextDay(date) {
+  const p = date.split('-').map(Number);
+  return new Date(Date.UTC(p[0], p[1] - 1, p[2] + 1)).toISOString().slice(0, 10);
+}
+
+/** UTC offset ("-07:00") of CALENDAR_CONFIG.timeZone at local `date` (YYYY-MM-DD) and `hhmm`. DST-correct. */
+function zoneOffset(date, hhmm) {
+  const d = date.split('-').map(Number), t = (hhmm || '12:00').split(':').map(Number);
+  const wall = Date.UTC(d[0], d[1] - 1, d[2], t[0], t[1]);
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: CALENDAR_CONFIG.timeZone, hourCycle: 'h23',
+    year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+  const offsetAt = (ms) => {
+    const o = {};
+    fmt.formatToParts(new Date(ms)).forEach((x) => { o[x.type] = Number(x.value); });
+    return Math.round((Date.UTC(o.year, o.month - 1, o.day, o.hour, o.minute, o.second) - ms) / 60000);
+  };
+  let off = offsetAt(wall);
+  off = offsetAt(wall - off * 60000); // refine around a DST transition
+  const a = Math.abs(off);
+  const pad = (n) => (n < 10 ? '0' : '') + n;
+  return (off < 0 ? '-' : '+') + pad(Math.floor(a / 60)) + ':' + pad(a % 60);
+}
+
+/** "YYYYMMDDTHHMMSSZ" for local `date`/`hhmm` in the configured zone. */
+function calendarUtcStamp(date, hhmm) {
+  const off = zoneOffset(date, hhmm);
+  const sign = off[0] === '-' ? -1 : 1;
+  const offMin = sign * (Number(off.slice(1, 3)) * 60 + Number(off.slice(4, 6)));
+  const d = date.split('-').map(Number), t = hhmm.split(':').map(Number);
+  return new Date(Date.UTC(d[0], d[1] - 1, d[2], t[0], t[1]) - offMin * 60000)
+    .toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+}
+
+function googleCalendarHref(ev) {
+  const compact = (iso) => iso.replace(/-/g, '');
+  let dates;
+  if (ev.allDay) {
+    dates = compact(ev.date) + '/' + compact(calendarNextDay(ev.date));
+  } else {
+    const t = (hhmm) => hhmm.replace(':', '') + '00';
+    dates = compact(ev.date) + 'T' + t(ev.start) + '/' + compact(ev.date) + 'T' + t(ev.end);
+  }
+  const enc = encodeURIComponent;
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+    + '&text=' + enc(ev.title)
+    + '&dates=' + enc(dates).replace(/%2F/g, '/')
+    + '&details=' + enc(ev.details || '')
+    + '&ctz=' + enc(CALENDAR_CONFIG.timeZone);
+}
+
+function outlookCalendarHref(ev) {
+  const enc = encodeURIComponent;
+  const startdt = ev.allDay ? ev.date : ev.date + 'T' + ev.start + ':00' + zoneOffset(ev.date, ev.start);
+  const enddt = ev.allDay ? calendarNextDay(ev.date) : ev.date + 'T' + ev.end + ':00' + zoneOffset(ev.date, ev.end);
+  return 'https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent'
+    + '&subject=' + enc(ev.title)
+    + '&body=' + enc(ev.details || '')
+    + '&startdt=' + enc(startdt)
+    + '&enddt=' + enc(enddt)
+    + (ev.allDay ? '&allday=true' : '');
+}
+
+/** data:text/calendar href holding a one-event RFC 5545 file. `now` (Date) stamps DTSTAMP. */
+function icsCalendarHref(ev, now) {
+  const esc = (s) => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const stamp = (now || new Date()).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const slug = ev.type.replace(/[^a-z0-9]+/gi, '-');
+  const when = ev.allDay
+    ? ['DTSTART;VALUE=DATE:' + ev.date.replace(/-/g, ''), 'DTEND;VALUE=DATE:' + calendarNextDay(ev.date).replace(/-/g, '')]
+    : ['DTSTART:' + calendarUtcStamp(ev.date, ev.start), 'DTEND:' + calendarUtcStamp(ev.date, ev.end)];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PracticeMix//Schedule//EN', 'BEGIN:VEVENT',
+    'UID:' + ev.date + '-' + slug + '@practicemix', 'DTSTAMP:' + stamp].concat(when,
+    ['SUMMARY:' + esc(ev.title), 'DESCRIPTION:' + esc(ev.details), 'END:VEVENT', 'END:VCALENDAR']);
+  return 'data:text/calendar;charset=utf-8,' + encodeURIComponent(lines.join('\r\n') + '\r\n');
+}
+
+if (typeof module !== 'undefined') module.exports = { CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel };
 </script>
 
 <script>
@@ -5757,7 +5840,11 @@ function createDocPopup(cfg) {
   document.querySelectorAll('.' + cfg.buttonClass).forEach((b) => b.addEventListener('click', () => open(b)));
   closeBtn.addEventListener('click', close);
   id('overlay').addEventListener('click', close);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (closeCalMenu()) return; // an open calendar menu takes the Escape; the modal stays
+    close();
+  });
 }
 
 function docNode(tag, className, testId) {
@@ -5783,6 +5870,72 @@ function appendRuns(parent, runs) {
       parent.appendChild(document.createTextNode(r.text));
     }
   });
+}
+
+/* Calendar menu: at most one open at a time; Escape / outside click close it (not the modal). */
+let openCalMenu = null; // { btn, menu, wrap }
+let calGlobalsBound = false;
+
+function closeCalMenu() {
+  if (!openCalMenu) return false;
+  const m = openCalMenu;
+  openCalMenu = null;
+  m.btn.setAttribute('aria-expanded', 'false');
+  m.menu.remove();
+  return true;
+}
+
+function readCalProvider() {
+  try { return localStorage.getItem('pmix.calProvider'); } catch (e) { return null; }
+}
+function writeCalProvider(pid) {
+  try { localStorage.setItem('pmix.calProvider', pid); } catch (e) { /* storage unavailable */ }
+}
+
+function bindCalGlobals() {
+  if (calGlobalsBound) return;
+  calGlobalsBound = true;
+  document.addEventListener('click', (e) => {
+    if (openCalMenu && !(openCalMenu.wrap.contains && openCalMenu.wrap.contains(e.target))) closeCalMenu();
+  });
+}
+
+function buildCalendarControl(ev) {
+  bindCalGlobals();
+  const wrap = docNode('span', 'schedule-cal-wrap');
+  const btn = docNode('button', 'schedule-cal-btn', 'schedule-cal-btn');
+  btn.setAttribute('type', 'button');
+  btn.textContent = '+ Calendar';
+  btn.setAttribute('data-cal-type', ev.type);
+  btn.setAttribute('aria-haspopup', 'menu');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-label', 'Add to calendar: ' + ev.title + ' (' + calendarTimeLabel(ev) + ')');
+  btn.addEventListener('click', () => {
+    const wasMine = openCalMenu && openCalMenu.btn === btn;
+    closeCalMenu();
+    if (wasMine) return;
+    const menu = docNode('div', 'schedule-cal-menu', 'schedule-cal-menu');
+    menu.setAttribute('role', 'menu');
+    const now = new Date();
+    orderedProviders(readCalProvider()).forEach((prov) => {
+      const href = prov.href(ev, now);
+      const a = docNode('a', 'schedule-cal-item', 'schedule-cal-' + prov.id);
+      a.setAttribute('role', 'menuitem');
+      a.textContent = prov.label;
+      if (typeof href === 'string' && (href.indexOf('https://') === 0 || href.indexOf('data:text/calendar') === 0)) {
+        a.setAttribute('href', href);
+      }
+      if (typeof prov.download === 'function') a.setAttribute('download', prov.download(ev));
+      else { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); }
+      a.addEventListener('click', () => { writeCalProvider(prov.id); closeCalMenu(); });
+      menu.appendChild(a);
+    });
+    wrap.appendChild(menu);
+    btn.setAttribute('aria-expanded', 'true');
+    openCalMenu = { btn, menu, wrap };
+  });
+  wrap.appendChild(btn);
+  return wrap;
 }
 
 function renderScheduleList(result, list, today) {
@@ -5812,23 +5965,7 @@ function renderScheduleList(result, list, today) {
         li.appendChild(sec);
       }
       li.appendChild(document.createTextNode(it.text));
-      const entries = buildCalendarEntries(e.date, it.text, result);
-      entries.forEach((entry) => {
-        CALENDAR_PROVIDERS.forEach((prov) => {
-          const href = prov.href(entry);
-          const a = docNode('a', 'schedule-cal-link', 'schedule-cal-' + prov.id);
-          a.textContent = entries.length > 1 ? '+ ' + entry.label : '+ Calendar';
-          a.setAttribute('data-cal-type', entry.type);
-          const when = calendarTimeLabel(entry);
-          const label = 'Add ' + entry.label + ' (' + when + ') to ' + prov.label;
-          a.setAttribute('aria-label', label);
-          a.setAttribute('title', label);
-          if (typeof href === 'string' && href.indexOf('https://') === 0) a.setAttribute('href', href);
-          a.setAttribute('target', '_blank');
-          a.setAttribute('rel', 'noopener noreferrer');
-          li.appendChild(a);
-        });
-      });
+      li.appendChild(buildCalendarControl(buildCalendarEvent(e.date, it.text, result)));
       ul.appendChild(li);
     });
     block.appendChild(ul);
@@ -5942,7 +6079,11 @@ function initHelpGuide() {
     if (e.source === frame.contentWindow && e.data && e.data.type === 'pmix-help-close') close();
   });
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (closeCalMenu()) return; // an open calendar menu takes the Escape; the modal stays
+    close();
+  });
 }
 
 /**
@@ -6087,7 +6228,11 @@ function initMediaViewer() {
   document.getElementById('media-close').addEventListener('click', close);
   window.addEventListener('popstate', hide);
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (closeCalMenu()) return; // an open calendar menu takes the Escape; the modal stays
+    close();
+  });
   mediaViewer_ = { openFile, openChooser, close };
 }
 </script>
