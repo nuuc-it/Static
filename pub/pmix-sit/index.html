@@ -1352,10 +1352,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.19.6";
+var STATIC_BUILD_VERSION_ = "1.6.19.7";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-15T17:20:10.774Z";
+var STATIC_BUILD_DATE_ = "2026-10-15T17:32:01.005Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -5521,7 +5521,8 @@ const UI = (() => {
  *    matches, its matched text is removed from the working string, so later rules cannot match it
  *    again (e.g. "Dress Rehearsal" never also yields a "rehearse" match). An item yields ONE event:
  *    matched rules are combined (earliest start, latest end); no match -> one all-day event.
- *  - CALENDAR_PROVIDERS: registry of {id, label, href(event, now), download?(event)}, in menu order. To add a
+ *  - CALENDAR_PROVIDERS: registry of {id, label, format, href(event, now), download?(event)}, in menu order.
+ *    format ('html' | 'text') is how the provider's description is rendered; switching Outlook is a one-word edit. To add a
  *    provider add one object here; rules and render code need no change. Hrefs must start with
  *    https:// or data:text/calendar to be rendered.
  */
@@ -5539,10 +5540,10 @@ const CALENDAR_EVENT_RULES = [
 ];
 
 const CALENDAR_PROVIDERS = [
-  { id: 'google', label: 'Google Calendar', href: (ev) => googleCalendarHref(ev) },
-  { id: 'apple', label: 'Apple / iPhone (.ics)', href: (ev, now) => icsCalendarHref(ev, now),
+  { id: 'google', label: 'Google Calendar', format: 'html', href: (ev) => googleCalendarHref(ev) },
+  { id: 'apple', label: 'Apple / iPhone (.ics)', format: 'text', href: (ev, now) => icsCalendarHref(ev, now),
     download: (ev) => ev.date + '-' + ev.type.replace(/[^a-z0-9]+/gi, '-') + '.ics' },
-  { id: 'outlook', label: 'Outlook.com', href: (ev) => outlookCalendarHref(ev) },
+  { id: 'outlook', label: 'Outlook.com', format: 'html', href: (ev) => outlookCalendarHref(ev) },
 ];
 
 /** Providers with the remembered one (by id) first; an unknown id changes nothing. */
@@ -5584,12 +5585,12 @@ function buildCalendarEvent(date, itemText, schedule, detailsPrefix) {
   const sched = schedule || {};
   const srcUrl = sched.source && sched.source.url;
   const rules = classifyScheduleItem(itemText);
-  const lines = detailsPrefix ? [detailsPrefix] : [];
-  if (rules.length > 1) rules.forEach((r) => lines.push(r.label + ': ' + calendarTimeLabel({ start: r.start, end: r.end })));
-  rules.forEach((r) => { if (r.note) lines.push(r.note); });
-  if (sched.title) lines.push(sched.title);
-  if (srcUrl) lines.push(srcUrl);
-  lines.push('Practice Mix: ' + CALENDAR_CONFIG.appUrl);
+  const lines = detailsPrefix ? [{ text: detailsPrefix }] : [];
+  if (rules.length > 1) rules.forEach((r) => lines.push({ text: r.label + ': ' + calendarTimeLabel({ start: r.start, end: r.end }) }));
+  rules.forEach((r) => { if (r.note) lines.push({ text: r.note }); });
+  if (sched.title) lines.push({ text: sched.title });
+  if (srcUrl) lines.push({ text: 'Schedule document', url: srcUrl });
+  lines.push({ text: 'Practice Mix', url: CALENDAR_CONFIG.appUrl });
   return {
     type: rules.length ? rules.map((r) => r.type).join('+') : 'all-day',
     title: CALENDAR_CONFIG.titlePrefix + itemText,
@@ -5598,8 +5599,29 @@ function buildCalendarEvent(date, itemText, schedule, detailsPrefix) {
     start: rules.length ? rules.map((r) => r.start).sort()[0] : null,
     end: rules.length ? rules.map((r) => r.end).sort().slice(-1)[0] : null,
     allDay: rules.length === 0,
-    details: lines.join('\n'),
+    detailLines: lines,
+    details: calendarDetailsText(lines, '\n'),
   };
+}
+
+/** Plain-text description: link lines as '<label>: <url>', joined by `eol`. */
+function calendarDetailsText(lines, eol) {
+  return (lines || []).map((l) => (l.url ? l.text + ': ' + l.url : l.text)).join(eol);
+}
+
+/** HTML description: text and URLs escaped, <br> between lines, http(s) link lines get an anchor. */
+function calendarDetailsHtml(lines) {
+  const h = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return (lines || []).map((l) => {
+    if (!l.url) return h(l.text);
+    return /^https?:\/\//i.test(l.url) ? h(l.text) + ': <a href="' + h(l.url) + '">' + h(l.url) + '</a>' : h(l.text + ': ' + l.url);
+  }).join('<br>');
+}
+
+/** Description of `ev` rendered in the registered provider's format. */
+function calendarDetailsFor(ev, providerId) {
+  const p = CALENDAR_PROVIDERS.find((x) => x.id === providerId);
+  return p && p.format === 'text' ? calendarDetailsText(ev.detailLines, '\r\n') : calendarDetailsHtml(ev.detailLines);
 }
 
 function calendarNextDay(date) {
@@ -5648,7 +5670,7 @@ function googleCalendarHref(ev) {
   return 'https://calendar.google.com/calendar/render?action=TEMPLATE'
     + '&text=' + enc(ev.title)
     + '&dates=' + enc(dates).replace(/%2F/g, '/')
-    + '&details=' + enc(ev.details || '')
+    + '&details=' + enc(calendarDetailsFor(ev, 'google'))
     + '&location=' + enc(ev.location || '')
     + '&ctz=' + enc(CALENDAR_CONFIG.timeZone);
 }
@@ -5659,7 +5681,7 @@ function outlookCalendarHref(ev) {
   const enddt = ev.allDay ? calendarNextDay(ev.date) : ev.date + 'T' + ev.end + ':00' + zoneOffset(ev.date, ev.end);
   return 'https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent'
     + '&subject=' + enc(ev.title)
-    + '&body=' + enc(ev.details || '')
+    + '&body=' + enc(calendarDetailsFor(ev, 'outlook'))
     + '&location=' + enc(ev.location || '')
     + '&startdt=' + enc(startdt)
     + '&enddt=' + enc(enddt)
@@ -5677,11 +5699,13 @@ function icsCalendarHref(ev, now) {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PracticeMix//Schedule//EN', 'BEGIN:VEVENT',
     // The title is in the UID so two same-type items on one date stay separate events.
     'UID:' + ev.date + '-' + slug + '-' + ev.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '') + '@practicemix', 'DTSTAMP:' + stamp].concat(when,
-    ['SUMMARY:' + esc(ev.title), 'DESCRIPTION:' + esc(ev.details), 'LOCATION:' + esc(ev.location), 'END:VEVENT', 'END:VCALENDAR']);
+    ['SUMMARY:' + esc(ev.title), 'DESCRIPTION:' + esc(calendarDetailsText(ev.detailLines, '\n')),
+      'X-ALT-DESC;FMTTYPE=text/html:' + esc('<html><body>' + calendarDetailsHtml(ev.detailLines) + '</body></html>'),
+      'URL:' + CALENDAR_CONFIG.appUrl, 'LOCATION:' + esc(ev.location), 'END:VEVENT', 'END:VCALENDAR']);
   return 'data:text/calendar;charset=utf-8,' + encodeURIComponent(lines.join('\r\n') + '\r\n');
 }
 
-if (typeof module !== 'undefined') module.exports = { CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel };
+if (typeof module !== 'undefined') module.exports = { CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel };
 </script>
 
 <script>
