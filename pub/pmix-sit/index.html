@@ -1032,7 +1032,8 @@ body {
 .schedule-items a, .links-notes a { color: var(--blue); }
 .schedule-cal-wrap { position: relative; display: inline-block; margin-left: 8px; }
 .schedule-cal-btn {
-  font: inherit; font-size: 12px; padding: 1px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
+  width: 26px; height: 24px; padding: 0; border-radius: 6px; cursor: pointer;
   background: var(--surface-2); color: var(--blue); border: 1px solid var(--border-strong);
 }
 .schedule-cal-btn:hover, .schedule-cal-btn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
@@ -1352,10 +1353,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.19.7";
+var STATIC_BUILD_VERSION_ = "1.6.19.8";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-15T17:32:01.005Z";
+var STATIC_BUILD_DATE_ = "2026-10-15T18:49:47.141Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -5513,7 +5514,7 @@ const UI = (() => {
 
 <script>
 /**
- * Calendar export (bd atc-73d). Each schedule item gets one "+ Calendar" button opening a provider menu.
+ * Calendar export (bd atc-73d). Each schedule item gets one calendar icon button opening a provider menu.
  *
  * Maintainer edits only the three tables below:
  *  - CALENDAR_CONFIG: time zone and title prefix.
@@ -5956,12 +5957,18 @@ function bindCalGlobals() {
   });
 }
 
+const CALENDAR_ICON_SVG = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" '
+  + 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 9h18M12 12v6M9 15h6"/></svg>';
+
 function buildCalendarControl(ev) {
   bindCalGlobals();
   const wrap = docNode('span', 'schedule-cal-wrap');
   const btn = docNode('button', 'schedule-cal-btn', 'schedule-cal-btn');
   btn.setAttribute('type', 'button');
-  btn.textContent = '+ Calendar';
+  // Icon only (calendar with a plus) keeps each item on one line; the name is the aria-label.
+  btn.innerHTML = CALENDAR_ICON_SVG;
+  btn.setAttribute('title', 'Add to calendar');
   btn.setAttribute('data-cal-type', ev.type);
   btn.setAttribute('aria-haspopup', 'menu');
   btn.setAttribute('aria-expanded', 'false');
