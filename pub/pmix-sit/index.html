@@ -1351,10 +1351,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.19.2";
+var STATIC_BUILD_VERSION_ = "1.6.19.3";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-15T16:56:07.835Z";
+var STATIC_BUILD_DATE_ = "2026-10-15T17:00:26.018Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -5659,14 +5659,15 @@ function outlookCalendarHref(ev) {
 
 /** data:text/calendar href holding a one-event RFC 5545 file. `now` (Date) stamps DTSTAMP. */
 function icsCalendarHref(ev, now) {
-  const esc = (s) => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const esc = (s) => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
   const stamp = (now || new Date()).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
   const slug = ev.type.replace(/[^a-z0-9]+/gi, '-');
   const when = ev.allDay
     ? ['DTSTART;VALUE=DATE:' + ev.date.replace(/-/g, ''), 'DTEND;VALUE=DATE:' + calendarNextDay(ev.date).replace(/-/g, '')]
     : ['DTSTART:' + calendarUtcStamp(ev.date, ev.start), 'DTEND:' + calendarUtcStamp(ev.date, ev.end)];
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PracticeMix//Schedule//EN', 'BEGIN:VEVENT',
-    'UID:' + ev.date + '-' + slug + '@practicemix', 'DTSTAMP:' + stamp].concat(when,
+    // The title is in the UID so two same-type items on one date stay separate events.
+    'UID:' + ev.date + '-' + slug + '-' + ev.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '') + '@practicemix', 'DTSTAMP:' + stamp].concat(when,
     ['SUMMARY:' + esc(ev.title), 'DESCRIPTION:' + esc(ev.details), 'END:VEVENT', 'END:VCALENDAR']);
   return 'data:text/calendar;charset=utf-8,' + encodeURIComponent(lines.join('\r\n') + '\r\n');
 }
