@@ -1030,7 +1030,23 @@ body {
 .schedule-items { margin: 0; padding-left: 20px; font-size: 14px; color: var(--text-2); }
 .schedule-items li + li { margin-top: 4px; }
 .schedule-items a, .links-notes a { color: var(--blue); }
-.schedule-section { font-size: 12px; color: var(--text-3); margin-right: 6px; }
+.schedule-cal-wrap { position: relative; display: inline-block; margin-left: 8px; }
+.schedule-cal-btn {
+  display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
+  width: 26px; height: 24px; padding: 0; border-radius: 6px; cursor: pointer;
+  background: var(--surface-2); color: var(--blue); border: 1px solid var(--border-strong);
+}
+.schedule-cal-btn:hover, .schedule-cal-btn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
+.schedule-cal-menu {
+  position: fixed; top: 0; left: 0; z-index: 1002; min-width: 180px; max-width: calc(100vw - 16px);
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.6);
+}
+.schedule-items .schedule-cal-item { display: block; padding: 6px 10px; border-radius: 6px; font-size: 13px; white-space: nowrap; color: var(--text-2); text-decoration: none; }
+.schedule-items .schedule-cal-item:hover, .schedule-items .schedule-cal-item:focus { background: var(--surface-3); color: var(--text); }
+.schedule-group { padding: var(--spacing-sm) 0; border-top: 1px solid var(--border); }
+.schedule-group-title { margin: 0 0 4px; font-size: 14px; color: var(--text); }
 .links-heading { font-weight: 400; color: var(--text-2); }
 .links-notes { margin-top: var(--spacing-sm); padding-top: var(--spacing-sm); border-top: 1px solid var(--border); font-size: 13px; color: var(--text-3); }
 .links-notes p { margin: 0 0 4px; }
@@ -1337,10 +1353,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.19";
+var STATIC_BUILD_VERSION_ = "1.6.21";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-10-06T01:11:50.115Z";
+var STATIC_BUILD_DATE_ = "2026-10-15T20:50:33.185Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -5498,6 +5514,223 @@ const UI = (() => {
 
 <script>
 /**
+ * Calendar export (bd atc-73d). Each schedule item gets one calendar icon button opening a provider menu.
+ *
+ * Maintainer edits only the three tables below:
+ *  - CALENDAR_CONFIG: time zone and title prefix.
+ *  - CALENDAR_EVENT_RULES: ordered; each rule tests the item text (case-insensitive). When a rule
+ *    matches, its matched text is removed from the working string, so later rules cannot match it
+ *    again (e.g. "Dress Rehearsal" never also yields a "rehearse" match). An item yields ONE event:
+ *    matched rules are combined (earliest start, latest end); no match -> one all-day event.
+ *  - CALENDAR_PROVIDERS: registry of {id, label, format, href(event, now), download?(event)}, in menu order.
+ *    format ('html' | 'text') is how the provider's description is rendered; switching Outlook is a one-word edit. To add a
+ *    provider add one object here; rules and render code need no change. Hrefs must start with
+ *    https:// or data:text/calendar to be rendered.
+ */
+const CALENDAR_CONFIG = {
+  timeZone: 'America/Los_Angeles', titlePrefix: 'Choir: ',
+  appUrl: 'https://northlakeuu.org/pmix',
+  location: '308 4th Ave South, Kirkland, WA 98033',
+};
+
+const CALENDAR_EVENT_RULES = [
+  { type: 'dress-rehearsal', label: 'Dress rehearsal', match: /dress\s+rehearsal/i, start: '10:00', end: '20:00',
+    note: 'Time not yet confirmed — please confirm the dress rehearsal time.' },
+  { type: 'sing', label: 'Sing', match: /\bsing/i, start: '09:00', end: '11:30' },
+  { type: 'rehearse', label: 'Rehearse', match: /\brehearse/i, start: '12:15', end: '13:45' },
+];
+
+const CALENDAR_PROVIDERS = [
+  { id: 'google', label: 'Google Calendar', format: 'html', href: (ev) => googleCalendarHref(ev) },
+  { id: 'apple', label: 'Apple / iPhone (.ics)', format: 'text', href: (ev, now) => icsCalendarHref(ev, now),
+    download: (ev) => ev.date + '-' + ev.type.replace(/[^a-z0-9]+/gi, '-') + '.ics' },
+  { id: 'outlook', label: 'Outlook.com', format: 'html', href: (ev) => outlookCalendarHref(ev) },
+];
+
+/** Providers with the remembered one (by id) first; an unknown id changes nothing. */
+function orderedProviders(rememberedId) {
+  const first = CALENDAR_PROVIDERS.filter((p) => p.id === rememberedId);
+  return first.concat(CALENDAR_PROVIDERS.filter((p) => p.id !== rememberedId));
+}
+
+/** Rules matched by `text`, in rule order, each consuming its matched text. */
+function classifyScheduleItem(text) {
+  let work = String(text == null ? '' : text);
+  const out = [];
+  CALENDAR_EVENT_RULES.forEach((rule) => {
+    const m = rule.match.exec(work);
+    if (m) {
+      out.push(rule);
+      work = work.slice(0, m.index) + ' ' + work.slice(m.index + m[0].length);
+    }
+  });
+  return out;
+}
+
+/** Human time range, e.g. "9:00–11:30 AM"; 'all day' for all-day events. */
+function calendarTimeLabel(entry) {
+  if (entry.allDay) return 'all day';
+  const parse = (s) => { const p = s.split(':').map(Number); return { h: p[0], m: p[1] }; };
+  const a = parse(entry.start), b = parse(entry.end);
+  const f = (t) => ((t.h % 12) || 12) + ':' + (t.m < 10 ? '0' : '') + t.m;
+  const ap = (t) => (t.h < 12 ? 'AM' : 'PM');
+  return ap(a) === ap(b) ? f(a) + '–' + f(b) + ' ' + ap(b) : f(a) + ' ' + ap(a) + '–' + f(b) + ' ' + ap(b);
+}
+
+/**
+ * ONE combined event for a schedule item on `date` (YYYY-MM-DD): earliest start, latest end, types
+ * joined by '+'. Details: a "<label>: <time>" line per rule when several matched, then notes,
+ * schedule title, source URL. No rule matched -> an all-day event.
+ */
+function buildCalendarEvent(date, itemText, schedule, detailsPrefix) {
+  const sched = schedule || {};
+  const srcUrl = sched.source && sched.source.url;
+  const rules = classifyScheduleItem(itemText);
+  const lines = detailsPrefix ? [{ text: detailsPrefix }] : [];
+  if (rules.length > 1) rules.forEach((r) => lines.push({ text: r.label + ': ' + calendarTimeLabel({ start: r.start, end: r.end }) }));
+  rules.forEach((r) => { if (r.note) lines.push({ text: r.note }); });
+  if (sched.title) lines.push({ text: sched.title });
+  if (srcUrl) lines.push({ text: 'Schedule document', url: srcUrl });
+  lines.push({ text: 'Practice Mix', url: CALENDAR_CONFIG.appUrl });
+  return {
+    type: rules.length ? rules.map((r) => r.type).join('+') : 'all-day',
+    title: CALENDAR_CONFIG.titlePrefix + itemText,
+    date,
+    location: CALENDAR_CONFIG.location,
+    start: rules.length ? rules.map((r) => r.start).sort()[0] : null,
+    end: rules.length ? rules.map((r) => r.end).sort().slice(-1)[0] : null,
+    allDay: rules.length === 0,
+    detailLines: lines,
+    details: calendarDetailsText(lines, '\n'),
+  };
+}
+
+/** Plain-text description: link lines as '<label>: <url>', joined by `eol`. */
+function calendarDetailsText(lines, eol) {
+  return (lines || []).map((l) => (l.url ? l.text + ': ' + l.url : l.text)).join(eol);
+}
+
+/** HTML description: text and URLs escaped, <br> between lines, http(s) link lines get an anchor. */
+function calendarDetailsHtml(lines) {
+  const h = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return (lines || []).map((l) => {
+    if (!l.url) return h(l.text);
+    return /^https?:\/\//i.test(l.url) ? h(l.text) + ': <a href="' + h(l.url) + '">' + h(l.url) + '</a>' : h(l.text + ': ' + l.url);
+  }).join('<br>');
+}
+
+/** Description of `ev` rendered in the registered provider's format. */
+function calendarDetailsFor(ev, providerId) {
+  const p = CALENDAR_PROVIDERS.find((x) => x.id === providerId);
+  return p && p.format === 'text' ? calendarDetailsText(ev.detailLines, '\r\n') : calendarDetailsHtml(ev.detailLines);
+}
+
+function calendarNextDay(date) {
+  const p = date.split('-').map(Number);
+  return new Date(Date.UTC(p[0], p[1] - 1, p[2] + 1)).toISOString().slice(0, 10);
+}
+
+/** UTC offset ("-07:00") of CALENDAR_CONFIG.timeZone at local `date` (YYYY-MM-DD) and `hhmm`. DST-correct. */
+function zoneOffset(date, hhmm) {
+  const d = date.split('-').map(Number), t = (hhmm || '12:00').split(':').map(Number);
+  const wall = Date.UTC(d[0], d[1] - 1, d[2], t[0], t[1]);
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: CALENDAR_CONFIG.timeZone, hourCycle: 'h23',
+    year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+  const offsetAt = (ms) => {
+    const o = {};
+    fmt.formatToParts(new Date(ms)).forEach((x) => { o[x.type] = Number(x.value); });
+    return Math.round((Date.UTC(o.year, o.month - 1, o.day, o.hour, o.minute, o.second) - ms) / 60000);
+  };
+  let off = offsetAt(wall);
+  off = offsetAt(wall - off * 60000); // refine around a DST transition
+  const a = Math.abs(off);
+  const pad = (n) => (n < 10 ? '0' : '') + n;
+  return (off < 0 ? '-' : '+') + pad(Math.floor(a / 60)) + ':' + pad(a % 60);
+}
+
+/** "YYYYMMDDTHHMMSSZ" for local `date`/`hhmm` in the configured zone. */
+function calendarUtcStamp(date, hhmm) {
+  const off = zoneOffset(date, hhmm);
+  const sign = off[0] === '-' ? -1 : 1;
+  const offMin = sign * (Number(off.slice(1, 3)) * 60 + Number(off.slice(4, 6)));
+  const d = date.split('-').map(Number), t = hhmm.split(':').map(Number);
+  return new Date(Date.UTC(d[0], d[1] - 1, d[2], t[0], t[1]) - offMin * 60000)
+    .toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+}
+
+function googleCalendarHref(ev) {
+  const compact = (iso) => iso.replace(/-/g, '');
+  let dates;
+  if (ev.allDay) {
+    dates = compact(ev.date) + '/' + compact(calendarNextDay(ev.date));
+  } else {
+    const t = (hhmm) => hhmm.replace(':', '') + '00';
+    dates = compact(ev.date) + 'T' + t(ev.start) + '/' + compact(ev.date) + 'T' + t(ev.end);
+  }
+  const enc = encodeURIComponent;
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+    + '&text=' + enc(ev.title)
+    + '&dates=' + enc(dates).replace(/%2F/g, '/')
+    + '&details=' + enc(calendarDetailsFor(ev, 'google'))
+    + '&location=' + enc(ev.location || '')
+    + '&ctz=' + enc(CALENDAR_CONFIG.timeZone);
+}
+
+function outlookCalendarHref(ev) {
+  const enc = encodeURIComponent;
+  const startdt = ev.allDay ? ev.date : ev.date + 'T' + ev.start + ':00' + zoneOffset(ev.date, ev.start);
+  const enddt = ev.allDay ? calendarNextDay(ev.date) : ev.date + 'T' + ev.end + ':00' + zoneOffset(ev.date, ev.end);
+  return 'https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent'
+    + '&subject=' + enc(ev.title)
+    + '&body=' + enc(calendarDetailsFor(ev, 'outlook'))
+    + '&location=' + enc(ev.location || '')
+    + '&startdt=' + enc(startdt)
+    + '&enddt=' + enc(enddt)
+    + (ev.allDay ? '&allday=true' : '');
+}
+
+/** data:text/calendar href holding a one-event RFC 5545 file. `now` (Date) stamps DTSTAMP. */
+function icsCalendarHref(ev, now) {
+  const esc = (s) => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const stamp = (now || new Date()).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const slug = ev.type.replace(/[^a-z0-9]+/gi, '-');
+  const when = ev.allDay
+    ? ['DTSTART;VALUE=DATE:' + ev.date.replace(/-/g, ''), 'DTEND;VALUE=DATE:' + calendarNextDay(ev.date).replace(/-/g, '')]
+    : ['DTSTART:' + calendarUtcStamp(ev.date, ev.start), 'DTEND:' + calendarUtcStamp(ev.date, ev.end)];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PracticeMix//Schedule//EN', 'BEGIN:VEVENT',
+    // The title is in the UID so two same-type items on one date stay separate events.
+    'UID:' + ev.date + '-' + slug + '-' + ev.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '') + '@practicemix', 'DTSTAMP:' + stamp].concat(when,
+    ['SUMMARY:' + esc(ev.title), 'DESCRIPTION:' + esc(calendarDetailsText(ev.detailLines, '\n')),
+      'X-ALT-DESC;FMTTYPE=text/html:' + esc('<html><body>' + calendarDetailsHtml(ev.detailLines) + '</body></html>'),
+      'URL:' + CALENDAR_CONFIG.appUrl, 'LOCATION:' + esc(ev.location), 'END:VEVENT', 'END:VCALENDAR']);
+  return 'data:text/calendar;charset=utf-8,' + encodeURIComponent(lines.join('\r\n') + '\r\n');
+}
+
+/**
+ * Viewport position for the provider menu (position: fixed), so it never opens off-screen on a phone:
+ * below the icon unless there is more room above, left-aligned with it, clamped `margin` px inside
+ * the viewport. rect: the icon's getBoundingClientRect(); size/viewport: {width, height}.
+ */
+function placeCalMenu(rect, size, viewport, gap, margin) {
+  gap = gap == null ? 4 : gap;
+  margin = margin == null ? 8 : margin;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+  const below = viewport.height - rect.bottom - margin;
+  const above = rect.top - margin;
+  const placement = (below >= size.height + gap || below >= above) ? 'below' : 'above';
+  const top = placement === 'below' ? rect.bottom + gap : rect.top - gap - size.height;
+  return {
+    left: clamp(rect.left, margin, viewport.width - size.width - margin),
+    top: clamp(top, margin, viewport.height - size.height - margin),
+    placement
+  };
+}
+
+if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel };
+</script>
+
+<script>
+/**
  * Doc popups (choir schedule, links to learn by). Pure helpers are exported for unit tests; DOM
  * wiring only runs in a browser. Doc text is user-authored, so every node is built with
  * textContent / text nodes; links are http/https only.
@@ -5539,15 +5772,37 @@ function formatScheduleDate(iso, todayIso) {
   return String(y) === String(todayIso).slice(0, 4) ? base : base + ', ' + y;
 }
 
+/**
+ * Groups with at least one visible item, each item carrying `upcoming` (its dates >= today).
+ * An item is visible when it has no dates or any date >= today.
+ */
+function scheduleVisibleGroups(groups, todayIso) {
+  if (!Array.isArray(groups)) return [];
+  const out = [];
+  groups.forEach((g) => {
+    if (!g || !Array.isArray(g.items)) return;
+    const items = [];
+    g.items.forEach((it) => {
+      if (!it || typeof it.text !== 'string') return;
+      const dates = Array.isArray(it.dates) ? it.dates : [];
+      const upcoming = dates.filter((d) => d >= todayIso);
+      if (dates.length === 0 || upcoming.length > 0) items.push({ text: it.text, dates, upcoming });
+    });
+    if (items.length) out.push({ title: String(g.title || ''), items });
+  });
+  return out;
+}
+
 /** True when `next` is a different file or a newer edit than `prev` (or there is no usable prev). */
 function scheduleChanged(prev, next) {
   const p = prev && prev.source;
   const n = next && next.source;
   if (!p || !n || !p.modifiedTime) return true;
+  if (prev.format !== next.format) return true; // parser output shape changed (e.g. groups, format 2)
   return p.url !== n.url || p.modifiedTime !== n.modifiedTime;
 }
 
-if (typeof module !== 'undefined') module.exports = { localTodayIso, upcomingScheduleEvents, upcomingLinkEntries, safeLinkUrl, formatScheduleDate, scheduleChanged };
+if (typeof module !== 'undefined') module.exports = { localTodayIso, upcomingScheduleEvents, upcomingLinkEntries, safeLinkUrl, formatScheduleDate, scheduleChanged, scheduleVisibleGroups };
 
 /**
  * One popup over one server doc, configured per view.
@@ -5662,7 +5917,11 @@ function createDocPopup(cfg) {
   document.querySelectorAll('.' + cfg.buttonClass).forEach((b) => b.addEventListener('click', () => open(b)));
   closeBtn.addEventListener('click', close);
   id('overlay').addEventListener('click', close);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (closeCalMenu()) return; // an open calendar menu takes the Escape; the modal stays
+    close();
+  });
 }
 
 function docNode(tag, className, testId) {
@@ -5690,6 +5949,94 @@ function appendRuns(parent, runs) {
   });
 }
 
+/* Calendar menu: at most one open at a time; Escape / outside click close it (not the modal). */
+let openCalMenu = null; // { btn, menu, wrap }
+let calGlobalsBound = false;
+
+function closeCalMenu() {
+  if (!openCalMenu) return false;
+  const m = openCalMenu;
+  openCalMenu = null;
+  m.btn.setAttribute('aria-expanded', 'false');
+  m.menu.remove();
+  return true;
+}
+
+function readCalProvider() {
+  try { return localStorage.getItem('pmix.calProvider'); } catch (e) { return null; }
+}
+function writeCalProvider(pid) {
+  try { localStorage.setItem('pmix.calProvider', pid); } catch (e) { /* storage unavailable */ }
+}
+
+function bindCalGlobals() {
+  if (calGlobalsBound) return;
+  calGlobalsBound = true;
+  document.addEventListener('click', (e) => {
+    if (openCalMenu && !(openCalMenu.wrap.contains && openCalMenu.wrap.contains(e.target))) closeCalMenu();
+  });
+  // The menu is fixed to the viewport, so it would drift from its icon when the list scrolls.
+  if (typeof window !== 'undefined') {
+    document.addEventListener('scroll', (e) => { if (openCalMenu && !openCalMenu.menu.contains(e.target)) closeCalMenu(); }, true);
+    window.addEventListener('resize', closeCalMenu);
+  }
+}
+
+/** Places an attached menu on screen beside its icon (see placeCalMenu). No-op without layout (tests). */
+function positionCalMenu(btn, menu) {
+  if (typeof window === 'undefined' || !btn.getBoundingClientRect) return;
+  const p = placeCalMenu(btn.getBoundingClientRect(), { width: menu.offsetWidth, height: menu.offsetHeight },
+    { width: document.documentElement.clientWidth || window.innerWidth, height: window.innerHeight });
+  menu.style.left = p.left + 'px';
+  menu.style.top = p.top + 'px';
+  menu.setAttribute('data-placement', p.placement);
+}
+
+const CALENDAR_ICON_SVG = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" '
+  + 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 9h18M12 12v6M9 15h6"/></svg>';
+
+function buildCalendarControl(ev) {
+  bindCalGlobals();
+  const wrap = docNode('span', 'schedule-cal-wrap');
+  const btn = docNode('button', 'schedule-cal-btn', 'schedule-cal-btn');
+  btn.setAttribute('type', 'button');
+  // Icon only (calendar with a plus) keeps each item on one line; the name is the aria-label.
+  btn.innerHTML = CALENDAR_ICON_SVG;
+  btn.setAttribute('title', 'Add to calendar');
+  btn.setAttribute('data-cal-type', ev.type);
+  btn.setAttribute('aria-haspopup', 'menu');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-label', 'Add to calendar: ' + ev.title + ' (' + calendarTimeLabel(ev) + ')');
+  btn.addEventListener('click', () => {
+    const wasMine = openCalMenu && openCalMenu.btn === btn;
+    closeCalMenu();
+    if (wasMine) return;
+    const menu = docNode('div', 'schedule-cal-menu', 'schedule-cal-menu');
+    menu.setAttribute('role', 'menu');
+    const now = new Date();
+    orderedProviders(readCalProvider()).forEach((prov) => {
+      const href = prov.href(ev, now);
+      const a = docNode('a', 'schedule-cal-item', 'schedule-cal-' + prov.id);
+      a.setAttribute('role', 'menuitem');
+      a.textContent = prov.label;
+      if (typeof href === 'string' && (href.indexOf('https://') === 0 || href.indexOf('data:text/calendar') === 0)) {
+        a.setAttribute('href', href);
+      }
+      if (typeof prov.download === 'function') a.setAttribute('download', prov.download(ev));
+      else { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); }
+      a.addEventListener('click', () => { writeCalProvider(prov.id); closeCalMenu(); });
+      menu.appendChild(a);
+    });
+    wrap.appendChild(menu);
+    positionCalMenu(btn, menu);
+    btn.setAttribute('aria-expanded', 'true');
+    openCalMenu = { btn, menu, wrap };
+  });
+  wrap.appendChild(btn);
+  return wrap;
+}
+
 function renderScheduleList(result, list, today) {
   const events = upcomingScheduleEvents(result.events, today);
   if (events.length === 0) {
@@ -5711,12 +6058,27 @@ function renderScheduleList(result, list, today) {
     const ul = docNode('ul', 'schedule-items');
     (e.items || []).forEach((it) => {
       const li = document.createElement('li');
-      if (it.section) {
-        const sec = docNode('span', 'schedule-section');
-        sec.textContent = it.section;
-        li.appendChild(sec);
-      }
       li.appendChild(document.createTextNode(it.text));
+      li.appendChild(buildCalendarControl(buildCalendarEvent(e.date, it.text, result)));
+      ul.appendChild(li);
+    });
+    block.appendChild(ul);
+    list.appendChild(block);
+  });
+  scheduleVisibleGroups(result.groups, today).forEach((g) => {
+    const block = docNode('div', 'schedule-group', 'schedule-group');
+    block.setAttribute('data-group-title', g.title);
+    const h = docNode('h4', 'schedule-group-title');
+    h.textContent = g.title;
+    block.appendChild(h);
+    const ul = docNode('ul', 'schedule-items');
+    g.items.forEach((it) => {
+      const li = document.createElement('li');
+      li.appendChild(document.createTextNode(it.text));
+      // Several dates = an unresolved choice: no button. Exactly one date >= today: the usual control.
+      if (it.dates.length === 1 && it.upcoming.length === 1) {
+        li.appendChild(buildCalendarControl(buildCalendarEvent(it.upcoming[0], it.text, result, g.title + ' (optional)')));
+      }
       ul.appendChild(li);
     });
     block.appendChild(ul);
@@ -5830,7 +6192,11 @@ function initHelpGuide() {
     if (e.source === frame.contentWindow && e.data && e.data.type === 'pmix-help-close') close();
   });
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (closeCalMenu()) return; // an open calendar menu takes the Escape; the modal stays
+    close();
+  });
 }
 
 /**
@@ -5975,7 +6341,11 @@ function initMediaViewer() {
   document.getElementById('media-close').addEventListener('click', close);
   window.addEventListener('popstate', hide);
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (closeCalMenu()) return; // an open calendar menu takes the Escape; the modal stays
+    close();
+  });
   mediaViewer_ = { openFile, openChooser, close };
 }
 </script>
