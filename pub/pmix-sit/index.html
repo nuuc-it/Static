@@ -1038,7 +1038,7 @@ body {
 }
 .schedule-cal-btn:hover, .schedule-cal-btn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
 .schedule-cal-menu {
-  position: absolute; top: 100%; left: 0; margin-top: 4px; z-index: 1002; min-width: 180px;
+  position: fixed; top: 0; left: 0; z-index: 1002; min-width: 180px; max-width: calc(100vw - 16px);
   display: flex; flex-direction: column; padding: 4px;
   background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 8px;
   box-shadow: 0 10px 40px rgba(0,0,0,.6);
@@ -1353,10 +1353,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.19.8";
+var STATIC_BUILD_VERSION_ = "1.6.19.9";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-15T18:49:47.141Z";
+var STATIC_BUILD_DATE_ = "2026-10-15T20:38:35.567Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -5706,7 +5706,27 @@ function icsCalendarHref(ev, now) {
   return 'data:text/calendar;charset=utf-8,' + encodeURIComponent(lines.join('\r\n') + '\r\n');
 }
 
-if (typeof module !== 'undefined') module.exports = { CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel };
+/**
+ * Viewport position for the provider menu (position: fixed), so it never opens off-screen on a phone:
+ * below the icon unless there is more room above, left-aligned with it, clamped `margin` px inside
+ * the viewport. rect: the icon's getBoundingClientRect(); size/viewport: {width, height}.
+ */
+function placeCalMenu(rect, size, viewport, gap, margin) {
+  gap = gap == null ? 4 : gap;
+  margin = margin == null ? 8 : margin;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+  const below = viewport.height - rect.bottom - margin;
+  const above = rect.top - margin;
+  const placement = (below >= size.height + gap || below >= above) ? 'below' : 'above';
+  const top = placement === 'below' ? rect.bottom + gap : rect.top - gap - size.height;
+  return {
+    left: clamp(rect.left, margin, viewport.width - size.width - margin),
+    top: clamp(top, margin, viewport.height - size.height - margin),
+    placement
+  };
+}
+
+if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel };
 </script>
 
 <script>
@@ -5955,6 +5975,21 @@ function bindCalGlobals() {
   document.addEventListener('click', (e) => {
     if (openCalMenu && !(openCalMenu.wrap.contains && openCalMenu.wrap.contains(e.target))) closeCalMenu();
   });
+  // The menu is fixed to the viewport, so it would drift from its icon when the list scrolls.
+  if (typeof window !== 'undefined') {
+    document.addEventListener('scroll', (e) => { if (openCalMenu && !openCalMenu.menu.contains(e.target)) closeCalMenu(); }, true);
+    window.addEventListener('resize', closeCalMenu);
+  }
+}
+
+/** Places an attached menu on screen beside its icon (see placeCalMenu). No-op without layout (tests). */
+function positionCalMenu(btn, menu) {
+  if (typeof window === 'undefined' || !btn.getBoundingClientRect) return;
+  const p = placeCalMenu(btn.getBoundingClientRect(), { width: menu.offsetWidth, height: menu.offsetHeight },
+    { width: document.documentElement.clientWidth || window.innerWidth, height: window.innerHeight });
+  menu.style.left = p.left + 'px';
+  menu.style.top = p.top + 'px';
+  menu.setAttribute('data-placement', p.placement);
 }
 
 const CALENDAR_ICON_SVG = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" '
@@ -5994,6 +6029,7 @@ function buildCalendarControl(ev) {
       menu.appendChild(a);
     });
     wrap.appendChild(menu);
+    positionCalMenu(btn, menu);
     btn.setAttribute('aria-expanded', 'true');
     openCalMenu = { btn, menu, wrap };
   });
