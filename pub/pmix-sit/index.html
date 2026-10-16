@@ -1054,8 +1054,17 @@ body {
 .schedule-source a { color: var(--blue); }
 /* Subscribe / one-date note under the schedule list (bd atc-hu9). */
 .schedule-cal-note { padding: var(--spacing-sm) var(--spacing); border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2); }
-.schedule-cal-note summary { cursor: pointer; font-weight: 600; color: var(--text); }
-.schedule-cal-note[open] summary { margin-bottom: 4px; }
+.schedule-cal-note summary {
+  list-style: none; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px;
+  padding: 8px 12px; border: 1px solid var(--blue); border-radius: var(--radius);
+  background: color-mix(in oklab, var(--blue) 14%, transparent);
+  color: var(--text); font-weight: 600; cursor: pointer;
+}
+.schedule-cal-note summary::-webkit-details-marker { display: none; }
+.schedule-cal-note-summary-icon { display: inline-flex; }
+.schedule-cal-note-chevron { margin-left: auto; font-size: 20px; line-height: 1; transition: transform .15s; }
+.schedule-cal-note[open] .schedule-cal-note-chevron { transform: rotate(90deg); }
+.schedule-cal-note[open] summary { margin-bottom: 8px; }
 .schedule-cal-note p + p { margin-top: 4px; }
 .schedule-cal-note a { color: var(--blue); font-weight: 600; }
 .schedule-cal-note-icon { display: inline-flex; vertical-align: -3px; color: var(--text); }
@@ -1363,10 +1372,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.23.2";
+var STATIC_BUILD_VERSION_ = "1.6.23.3";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-16T17:07:07.067Z";
+var STATIC_BUILD_DATE_ = "2026-10-16T17:48:01.903Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -5491,7 +5500,7 @@ const UI = (() => {
       </div>
       <div id="schedule-list" data-testid="schedule-list" class="schedule-body"></div>
       <details class="schedule-cal-note" data-testid="schedule-cal-note">
-        <summary data-testid="schedule-cal-note-summary">Add to your calendar</summary>
+        <summary data-testid="schedule-cal-note-summary"><span class="schedule-cal-note-summary-icon" id="schedule-cal-note-summary-icon"></span>Add to your calendar<span class="schedule-cal-note-chevron" aria-hidden="true">›</span></summary>
         <p>Add one date: tap <span class="schedule-cal-note-icon" id="schedule-cal-note-icon"></span> beside it. Or subscribe to the choir calendar to get every date, kept up to date for you:</p>
         <p class="schedule-feed"><code id="schedule-feed-url" data-testid="schedule-feed-url"></code><button type="button" class="schedule-feed-copy" id="schedule-feed-copy" data-testid="schedule-feed-copy">Copy</button></p>
         <p><a data-testid="schedule-cal-help" href="calendar-help.html" target="_blank" rel="noopener">How to add the choir calendar</a></p>
@@ -5548,7 +5557,7 @@ const CALENDAR_CONFIG = {
   appUrl: 'https://northlakeuu.org/pmix',
   location: '308 4th Ave South, Kirkland, WA 98033',
   // Subscription feed (bd atc-07h): built by tools/build-choir-ics.js, published as pub/pmix-cal/choir.ics.
-  feedName: 'Northlake UU Choir Schedule', feedRefresh: 'PT12H',
+  feedName: 'Choir Schedule-Northlake UU Church', feedRefresh: 'PT12H',
   // Where subscribers point their calendars; calendar-help.html shows the same address (bd atc-hu9).
   feedUrl: 'https://nuuc-it.github.io/Static/pub/pmix-cal/choir.ics',
   // Title suffix for each candidate date of an undecided group item (bd atc-c2z).
@@ -5752,6 +5761,27 @@ function icsFold(line) {
 }
 
 /**
+ * One date's calendar events (bd atc-9kl): items matching >=1 rule merge into ONE event (texts joined
+ * by '; ': earliest start, latest end); each unmatched item is its own all-day event. Returns
+ * [{ ev, itemIndexes }] ordered by each entry's first item index.
+ */
+function scheduleDayEvents(date, items, schedule, detailsPrefix) {
+  const timed = [];
+  const out = [];
+  (items || []).forEach((it, i) => {
+    if (classifyScheduleItem(it.text).length > 0) {
+      if (!timed.length) out.push({ timed: true, first: i });
+      timed.push(i);
+    } else {
+      out.push({ ev: buildCalendarEvent(date, it.text, schedule, detailsPrefix), itemIndexes: [i] });
+    }
+  });
+  return out.map((x) => (x.timed
+    ? { ev: buildCalendarEvent(date, timed.map((i) => items[i].text).join('; '), schedule, detailsPrefix), itemIndexes: timed }
+    : x));
+}
+
+/**
  * Every calendar event the schedule yields, in document order: each item of each dated event, then
  * each group item: one date = one event; several dates (an unresolved choice) = one tentative
  * "alternate date" event per date (bd atc-c2z).
@@ -5761,7 +5791,7 @@ function scheduleCalendarEvents(schedule) {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const short = (d) => { const p = d.split('-'); return MONTHS[Number(p[1]) - 1] + ' ' + Number(p[2]); };
   ((schedule && schedule.events) || []).forEach((e) => {
-    (e.items || []).forEach((it) => out.push(buildCalendarEvent(e.date, it.text, schedule)));
+    scheduleDayEvents(e.date, e.items || [], schedule).forEach((x) => out.push(x.ev));
   });
   ((schedule && schedule.groups) || []).forEach((g) => {
     (g.items || []).forEach((it) => {
@@ -5825,7 +5855,7 @@ function placeCalMenu(rect, size, viewport, gap, margin) {
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel, buildCalendarFeed, scheduleCalendarEvents, calendarUid };
+if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, scheduleDayEvents, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel, buildCalendarFeed, scheduleCalendarEvents, calendarUid };
 </script>
 
 <script>
@@ -6155,10 +6185,13 @@ function renderScheduleList(result, list, today) {
     }
     block.appendChild(h);
     const ul = docNode('ul', 'schedule-items');
-    (e.items || []).forEach((it) => {
+    const day = scheduleDayEvents(e.date, e.items || [], result);
+    (e.items || []).forEach((it, i) => {
       const li = document.createElement('li');
       li.appendChild(document.createTextNode(it.text));
-      li.appendChild(buildCalendarControl(buildCalendarEvent(e.date, it.text, result)));
+      // One control per calendar event, on its first item (merged timed items share it).
+      const entry = day.find((x) => x.itemIndexes[0] === i);
+      if (entry) li.appendChild(buildCalendarControl(entry.ev));
       ul.appendChild(li);
     });
     block.appendChild(ul);
@@ -6253,6 +6286,7 @@ function initScheduleCalNote() {
   const url = CALENDAR_CONFIG.feedUrl;
   document.getElementById('schedule-feed-url').textContent = url;
   document.getElementById('schedule-cal-note-icon').innerHTML = CALENDAR_ICON_SVG;
+  document.getElementById('schedule-cal-note-summary-icon').innerHTML = CALENDAR_ICON_SVG;
   const btn = document.getElementById('schedule-feed-copy');
   btn.addEventListener('click', () => {
     const done = () => { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy'; }, 2500); };
