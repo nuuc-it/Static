@@ -1052,6 +1052,14 @@ body {
 .links-notes p { margin: 0 0 4px; }
 .schedule-source { padding: var(--spacing-sm) var(--spacing); border-top: 1px solid var(--border); font-size: 12px; color: var(--text-3); }
 .schedule-source a { color: var(--blue); }
+/* Subscribe / one-date note under the schedule list (bd atc-hu9). */
+.schedule-cal-note { padding: var(--spacing-sm) var(--spacing); border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2); }
+.schedule-cal-note p + p { margin-top: 4px; }
+.schedule-cal-note a { color: var(--blue); font-weight: 600; }
+.schedule-cal-note-icon { display: inline-flex; vertical-align: -3px; color: var(--text); }
+.schedule-feed { display: flex; align-items: center; gap: 8px; }
+.schedule-feed code { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: 12px; color: var(--text); }
+.schedule-feed-copy { flex: none; min-height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
 .schedule-retry { margin-top: var(--spacing-sm); }
 
 /* ================================================================== */
@@ -1353,10 +1361,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.19.9";
+var STATIC_BUILD_VERSION_ = "1.6.23.1";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-15T20:38:35.567Z";
+var STATIC_BUILD_DATE_ = "2026-10-16T03:03:55.681Z";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -5480,6 +5488,11 @@ const UI = (() => {
         <button id="schedule-close-btn" data-testid="schedule-close-btn" class="btn btn-close" aria-label="Close">✕</button>
       </div>
       <div id="schedule-list" data-testid="schedule-list" class="schedule-body"></div>
+      <div class="schedule-cal-note" data-testid="schedule-cal-note">
+        <p>Add one date: tap <span class="schedule-cal-note-icon" id="schedule-cal-note-icon"></span> beside it. Or subscribe to the choir calendar to get every date, kept up to date for you:</p>
+        <p class="schedule-feed"><code id="schedule-feed-url" data-testid="schedule-feed-url"></code><button type="button" class="schedule-feed-copy" id="schedule-feed-copy" data-testid="schedule-feed-copy">Copy</button></p>
+        <p><a data-testid="schedule-cal-help" href="calendar-help.html" target="_blank" rel="noopener">How to add the choir calendar</a></p>
+      </div>
       <div id="schedule-source" class="schedule-source" hidden></div>
     </div>
   </div>
@@ -5517,7 +5530,7 @@ const UI = (() => {
  * Calendar export (bd atc-73d). Each schedule item gets one calendar icon button opening a provider menu.
  *
  * Maintainer edits only the three tables below:
- *  - CALENDAR_CONFIG: time zone and title prefix.
+ *  - CALENDAR_CONFIG: time zone, title prefix, and the subscription feed's name and refresh interval.
  *  - CALENDAR_EVENT_RULES: ordered; each rule tests the item text (case-insensitive). When a rule
  *    matches, its matched text is removed from the working string, so later rules cannot match it
  *    again (e.g. "Dress Rehearsal" never also yields a "rehearse" match). An item yields ONE event:
@@ -5531,6 +5544,10 @@ const CALENDAR_CONFIG = {
   timeZone: 'America/Los_Angeles', titlePrefix: 'Choir: ',
   appUrl: 'https://northlakeuu.org/pmix',
   location: '308 4th Ave South, Kirkland, WA 98033',
+  // Subscription feed (bd atc-07h): built by tools/build-choir-ics.js, published as pub/pmix-cal/choir.ics.
+  feedName: 'Northlake UU Choir Schedule', feedRefresh: 'PT12H',
+  // Where subscribers point their calendars; calendar-help.html shows the same address (bd atc-hu9).
+  feedUrl: 'https://nuuc-it.github.io/Static/pub/pmix-cal/choir.ics',
 };
 
 const CALENDAR_EVENT_RULES = [
@@ -5689,21 +5706,85 @@ function outlookCalendarHref(ev) {
     + (ev.allDay ? '&allday=true' : '');
 }
 
-/** data:text/calendar href holding a one-event RFC 5545 file. `now` (Date) stamps DTSTAMP. */
-function icsCalendarHref(ev, now) {
+/** Stable event id: date, type and title, so two same-type items on one date stay separate events. */
+function calendarUid(ev) {
+  const slug = ev.type.replace(/[^a-z0-9]+/gi, '-');
+  const title = ev.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '');
+  return ev.date + '-' + slug + '-' + title + '@practicemix';
+}
+
+/** RFC 5545 VEVENT content lines (unfolded) for `ev`. `now` (Date) stamps DTSTAMP. */
+function icsEventLines(ev, now) {
   const esc = (s) => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
   const stamp = (now || new Date()).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-  const slug = ev.type.replace(/[^a-z0-9]+/gi, '-');
   const when = ev.allDay
     ? ['DTSTART;VALUE=DATE:' + ev.date.replace(/-/g, ''), 'DTEND;VALUE=DATE:' + calendarNextDay(ev.date).replace(/-/g, '')]
     : ['DTSTART:' + calendarUtcStamp(ev.date, ev.start), 'DTEND:' + calendarUtcStamp(ev.date, ev.end)];
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PracticeMix//Schedule//EN', 'BEGIN:VEVENT',
-    // The title is in the UID so two same-type items on one date stay separate events.
-    'UID:' + ev.date + '-' + slug + '-' + ev.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '') + '@practicemix', 'DTSTAMP:' + stamp].concat(when,
+  return ['BEGIN:VEVENT', 'UID:' + calendarUid(ev), 'DTSTAMP:' + stamp].concat(when,
     ['SUMMARY:' + esc(ev.title), 'DESCRIPTION:' + esc(calendarDetailsText(ev.detailLines, '\n')),
       'X-ALT-DESC;FMTTYPE=text/html:' + esc('<html><body>' + calendarDetailsHtml(ev.detailLines) + '</body></html>'),
-      'URL:' + CALENDAR_CONFIG.appUrl, 'LOCATION:' + esc(ev.location), 'END:VEVENT', 'END:VCALENDAR']);
+      'URL:' + CALENDAR_CONFIG.appUrl, 'LOCATION:' + esc(ev.location), 'END:VEVENT']);
+}
+
+/** data:text/calendar href holding a one-event RFC 5545 file. `now` (Date) stamps DTSTAMP. */
+function icsCalendarHref(ev, now) {
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PracticeMix//Schedule//EN']
+    .concat(icsEventLines(ev, now), ['END:VCALENDAR']);
   return 'data:text/calendar;charset=utf-8,' + encodeURIComponent(lines.join('\r\n') + '\r\n');
+}
+
+/** Folds one content line at 75 octets (RFC 5545 3.1), never inside a UTF-8 character. */
+function icsFold(line) {
+  const out = [];
+  let cur = '', bytes = 0, limit = 75;
+  for (const ch of line) {
+    const n = ch.codePointAt(0) < 0x80 ? 1 : ch.codePointAt(0) < 0x800 ? 2 : ch.codePointAt(0) < 0x10000 ? 3 : 4;
+    if (bytes + n > limit) { out.push(cur); cur = ' '; bytes = 1; limit = 75; }
+    cur += ch; bytes += n;
+  }
+  out.push(cur);
+  return out.join('\r\n');
+}
+
+/**
+ * Every calendar event the schedule yields, in document order: each item of each dated event, then
+ * each group item with exactly one date (several dates = an unresolved choice, omitted).
+ */
+function scheduleCalendarEvents(schedule) {
+  const out = [];
+  ((schedule && schedule.events) || []).forEach((e) => {
+    (e.items || []).forEach((it) => out.push(buildCalendarEvent(e.date, it.text, schedule)));
+  });
+  ((schedule && schedule.groups) || []).forEach((g) => {
+    (g.items || []).forEach((it) => {
+      if (Array.isArray(it.dates) && it.dates.length === 1) {
+        out.push(buildCalendarEvent(it.dates[0], it.text, schedule, g.title + ' (optional)'));
+      }
+    });
+  });
+  return out;
+}
+
+/**
+ * Subscription feed (bd atc-07h): the whole schedule as one folded RFC 5545 calendar. DTSTAMP is the
+ * schedule's edit time, so an unchanged schedule gives byte-identical output; a repeated UID keeps the first.
+ */
+function buildCalendarFeed(schedule) {
+  const modified = schedule && schedule.source && schedule.source.modifiedTime;
+  const now = modified ? new Date(modified) : new Date();
+  const seen = {};
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PracticeMix//Choir Schedule Feed//EN',
+    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:' + CALENDAR_CONFIG.feedName,
+    'X-WR-TIMEZONE:' + CALENDAR_CONFIG.timeZone, 'REFRESH-INTERVAL;VALUE=DURATION:' + CALENDAR_CONFIG.feedRefresh,
+    'X-PUBLISHED-TTL:' + CALENDAR_CONFIG.feedRefresh];
+  scheduleCalendarEvents(schedule).forEach((ev) => {
+    const uid = calendarUid(ev);
+    if (seen[uid]) return;
+    seen[uid] = true;
+    Array.prototype.push.apply(lines, icsEventLines(ev, now));
+  });
+  lines.push('END:VCALENDAR');
+  return lines.map(icsFold).join('\r\n') + '\r\n';
 }
 
 /**
@@ -5726,7 +5807,7 @@ function placeCalMenu(rect, size, viewport, gap, margin) {
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel };
+if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel, buildCalendarFeed, scheduleCalendarEvents, calendarUid };
 </script>
 
 <script>
@@ -6145,7 +6226,24 @@ if (typeof document !== 'undefined') {
     render: renderLinksList
   });
   initHelpGuide();
+  initScheduleCalNote();
   initMediaViewer();
+}
+
+/** Schedule popup's subscribe note (bd atc-hu9): the feed address and icon come from the calendar block. */
+function initScheduleCalNote() {
+  const url = CALENDAR_CONFIG.feedUrl;
+  document.getElementById('schedule-feed-url').textContent = url;
+  document.getElementById('schedule-cal-note-icon').innerHTML = CALENDAR_ICON_SVG;
+  const btn = document.getElementById('schedule-feed-copy');
+  btn.addEventListener('click', () => {
+    const done = () => { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy'; }, 2500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, () => window.prompt('Copy this address:', url));
+    } else {
+      window.prompt('Copy this address:', url);
+    }
+  });
 }
 
 /**
