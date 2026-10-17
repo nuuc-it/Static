@@ -275,6 +275,14 @@ body {
   transition: all .2s;
 }
 
+.subfolder-btn { position: relative; }
+/* atc-dfr rev 3 item 12: a small lock in the button's top-right corner while signed out. Absolutely positioned,
+   so it changes neither the button's size nor the wrapping of its neighbours. */
+.subfolder-btn[data-locked="true"]::after {
+  content: "\1F512"; position: absolute; top: 1px; right: 3px;
+  font-size: 9px; line-height: 1; opacity: .7; pointer-events: none;
+}
+
 .subfolder-btn:hover {
   background: var(--blue); color: var(--bg); border-color: var(--blue);
 }
@@ -1401,10 +1409,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.23.8";
+var STATIC_BUILD_VERSION_ = "1.6.23.9";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-17T02:54:47.502Z";
+var STATIC_BUILD_DATE_ = "2026-10-17T03:50:32.840Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -1510,7 +1518,15 @@ async function callApi(action, args) {
   // A refreshed session replaces the stored one; signedOut clears it. Either way the call itself succeeded.
   if (absorbSessionFields(sessionStorage_(), body) && typeof onSessionChanged_ === 'function') onSessionChanged_();
 
-  if (!body.ok) throw new Error('Server rejected the request: ' + (body.error || 'unknown error'));
+  if (!body.ok) {
+    var err = new Error('Server rejected the request: ' + (body.error || 'unknown error'));
+    if (body.error === 'sign_in_required') {
+      // atc-dfr rev 3 item 11: our pass is not (or no longer) good. Forget it and ask again.
+      err.code = 'sign_in_required';
+      if (typeof onSignInRequired_ === 'function') onSignInRequired_();
+    }
+    throw err;
+  }
   return body.result;
 }
 
@@ -1958,6 +1974,43 @@ function onSessionChanged_() {
   renderSignIn_();
 }
 
+// atc-dfr rev 3 (adr/0012): folders other than the initial one need a session.
+var initialFolderId_ = null;       // set by the app from the initial listing
+var pendingSignInResume_ = null;   // navigation to complete after a successful sign-in
+var SIGN_IN_PROMPT_ = 'Sign in to open other folders';
+var signInPrompt_ = '';
+
+function isSignedIn_() { return !!currentSession_(); }
+
+/** Initial folder (or its cached '__initial__' alias) is always allowed; anything else needs a session. */
+function isAllowedFolder_(folderId) {
+  return isSignedIn_() || folderId === '__initial__' || (!!initialFolderId_ && folderId === initialFolderId_);
+}
+
+/** Opens the sign-in panel with the prompt; `resume` runs after a successful sign-in. */
+function requireSignIn_(resume) {
+  pendingSignInResume_ = typeof resume === 'function' ? resume : null;
+  signInPrompt_ = SIGN_IN_PROMPT_;
+  openSignIn_();
+}
+
+/** Server said sign_in_required: drop the stored session and show the panel. */
+function onSignInRequired_() {
+  clearStoredSession(sessionStorage_());
+  memSession_ = null;
+  renderSignIn_();
+  signInPrompt_ = SIGN_IN_PROMPT_;
+  openSignIn_();
+}
+
+function renderLocks_() {
+  var signedIn = isSignedIn_();
+  document.querySelectorAll('.subfolder-btn').forEach(function (b) {
+    var locked = !signedIn && b.dataset.folderId !== initialFolderId_;
+    b.dataset.locked = locked ? 'true' : 'false';
+  });
+}
+
 function renderSignIn_() {
   var cur = currentSession_();
   var q = function (id) { return document.querySelector('[data-testid="' + id + '"]'); };
@@ -1967,6 +2020,7 @@ function renderSignIn_() {
   q('signout-btn').classList.toggle('hidden', !cur);
   q('signin-btn').classList.toggle('hidden', !!cur);
   if (cur) q('signin-panel').classList.add('hidden');
+  renderLocks_();
 }
 
 function setSignInMessage_(text, isError) {
@@ -1978,6 +2032,9 @@ function setSignInMessage_(text, isError) {
 function signOut_() {
   clearStoredSession(sessionStorage_());
   memSession_ = null;
+  pendingSignInResume_ = null;
+  signInPrompt_ = '';
+  if (typeof onSignedOutHook_ === 'function') onSignedOutHook_();
   try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ }
   renderSignIn_();
 }
@@ -2002,14 +2059,14 @@ async function openSignIn_() {
     setSignInMessage_('Sign-in is not available in this build.', true);
     return;
   }
-  setSignInMessage_('Loading Google sign-in…');
+  setSignInMessage_(signInPrompt_ || 'Loading Google sign-in…');
   try { await loadGis_(); } catch (e) { setSignInMessage_(e.message, true); return; }
   if (!gisReady_) {
     google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID_, callback: onGoogleCredential_, auto_select: false });
     google.accounts.id.renderButton(document.getElementById('gis-signin-button'), { type: 'standard', shape: 'pill' });
     gisReady_ = true;
   }
-  setSignInMessage_('');
+  setSignInMessage_(signInPrompt_);
 }
 
 async function onGoogleCredential_(credentialResponse) {
@@ -2028,7 +2085,11 @@ async function onGoogleCredential_(credentialResponse) {
     var value = { session: signedIn.session, email: signedIn.email, firstName: firstNameFor(givenNameFromCredential(credentialResponse.credential), signedIn.email) };
     if (!writeStoredSession(sessionStorage_(), value)) memSession_ = value;
     setSignInMessage_('');
+    signInPrompt_ = '';
     renderSignIn_();
+    var resume = pendingSignInResume_;
+    pendingSignInResume_ = null;
+    if (resume) resume();
   } catch (e) {
     setSignInMessage_('Sign-in failed. You can keep using Practice Mix without signing in.', true);
   }
@@ -4290,6 +4351,7 @@ const UI = (() => {
 
   // Two tiers: state.folderCache (memory) over localStorage (pmix.<target>.v1.folder.<id>).
   function getCachedListing(folderId) {
+    if (!isAllowedFolder_(folderId)) return null; // atc-dfr rev 3: never show a non-initial listing while signed out
     const mem = state.folderCache.get(folderId);
     if (mem && !mem.error) return mem;
     const stored = loadListingPersistent(folderId);
@@ -4496,6 +4558,7 @@ const UI = (() => {
   // ================================================================
 
   function handleOpenNewClick() {
+    if (!isSignedIn_()) { requireSignIn_(handleOpenNewClick); return; }
     el.folderIdInput.value = '';
     showFolderStatus('', '');
     showFolderPicker(true);
@@ -4523,6 +4586,7 @@ const UI = (() => {
       showFolderStatus('Enter a valid folder ID or Drive URL', 'error');
       return;
     }
+    if (!isAllowedFolder_(folderId)) { requireSignIn_(handleFolderGoClick); return; }
 
     // Immediately flip to content area with loading state so the user sees
     // feedback before the RPC resolves (can take several seconds first time).
@@ -4560,6 +4624,7 @@ const UI = (() => {
       if (cachedGo) revalidateListing(folderId, result.folderId);
     } catch (error) {
       showFolderPicker(true);
+      if (error && error.code === 'sign_in_required') { pendingSignInResume_ = handleFolderGoClick; return; }
       showFolderStatus('Failed to load folder: ' + error, 'error');
     }
   }
@@ -4744,12 +4809,16 @@ const UI = (() => {
         btn.title = 'Shortcut to another folder';
         btn.dataset.shortcut = 'true';
       }
+      btn.dataset.folderId = folder.id;
+      btn.dataset.locked = (!isSignedIn_() && folder.id !== initialFolderId_) ? 'true' : 'false';
+      if (btn.dataset.locked === 'true') btn.title = (folder.isShortcut ? 'Shortcut to another folder. ' : '') + 'Sign in to open';
       btn.addEventListener('click', () => handleSubFolderClick(folder.id));
       el.subfoldersList.appendChild(btn);
     });
   }
 
   function prefetchSubfolders(subfolders) {
+    if (!isSignedIn_()) return; // atc-dfr rev 3: nothing beyond the initial folder is fetched while signed out
     subfolders.slice(0, 10).forEach(subfolder => {
       if (getCachedListing(subfolder.id)) return;
       callApi('listFilesAndFolders', { folderId: subfolder.id, folderPath: [] }).then(result => {
@@ -4795,6 +4864,7 @@ const UI = (() => {
   }
 
   async function handleSubFolderClick(folderId) {
+    if (!isAllowedFolder_(folderId)) { requireSignIn_(() => handleSubFolderClick(folderId)); return; }
     pushNav();
 
     // Invalidate any in-flight track loads immediately, before any await.
@@ -4837,9 +4907,29 @@ const UI = (() => {
       renderSubFolders();
     } catch (error) {
       handleSelectionBack();
+      if (error && error.code === 'sign_in_required') {
+        pendingSignInResume_ = () => handleSubFolderClick(folderId); // panel already opened by callApi
+        return;
+      }
       showSelectionStatus('Failed to open folder: ' + error, 'error');
     }
   }
+
+  // Signing out while inside a non-initial folder returns to the initial one (never asks).
+  window.onSignedOutHook_ = function () {
+    if (!initialFolderId_ || state.folderId === initialFolderId_ || state.currentPage !== 'selection') return;
+    const init = state.folderCache.get('__initial__') || loadListingPersistent('__initial__');
+    if (!init) return;
+    state.folderToken++;
+    prefetcher.cancel();
+    state.navStack = [];
+    state.currentPath = [];
+    showListing(init);
+    clearSelectedTracks();
+    el.selectionBackBtn.style.display = 'none';
+    renderTrackButtons();
+    renderSubFolders();
+  };
 
   async function handleTrackButtonClick(fileId) {
     const btn = document.querySelector(`[data-file-id="${fileId}"]`);
@@ -5679,6 +5769,7 @@ const UI = (() => {
       }
 
       if (!folderResult.error) {
+        initialFolderId_ = folderResult.folderId;
         showListing(folderResult);
         renderTrackButtons();
         renderSubFolders();
