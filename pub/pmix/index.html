@@ -1417,10 +1417,10 @@ li > .schedule-cal-wrap { margin-left: 8px; }
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.25";
+var STATIC_BUILD_VERSION_ = "1.6.27";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-10-17T13:28:55.831Z";
+var STATIC_BUILD_DATE_ = "2026-10-17T16:06:42.567Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbz-YsKzVeoehCr05zF4kF_wbKuTAhMm1RU1KSXK-W6UOKt9zg1zVTUi_TKKYnpkhSR-/exec";
@@ -6015,6 +6015,52 @@ function classifyScheduleItem(text) {
   return out;
 }
 
+/** Length of an event whose item gives a single time (bd atc-df0). */
+const CALENDAR_DEFAULT_MINUTES = 150;
+
+const TIME_TOKEN = '(\\d{1,2})(?::(\\d{2}))?(?:\\s*([ap]\\.m\\.|[ap]m)(?![A-Za-z])|([ap])(?![A-Za-z]))?';
+const TIME_RE = new RegExp('(?<![\\w/:.\\u2013\\u2014-])' + TIME_TOKEN
+  + '(?:\\s*(?:-|\\u2013|\\u2014|to)\\s*' + TIME_TOKEN + ')?(?![\\w/:]|[.-]\\d)', 'gi');
+const MONTH_BEFORE_RE = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*$/i;
+
+/**
+ * First time reference in an item's text (bd atc-df0): { start, end } as 'HH:MM', or null. A single time
+ * is the start of a CALENDAR_DEFAULT_MINUTES event. Dates, bare single numbers, URLs and numbers glued
+ * to letters are never times; a missing am/pm is inferred (see AC rev 2 on bd atc-df0).
+ */
+function parseScheduleTime(text) {
+  const src = String(text == null ? '' : text).replace(/(?:https?:\/\/|www\.)\S+/gi, ' ');
+  const tok = (m, i) => {
+    const h = Number(m[i]);
+    const mi = m[i + 1] === undefined ? null : Number(m[i + 1]);
+    const ap = (m[i + 2] || m[i + 3] || '').charAt(0).toLowerCase();
+    if (mi !== null && mi > 59) return null;
+    if (ap ? (h < 1 || h > 12) : (mi === null ? (h < 1 || h > 12) : h > 23)) return null;
+    return { h, mi: mi || 0, ap, colon: mi !== null, bare: !ap && mi === null };
+  };
+  const to24 = (t, ap) => (ap ? (t.h % 12) + (ap === 'p' ? 12 : 0) : t.h) * 60 + t.mi;
+  const guess = (t) => (t.colon && t.h > 12 ? t.h : (t.h >= 7 && t.h <= 11) ? t.h : t.h === 12 ? 12 : t.h === 0 ? 0 : t.h + 12) * 60 + t.mi;
+  const hhmm = (min) => { const m = Math.min(min, 23 * 60 + 59); return (m < 600 ? '0' : '') + Math.floor(m / 60) + ':' + (m % 60 < 10 ? '0' : '') + (m % 60); };
+  for (const m of src.matchAll(TIME_RE)) {
+    if (MONTH_BEFORE_RE.test(src.slice(0, m.index))) continue;
+    const a = tok(m, 1);
+    if (!a) continue;
+    const b = m[5] === undefined ? null : tok(m, 5);
+    if (b) {
+      let s, e;
+      if (a.ap && b.ap) { s = to24(a, a.ap); e = to24(b, b.ap); }
+      else if (b.ap) { s = to24(a, b.ap); e = to24(b, b.ap); if (s >= e) s = to24(a, b.ap === 'a' ? 'p' : 'a'); }
+      else if (a.ap) { s = to24(a, a.ap); e = to24(b, a.ap); if (e <= s) e = to24(b, a.ap === 'a' ? 'p' : 'a'); }
+      else { s = guess(a); e = guess(b); if (e <= s && e < 12 * 60) e += 12 * 60; }
+      if (e > s) return { start: hhmm(s), end: hhmm(e) };
+    }
+    if (a.bare) continue;
+    const s = a.ap ? to24(a, a.ap) : guess(a);
+    return { start: hhmm(s), end: hhmm(s + CALENDAR_DEFAULT_MINUTES) };
+  }
+  return null;
+}
+
 /** Human time range, e.g. "9:00–11:30 AM"; 'all day' for all-day events. */
 function calendarTimeLabel(entry) {
   if (entry.allDay) return 'all day';
@@ -6026,22 +6072,46 @@ function calendarTimeLabel(entry) {
 }
 
 /**
+ * Timed entries [{ type, label, start, end, note? }] for the texts of one event (bd atc-df0). A text
+ * with an explicit time gives one entry (that time wins over its rules'); other texts give their rule
+ * matches, each rule once.
+ */
+function calendarTimeEntries(parts) {
+  const out = [];
+  parts.forEach((text) => {
+    const t = parseScheduleTime(text);
+    const rules = classifyScheduleItem(text);
+    if (t) {
+      out.push({ type: rules.length ? rules.map((r) => r.type).join('+') : 'timed',
+        label: rules.length ? rules.map((r) => r.label).join(' + ') : calendarCleanTitle(text).slice(0, 60),
+        start: t.start, end: t.end, explicit: true });
+    } else {
+      rules.forEach((r) => { if (!out.some((o) => o.type === r.type && !o.explicit)) out.push(Object.assign({}, r)); });
+    }
+  });
+  return out;
+}
+
+/**
  * ONE combined event for a schedule item on `date` (YYYY-MM-DD): earliest start, latest end, types
  * joined by '+'. Details: a "<label>: <time>" line per rule when several matched, then notes,
  * schedule title, source URL. No rule matched -> an all-day event.
  */
-function buildCalendarEvent(date, itemText, schedule, detailsPrefix) {
+function buildCalendarEvent(date, itemText, schedule, detailsPrefix, parts) {
   const sched = schedule || {};
-  const srcUrl = sched.source && sched.source.url;
-  const rules = classifyScheduleItem(itemText);
+  const rules = calendarTimeEntries(parts && parts.length ? parts : [itemText]);
   const lines = detailsPrefix ? [{ text: detailsPrefix }] : [];
   if (rules.length > 1) rules.forEach((r) => lines.push({ text: r.label + ': ' + calendarTimeLabel({ start: r.start, end: r.end }) }));
   rules.forEach((r) => { if (r.note) lines.push({ text: r.note }); });
   if (sched.title) lines.push({ text: sched.title });
-  if (srcUrl) lines.push({ text: 'Schedule document', url: srcUrl });
-  lines.push({ text: 'Practice Mix', url: CALENDAR_CONFIG.appUrl });
+  const docs = calendarDocLines(sched.docs);
+  if (docs.length) {
+    lines.push({ text: 'Choir documents:', docs: true });
+    docs.forEach((l) => lines.push(l));
+  }
+  lines.push({ text: 'Generated by Practice Mix', url: CALENDAR_CONFIG.appUrl, footer: true });
   return {
-    type: rules.length ? rules.map((r) => r.type).join('+') : 'all-day',
+    type: rules.length ? rules.map((r) => r.type).filter((t, i, a) => a.indexOf(t) === i).join('+') : 'all-day',
     title: CALENDAR_CONFIG.titlePrefix + calendarCleanTitle(itemText),
     date,
     location: CALENDAR_CONFIG.location,
@@ -6053,24 +6123,77 @@ function buildCalendarEvent(date, itemText, schedule, detailsPrefix) {
   };
 }
 
-/** Plain-text description: link lines as '<label>: <url>', joined by `eol`. */
-function calendarDetailsText(lines, eol) {
-  return (lines || []).map((l) => (l.url ? l.text + ': ' + l.url : l.text)).join(eol);
+/** Folder documents (bd atc-9i0) as link lines for event descriptions; unusable entries are skipped. */
+function calendarDocLines(docs) {
+  return (Array.isArray(docs) ? docs : []).filter((d) => d && typeof d.name === 'string' && typeof d.url === 'string'
+    && /^https?:\/\//i.test(d.url) && d.name.replace(/\s+/g, ' ').trim())
+    .map((d) => ({ text: d.name.replace(/\s+/g, ' ').trim(), url: d.url, docs: true, anchor: true, bullet: true }));
 }
 
-/** HTML description: text and URLs escaped, <br> between lines, http(s) link lines get an anchor. */
+/** App version for the description footer ("v1.2.3"), or ''. The feed builder sets CALENDAR_CONFIG.version. */
+function calendarAppVersion() {
+  let v = CALENDAR_CONFIG.version;
+  if (!v && typeof BUILD_INFO !== 'undefined' && BUILD_INFO) v = BUILD_INFO.version;
+  v = String(v == null ? '' : v);
+  return /^\d/.test(v) ? 'v' + v : /^v\d/.test(v) ? v : '';
+}
+
+const calendarEsc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** Groups consecutive bullet lines into one list block: [{ ul: [line...] } | { line }]. */
+function calendarBlocks(lines) {
+  const out = [];
+  (lines || []).forEach((l) => {
+    if (l.bullet) {
+      const last = out[out.length - 1];
+      if (last && last.ul) last.ul.push(l); else out.push({ ul: [l] });
+    } else out.push({ line: l });
+  });
+  return out;
+}
+
+const calendarIsHttp = (u) => /^https?:\/\//i.test(u);
+
+/** HTML for one block (escaped; only http(s) URLs become anchors). */
+function calendarBlockHtml(b) {
+  const h = calendarEsc;
+  const anchor = (l) => (calendarIsHttp(l.url) ? '<a href="' + h(l.url) + '">' + h(l.text) + '</a>' : h(l.text));
+  if (b.ul) return '<ul>' + b.ul.map((l) => '<li>' + anchor(l) + '</li>').join('') + '</ul>';
+  const l = b.line;
+  if (l.footer) {
+    const v = calendarAppVersion();
+    return h(l.text) + ' (' + (calendarIsHttp(l.url) ? '<a href="' + h(l.url) + '">' + h(l.url) + '</a>' : h(l.url)) + ')' + (v ? ' ' + h(v) : '');
+  }
+  if (!l.url) return h(l.text);
+  if (l.anchor && calendarIsHttp(l.url)) return anchor(l);
+  return calendarIsHttp(l.url) ? h(l.text) + ': <a href="' + h(l.url) + '">' + h(l.url) + '</a>' : h(l.text + ': ' + l.url);
+}
+
+/**
+ * Plain-text description: link lines as '<label>: <url>', joined by `eol`. Doc links and the footer
+ * are HTML in every output (bd atc-9i0 AC rev 3 item 7, rev 4 item 9), so those blocks keep their markup.
+ */
+function calendarDetailsText(lines, eol) {
+  return calendarBlocks(lines).map((b) => (b.ul || b.line.footer ? calendarBlockHtml(b)
+    : b.line.url ? b.line.text + ': ' + b.line.url : b.line.text)).join(eol);
+}
+
+/** HTML description: text and URLs escaped, <br> between lines (none beside a list), http(s) link lines get an anchor. */
 function calendarDetailsHtml(lines) {
-  const h = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  return (lines || []).map((l) => {
-    if (!l.url) return h(l.text);
-    return /^https?:\/\//i.test(l.url) ? h(l.text) + ': <a href="' + h(l.url) + '">' + h(l.url) + '</a>' : h(l.text + ': ' + l.url);
-  }).join('<br>');
+  let out = '';
+  let prevUl = true;
+  calendarBlocks(lines).forEach((b, i) => {
+    out += (i === 0 || prevUl || b.ul ? '' : '<br>') + calendarBlockHtml(b);
+    prevUl = !!b.ul;
+  });
+  return out;
 }
 
 /** Description of `ev` rendered in the registered provider's format. */
-function calendarDetailsFor(ev, providerId) {
+function calendarDetailsFor(ev, providerId, lines) {
   const p = CALENDAR_PROVIDERS.find((x) => x.id === providerId);
-  return p && p.format === 'text' ? calendarDetailsText(ev.detailLines, '\r\n') : calendarDetailsHtml(ev.detailLines);
+  const l = lines || ev.detailLines;
+  return p && p.format === 'text' ? calendarDetailsText(l, '\r\n') : calendarDetailsHtml(l);
 }
 
 function calendarNextDay(date) {
@@ -6106,7 +6229,18 @@ function calendarUtcStamp(date, hhmm) {
     .toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 }
 
-function googleCalendarHref(ev) {
+/** Google Add URLs must stay under this many characters (bd atc-9i0); docs are dropped to fit. */
+const GOOGLE_HREF_LIMIT = 2000;
+
+/** The lines without the docs list, 'More: {appUrl}' placed before the footer. */
+function calendarWithMore(lines) {
+  const rest = lines.filter((l) => !l.docs);
+  const at = rest.findIndex((l) => l.footer);
+  rest.splice(at < 0 ? rest.length : at, 0, { text: 'More', url: CALENDAR_CONFIG.appUrl });
+  return rest;
+}
+
+function googleCalendarHref(ev, lines) {
   const compact = (iso) => iso.replace(/-/g, '');
   let dates;
   if (ev.allDay) {
@@ -6116,12 +6250,15 @@ function googleCalendarHref(ev) {
     dates = compact(ev.date) + 'T' + t(ev.start) + '/' + compact(ev.date) + 'T' + t(ev.end);
   }
   const enc = encodeURIComponent;
-  return 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+  const href = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
     + '&text=' + enc(ev.title)
     + '&dates=' + enc(dates).replace(/%2F/g, '/')
-    + '&details=' + enc(calendarDetailsFor(ev, 'google'))
+    + '&details=' + enc(calendarDetailsFor(ev, 'google', lines))
     + '&location=' + enc(ev.location || '')
     + '&ctz=' + enc(CALENDAR_CONFIG.timeZone);
+  return !lines && href.length >= GOOGLE_HREF_LIMIT && ev.detailLines.some((l) => l.docs)
+    ? googleCalendarHref(ev, calendarWithMore(ev.detailLines))
+    : href;
 }
 
 function outlookCalendarHref(ev) {
@@ -6137,6 +6274,11 @@ function outlookCalendarHref(ev) {
     + (ev.allDay ? '&allday=true' : '');
 }
 
+/** Date -> compact UTC stamp at second precision ("20261014T180509Z"). */
+function calendarCompactUtc(d) {
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+}
+
 /** Stable event id: date, type and title, so two same-type items on one date stay separate events. */
 function calendarUid(ev) {
   const slug = ev.type.replace(/[^a-z0-9]+/gi, '-');
@@ -6144,14 +6286,17 @@ function calendarUid(ev) {
   return ev.date + '-' + slug + '-' + title + '@practicemix';
 }
 
-/** RFC 5545 VEVENT content lines (unfolded) for `ev`. `now` (Date) stamps DTSTAMP. */
-function icsEventLines(ev, now) {
+/**
+ * RFC 5545 VEVENT content lines (unfolded) for `ev`. `now` (Date) stamps DTSTAMP and LAST-MODIFIED;
+ * `mark` ({ sequence, stamp }, bd atc-ncu) overrides SEQUENCE (default 0) and both stamps (compact UTC string).
+ */
+function icsEventLines(ev, now, mark) {
   const esc = (s) => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
-  const stamp = (now || new Date()).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const stamp = (mark && mark.stamp) || calendarCompactUtc(now || new Date());
   const when = ev.allDay
     ? ['DTSTART;VALUE=DATE:' + ev.date.replace(/-/g, ''), 'DTEND;VALUE=DATE:' + calendarNextDay(ev.date).replace(/-/g, '')]
     : ['DTSTART:' + calendarUtcStamp(ev.date, ev.start), 'DTEND:' + calendarUtcStamp(ev.date, ev.end)];
-  return ['BEGIN:VEVENT', 'UID:' + calendarUid(ev), 'DTSTAMP:' + stamp].concat(when,
+  return ['BEGIN:VEVENT', 'UID:' + calendarUid(ev), 'DTSTAMP:' + stamp, 'SEQUENCE:' + (mark ? mark.sequence : 0), 'LAST-MODIFIED:' + stamp].concat(when,
     ['SUMMARY:' + esc(ev.title), 'DESCRIPTION:' + esc(calendarDetailsText(ev.detailLines, '\n')),
       'X-ALT-DESC;FMTTYPE=text/html:' + esc('<html><body>' + calendarDetailsHtml(ev.detailLines) + '</body></html>'),
       'URL:' + CALENDAR_CONFIG.appUrl, 'LOCATION:' + esc(ev.location), 'END:VEVENT']);
@@ -6186,7 +6331,7 @@ function scheduleDayEvents(date, items, schedule, detailsPrefix) {
   const timed = [];
   const out = [];
   (items || []).forEach((it, i) => {
-    if (classifyScheduleItem(it.text).length > 0) {
+    if (classifyScheduleItem(it.text).length > 0 || parseScheduleTime(it.text)) {
       if (!timed.length) out.push({ timed: true, first: i });
       timed.push(i);
     } else {
@@ -6194,7 +6339,7 @@ function scheduleDayEvents(date, items, schedule, detailsPrefix) {
     }
   });
   return out.map((x) => (x.timed
-    ? { ev: buildCalendarEvent(date, timed.map((i) => items[i].text).join('; '), schedule, detailsPrefix), itemIndexes: timed }
+    ? { ev: buildCalendarEvent(date, timed.map((i) => items[i].text).join('; '), schedule, detailsPrefix, timed.map((i) => items[i].text)), itemIndexes: timed }
     : x));
 }
 
@@ -6230,13 +6375,46 @@ function scheduleCalendarEvents(schedule) {
   return out;
 }
 
+/** Fingerprint of one event's unfolded content lines, excluding the change markers (bd atc-ncu). */
+function calendarFingerprint(lines) {
+  return lines.filter((l) => !/^(DTSTAMP|SEQUENCE|LAST-MODIFIED)[:;]/.test(l)).join('\n');
+}
+
 /**
- * Subscription feed (bd atc-07h): the whole schedule as one folded RFC 5545 calendar. DTSTAMP is the
- * schedule's edit time, so an unchanged schedule gives byte-identical output; a repeated UID keeps the first.
+ * Parses a previously published feed into { uid: { fingerprint, sequence, stamp } } (bd atc-ncu). The first
+ * occurrence of a UID wins; an event without a numeric SEQUENCE and a well-formed LAST-MODIFIED is omitted
+ * (so it is treated as new). Unparseable text yields {}.
  */
-function buildCalendarFeed(schedule) {
+function parseFeedMarkers(text) {
+  const out = {};
+  const lines = String(text || '').replace(/\r?\n[ \t]/g, '').split(/\r?\n/);
+  let cur = null;
+  lines.forEach((l) => {
+    if (l === 'BEGIN:VEVENT') cur = [];
+    if (!cur) return;
+    cur.push(l);
+    if (l !== 'END:VEVENT') return;
+    const get = (k) => { const x = cur.find((c) => c.startsWith(k + ':')); return x ? x.slice(k.length + 1) : null; };
+    const uid = get('UID'), seq = get('SEQUENCE'), lm = get('LAST-MODIFIED');
+    if (uid && !out[uid] && /^\d+$/.test(seq || '') && /^\d{8}T\d{6}Z$/.test(lm || '')) {
+      out[uid] = { fingerprint: calendarFingerprint(cur), sequence: Number(seq), stamp: lm };
+    }
+    cur = null;
+  });
+  return out;
+}
+
+/**
+ * Subscription feed (bd atc-07h, atc-ncu): the whole schedule as one folded RFC 5545 calendar. A new event
+ * gets SEQUENCE 0 and the schedule's edit time (else the build time) as LAST-MODIFIED/DTSTAMP. With the
+ * previous feed text, an event whose content is unchanged keeps its previous markers byte for byte, and a
+ * changed one gets SEQUENCE + 1 and `buildTime` (Date, default now). A repeated UID keeps the first.
+ */
+function buildCalendarFeed(schedule, previousFeedText, buildTime) {
   const modified = schedule && schedule.source && schedule.source.modifiedTime;
-  const now = modified ? new Date(modified) : new Date();
+  const built = buildTime || new Date();
+  const now = modified ? new Date(modified) : built;
+  const prev = parseFeedMarkers(previousFeedText);
   const seen = {};
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PracticeMix//Choir Schedule Feed//EN',
     'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:' + CALENDAR_CONFIG.feedName,
@@ -6246,7 +6424,15 @@ function buildCalendarFeed(schedule) {
     const uid = calendarUid(ev);
     if (seen[uid]) return;
     seen[uid] = true;
-    Array.prototype.push.apply(lines, icsEventLines(ev, now));
+    const fresh = icsEventLines(ev, now);
+    const p = prev[uid];
+    let evLines = fresh;
+    if (p) {
+      evLines = calendarFingerprint(fresh) === p.fingerprint
+        ? icsEventLines(ev, now, { sequence: p.sequence, stamp: p.stamp })
+        : icsEventLines(ev, now, { sequence: p.sequence + 1, stamp: calendarCompactUtc(built) });
+    }
+    Array.prototype.push.apply(lines, evLines);
   });
   lines.push('END:VCALENDAR');
   return lines.map(icsFold).join('\r\n') + '\r\n';
@@ -6272,7 +6458,7 @@ function placeCalMenu(rect, size, viewport, gap, margin) {
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, subscribeLinks, calendarShortTime, calendarCleanTitle, classifyScheduleItem, buildCalendarEvent, scheduleDayEvents, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel, buildCalendarFeed, scheduleCalendarEvents, calendarUid };
+if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, subscribeLinks, calendarShortTime, calendarCleanTitle, classifyScheduleItem, parseScheduleTime, buildCalendarEvent, scheduleDayEvents, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel, buildCalendarFeed, parseFeedMarkers, scheduleCalendarEvents, calendarUid };
 </script>
 
 <script>
@@ -6345,7 +6531,10 @@ function scheduleChanged(prev, next) {
   const n = next && next.source;
   if (!p || !n || !p.modifiedTime) return true;
   if (prev.format !== next.format) return true; // parser output shape changed (e.g. groups, format 2)
-  return p.url !== n.url || p.modifiedTime !== n.modifiedTime;
+  if (p.url !== n.url || p.modifiedTime !== n.modifiedTime) return true;
+  // Folder documents (bd atc-9i0): a copy saved before docs existed, or a changed list, must refresh.
+  const norm = (d) => JSON.stringify(Array.isArray(d) && d.length ? d : null);
+  return norm(prev.docs) !== norm(next.docs);
 }
 
 if (typeof module !== 'undefined') module.exports = { localTodayIso, upcomingScheduleEvents, upcomingLinkEntries, safeLinkUrl, formatScheduleDate, scheduleChanged, scheduleVisibleGroups };
