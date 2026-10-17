@@ -102,6 +102,21 @@ body {
 
 .header-subtitle { font-size: 13px; color: var(--text-3); }
 
+/* Optional sign-in (bd atc-dfr): a quiet text line under the subtitle, so the header's button column is untouched. */
+.signin-control {
+  /* Inline at the end of the header subtitle, in the header's normal flow (AC rev 2 item 7): it fills free
+     space on the subtitle's last line, so it adds no height. Matches the subtitle's size and colour. */
+  white-space: nowrap; font: inherit; color: inherit;
+}
+.signin-link { background: none; border: 0; padding: 0; font: inherit; color: var(--color-primary); cursor: pointer; text-decoration: underline; }
+.signin-link:hover { color: var(--text); }
+.signin-name { color: var(--text-2); }
+.signin-name::after { content: " \00b7"; color: var(--text-3); }
+.signin-panel { margin: 0 0 var(--spacing); display: flex; flex-direction: column; align-items: flex-start; gap: var(--spacing-sm); }
+.signin-msg { font-size: 12px; color: var(--text-3); margin: 0; }
+.signin-msg:empty { display: none; }
+.signin-msg.error { color: var(--color-danger); }
+
 .playback-header {
   /* Back | title | actions (links, schedule). The title takes the middle track and wraps, as it did
      before the header buttons arrived, rather than clipping a long song name on a phone. */
@@ -258,6 +273,14 @@ body {
   color: var(--text-2); border-radius: 8px; cursor: pointer;
   font-size: 14px; font-weight: 500; font-family: inherit;
   transition: all .2s;
+}
+
+.subfolder-btn { position: relative; }
+/* atc-dfr rev 3 item 12: a small lock in the button's top-right corner while signed out. Absolutely positioned,
+   so it changes neither the button's size nor the wrapping of its neighbours. */
+.subfolder-btn[data-locked="true"]::after {
+  content: "\1F512"; position: absolute; top: 1px; right: 3px;
+  font-size: 9px; line-height: 1; opacity: .7; pointer-events: none;
 }
 
 .subfolder-btn:hover {
@@ -1030,21 +1053,26 @@ body {
 .schedule-items { margin: 0; padding-left: 20px; font-size: 14px; color: var(--text-2); }
 .schedule-items li + li { margin-top: 4px; }
 .schedule-items a, .links-notes a { color: var(--blue); }
-.schedule-cal-wrap { position: relative; display: inline-block; margin-left: 8px; }
-.schedule-cal-btn {
+.schedule-cal-wrap { position: relative; display: inline-block; margin-left: auto; }
+li > .schedule-cal-wrap { margin-left: 8px; }
+.schedule-add-btn {
   display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
-  width: 26px; height: 24px; padding: 0; border-radius: 6px; cursor: pointer;
+  min-height: 28px; padding: 0 12px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
   background: var(--surface-2); color: var(--blue); border: 1px solid var(--border-strong);
 }
-.schedule-cal-btn:hover, .schedule-cal-btn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
+.schedule-add-btn:hover, .schedule-add-btn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
+@media (max-width: 600px) { .schedule-add-btn { min-height: 44px; min-width: 44px; } }
+.schedule-date-time { font-size: 13px; font-weight: 400; color: var(--text-3); }
 .schedule-cal-menu {
-  position: fixed; top: 0; left: 0; z-index: 1002; min-width: 180px; max-width: calc(100vw - 16px);
-  display: flex; flex-direction: column; padding: 4px;
+  position: fixed; top: 0; left: 0; z-index: 1002; min-width: 180px; max-width: min(320px, calc(100vw - 16px));
+  display: flex; flex-direction: column; padding: 4px; font-size: 13px; font-weight: 400;
   background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 8px;
   box-shadow: 0 10px 40px rgba(0,0,0,.6);
 }
-.schedule-items .schedule-cal-item { display: block; padding: 6px 10px; border-radius: 6px; font-size: 13px; white-space: nowrap; color: var(--text-2); text-decoration: none; }
-.schedule-items .schedule-cal-item:hover, .schedule-items .schedule-cal-item:focus { background: var(--surface-3); color: var(--text); }
+.schedule-cal-menu-event { padding: 6px 10px 2px; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.schedule-cal-menu-event:not(:first-child) { margin-top: 4px; border-top: 1px solid var(--border); }
+.schedule-cal-item { display: block; padding: 8px 10px; border-radius: 6px; font-size: 13px; white-space: nowrap; color: var(--text-2); text-decoration: none; }
+.schedule-cal-item:hover, .schedule-cal-item:focus { background: var(--surface-3); color: var(--text); }
 .schedule-group { padding: var(--spacing-sm) 0; border-top: 1px solid var(--border); }
 .schedule-group-title { margin: 0 0 4px; font-size: 14px; color: var(--text); }
 .links-heading { font-weight: 400; color: var(--text-2); }
@@ -1052,6 +1080,32 @@ body {
 .links-notes p { margin: 0 0 4px; }
 .schedule-source { padding: var(--spacing-sm) var(--spacing); border-top: 1px solid var(--border); font-size: 12px; color: var(--text-3); }
 .schedule-source a { color: var(--blue); }
+/* Subscribe box at the top of the schedule popup (bd atc-hu9, atc-eb1). */
+.schedule-cal-note {
+  --cal-note-accent: oklch(0.68 0.08 300);
+  flex: none; margin: var(--spacing-sm) var(--spacing) 0; border: 1px solid var(--cal-note-accent); border-radius: var(--radius);
+  overflow: hidden; font-size: 13px; color: var(--text-2);
+}
+.schedule-cal-note summary {
+  list-style: none; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px;
+  background: color-mix(in oklab, var(--cal-note-accent) 16%, transparent);
+  color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.schedule-cal-note summary::-webkit-details-marker { display: none; }
+.schedule-cal-note-chevron { margin-left: auto; font-size: 20px; line-height: 1; transition: transform .15s; }
+.schedule-cal-note[open] .schedule-cal-note-chevron { transform: rotate(90deg); }
+.schedule-cal-note-body { padding: 10px 12px; background: color-mix(in oklab, var(--cal-note-accent) 6%, transparent); }
+.schedule-cal-explain { margin: 0 0 10px; }
+.schedule-sub-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.schedule-sub-btn {
+  flex: 1 1 100px; display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 10px;
+  border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+  font: inherit; font-weight: 600; text-decoration: none; text-align: center;
+}
+.schedule-sub-btn:hover { background: var(--surface-3); }
+.schedule-cal-note-small { display: flex; align-items: center; gap: 16px; margin: 6px 0 0; font-size: 12px; }
+.schedule-cal-note a.schedule-cal-help { color: var(--blue); font-weight: 600; }
+.schedule-feed-copy { min-height: 32px; padding: 0 4px; border: 0; background: none; color: var(--blue); font: inherit; font-weight: 600; cursor: pointer; }
 .schedule-retry { margin-top: var(--spacing-sm); }
 
 /* ================================================================== */
@@ -1088,7 +1142,11 @@ body {
     <div class="container">
       <header class="header">
         <h1>🎵 Practice Mix</h1>
-        <p class="header-subtitle">Find and play your practice tracks</p>
+        <p class="header-subtitle">Find and play your practice tracks <span class="signin-control" data-testid="signin-control">&middot;
+          <button type="button" class="signin-link" data-testid="signin-btn" aria-label="Sign in with Google (optional)">Sign in</button>
+          <span class="signin-name hidden" data-testid="signin-name"></span>
+          <button type="button" class="signin-link hidden" data-testid="signout-btn" aria-label="Sign out">Sign out</button>
+        </span></p>
         <div class="header-actions">
           <a class="btn btn-drive" data-testid="drive-btn" target="_blank" rel="noopener" aria-label="Open this folder in Google Drive" title="Open this folder in Google Drive">📂</a>
           <button class="btn btn-pdf hidden" data-testid="pdf-btn" aria-label="Open the folder PDF" title="Open the folder PDF">📄</button>
@@ -1097,6 +1155,12 @@ body {
           <button class="btn btn-help" data-testid="help-btn" aria-label="How to use Practice Mix" title="How to use Practice Mix">?</button>
         </div>
       </header>
+
+      <!-- Optional Google sign-in panel (bd atc-dfr): opened by the header's Sign in link, never shown otherwise -->
+      <div class="signin-panel hidden" data-testid="signin-panel">
+        <div id="gis-signin-button"></div>
+        <p class="signin-msg" data-testid="signin-msg" role="status"></p>
+      </div>
 
       <!-- Folder Info Section -->
       <div class="folder-info" data-testid="folder-info">
@@ -1353,10 +1417,14 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.23";
+var STATIC_BUILD_VERSION_ = "1.6.25";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-10-16T02:54:04.175Z";
+var STATIC_BUILD_DATE_ = "2026-10-17T13:28:55.831Z";
+// Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
+// (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
+var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbz-YsKzVeoehCr05zF4kF_wbKuTAhMm1RU1KSXK-W6UOKt9zg1zVTUi_TKKYnpkhSR-/exec";
+var STATIC_ASSERTION_AUD_ = "practicemix";
 
 /**
  * The stamp the sessionStorage folder cache is scoped by (atc-79j). On the HtmlService page this
@@ -1398,8 +1466,8 @@ function resolveWebappUrl_() {
  * exactly as it did under the old RPC. A transport failure, an unknown action or a denial
  * throws instead, landing in the try/catch the call sites already have.
  *
- * D5: this posts `{action, ...args}` and nothing else — no ID token, and the page has no sign-in
- * flow. **P6's seam is the payload literal below**: that is the one place a token gets added.
+ * D5: this posts `{action, ...args}` plus the anonymous visitor id — never an ID token. Since bd atc-dfr it
+ * also carries the optional PracticeMix session (see the session helpers below); nothing is gated on it.
  */
 /**
  * Anonymous per-browser visitor id for the server's activity report (bd atc-0oe). Random, generated
@@ -1423,6 +1491,77 @@ function getVisitorId_() {
   return visitorId_;
 }
 
+/**
+ * Public IP (bd atc-3ev). Apps Script never sees the caller's address, so the browser asks
+ * https://api.ipify.org (a third-party request from the visitor's browser; accepted, see ADR-0011).
+ * lookupIp_() always does a FRESH lookup (3s timeout, never throws, resolves null on any failure) and
+ * a success refreshes the localStorage cache {ip, t}. cachedIp_() is what ordinary calls send: the last
+ * known address if it is under 24h old. Neither blocks app start or any call.
+ */
+var IP_RE_ = /^[0-9A-Fa-f:.]{2,45}$/;
+function cachedIp_() {
+  try {
+    var c = JSON.parse(localStorage.getItem('pmix.ip') || 'null');
+    if (c && typeof c.ip === 'string' && IP_RE_.test(c.ip) && typeof c.t === 'number' && Date.now() - c.t < 86400000) return c.ip;
+  } catch (e) { /* none */ }
+  return undefined;
+}
+function lookupIp_() {
+  return new Promise(function (resolve) {
+    var done = false, ctl = null, timer = null;
+    function finish(ip) {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      if (ip) { try { localStorage.setItem('pmix.ip', JSON.stringify({ ip: ip, t: Date.now() })); } catch (e) { /* none */ } }
+      resolve(ip || null);
+    }
+    try {
+      try { ctl = new AbortController(); } catch (e) { ctl = null; }
+      timer = setTimeout(function () { try { if (ctl) ctl.abort(); } catch (e) { /* none */ } finish(null); }, 3000);
+      fetch('https://api.ipify.org?format=json', ctl ? { signal: ctl.signal } : {})
+        .then(function (r) { return r.json(); })
+        .then(function (j) { finish(j && typeof j.ip === 'string' && IP_RE_.test(j.ip) && (j.ip.indexOf('.') !== -1 || j.ip.indexOf(':') !== -1) ? j.ip : null); })
+        .catch(function () { finish(null); });
+    } catch (e) { finish(null); }
+  });
+}
+
+/**
+ * Every home-page load reports itself (atc-3ev item 7): a FRESH ip lookup in the background, then one
+ * 'pageLoad' logActivity carrying the app version and that fresh ip (none when the lookup failed or
+ * timed out). Signed in or not; independent of every other call. Never delays startup.
+ */
+function sendPageLoad_() {
+  try {
+    lookupIp_().then(function (ip) {
+      logActivity_('pageLoad', { version: String(BUILD_INFO.version || '') }, { ip: ip || undefined });
+    });
+  } catch (e) { /* swallowed */ }
+}
+
+/**
+ * UI activity log (bd atc-eb1.1): fire-and-forget. keepalive lets the request outlive the
+ * navigation to webcal:/google/outlook; it never blocks the link, never shows anything, and every
+ * failure is swallowed. Same envelope as callApi (visitor + optional session) but no response handling.
+ * kind: see ACTIVITY_KINDS_ in src/Api.js; fields = that kind's fields.
+ */
+function logActivity_(kind, fields, opts) {
+  try {
+    var url = resolveWebappUrl_();
+    if (!url) return;
+    var payload = Object.assign({ action: 'logActivity', kind: kind }, fields || {}, { visitor: getVisitorId_() });
+    var ip = (opts && 'ip' in opts) ? opts.ip : cachedIp_();
+    if (ip) payload.ip = ip;
+    var sess = readStoredSession(sessionStorage_());
+    if (sess) payload.session = sess.session;
+    var p = fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'cmd=api', {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload), keepalive: true
+    });
+    if (p && typeof p.catch === 'function') p.catch(function () { /* swallowed */ });
+  } catch (e) { /* swallowed */ }
+}
+
 async function callApi(action, args) {
   var url = resolveWebappUrl_();
   if (!url) {
@@ -1430,6 +1569,11 @@ async function callApi(action, args) {
   }
 
   var payload = Object.assign({ action: action }, args || {}, { visitor: getVisitorId_() });
+  var knownIp_ = cachedIp_();
+  if (knownIp_) payload.ip = knownIp_;
+  // Optional sign-in (bd atc-dfr): carry the stored session, if any. The server never denies on it.
+  var storedSession_ = readStoredSession(sessionStorage_());
+  if (storedSession_) payload.session = storedSession_.session;
 
   var response;
   try {
@@ -1452,7 +1596,18 @@ async function callApi(action, args) {
     throw new Error('Server returned a non-JSON response (HTTP ' + response.status + ') — the deployment may be mid-propagation.');
   }
 
-  if (!body.ok) throw new Error('Server rejected the request: ' + (body.error || 'unknown error'));
+  // A refreshed session replaces the stored one; signedOut clears it. Either way the call itself succeeded.
+  if (absorbSessionFields(sessionStorage_(), body) && typeof onSessionChanged_ === 'function') onSessionChanged_();
+
+  if (!body.ok) {
+    var err = new Error('Server rejected the request: ' + (body.error || 'unknown error'));
+    if (body.error === 'sign_in_required') {
+      // atc-dfr rev 3 item 11: our pass is not (or no longer) good. Forget it and ask again.
+      err.code = 'sign_in_required';
+      if (typeof onSignInRequired_ === 'function') onSignInRequired_();
+    }
+    throw err;
+  }
   return body.result;
 }
 
@@ -1806,6 +1961,226 @@ function createPrefetcher(opts) {
 }
 
 if (typeof module !== 'undefined') module.exports = { focusPartKey, backoffMs, isConstrainedConnection, createPrefetcher };
+</script>
+<script>
+/**
+ * Optional sign-in session helpers - pmixSessionClient (bd atc-dfr, AC7). Pure: storage is passed in and every
+ * access is try/catch'd, so blocked storage just means "signed out". The stored value is {session, email}; the
+ * session is PracticeMix's own 90-day sliding token (src/Session.js), never a Google token.
+ */
+var SESSION_STORE_KEY = 'pmixSession.v1';
+
+function readStoredSession(storage) {
+  try {
+    var v = JSON.parse(storage.getItem(SESSION_STORE_KEY) || 'null');
+    if (v && typeof v.session === 'string' && v.session && typeof v.email === 'string' && v.email) {
+      var fn = (typeof v.firstName === 'string' && v.firstName) ? v.firstName : firstNameFor('', v.email);
+      return { session: v.session, email: v.email, firstName: fn };
+    }
+  } catch (e) { /* unavailable or corrupt: signed out */ }
+  return null;
+}
+
+function writeStoredSession(storage, value) {
+  try {
+    storage.setItem(SESSION_STORE_KEY, JSON.stringify({ session: value.session, email: value.email, firstName: value.firstName || firstNameFor('', value.email) }));
+    return true;
+  } catch (e) { return false; }
+}
+
+/** Display first name: given_name when known, else the email local part up to the first '.', '_' or '@', capitalised. */
+function firstNameFor(givenName, email) {
+  var g = typeof givenName === 'string' ? givenName.trim() : '';
+  if (g) return g;
+  var local = typeof email === 'string' ? email.split(/[._@]/)[0] : '';
+  return local ? local.charAt(0).toUpperCase() + local.slice(1).toLowerCase() : '';
+}
+
+/** given_name from a Google ID token's payload, decoded client-side for display only (never trusted). */
+function givenNameFromCredential(jwt) {
+  try {
+    var seg = String(jwt).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (seg.length % 4) seg += '=';
+    var bin = atob(seg), bytes = '';
+    for (var i = 0; i < bin.length; i++) bytes += '%' + ('00' + bin.charCodeAt(i).toString(16)).slice(-2);
+    var p = JSON.parse(decodeURIComponent(bytes));
+    return (p && typeof p.given_name === 'string') ? p.given_name : '';
+  } catch (e) { return ''; }
+}
+
+function clearStoredSession(storage) {
+  try { storage.removeItem(SESSION_STORE_KEY); return true; } catch (e) { return false; }
+}
+
+/**
+ * Applies the top-level session fields of an api envelope. Returns 'refreshed' (a new session replaced the stored
+ * one), 'signedOut' (the server did not accept ours; cleared), or null (nothing to do).
+ */
+function absorbSessionFields(storage, body) {
+  if (!body) return null;
+  if (body.signedOut === true) { clearStoredSession(storage); return 'signedOut'; }
+  if (typeof body.session === 'string' && body.session) {
+    var cur = readStoredSession(storage);
+    if (!cur) return null; // signed out locally while the call was in flight
+    writeStoredSession(storage, { session: body.session, email: cur.email, firstName: cur.firstName });
+    return 'refreshed';
+  }
+  return null;
+}
+
+if (typeof module !== 'undefined') module.exports = { SESSION_STORE_KEY, firstNameFor, givenNameFromCredential, readStoredSession, writeStoredSession, clearStoredSession, absorbSessionFields };
+</script>
+<script>
+/**
+ * Optional Google sign-in UI (bd atc-dfr). Identify only: nothing in the app depends on it, and the GIS library
+ * is loaded only when the visitor asks to sign in. Flow: GIS button -> NUUC-Dispatch verify_identity
+ * {idToken, aud} -> {assertion} -> PracticeMix api signIn -> {session, email} -> localStorage pmixSession.v1.
+ * The Google ID token goes to Dispatch only, never to the PracticeMix api.
+ */
+var GOOGLE_CLIENT_ID_ = '657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com';
+
+function sessionStorage_() {
+  try { return window.localStorage; } catch (e) { return null; }
+}
+
+// In-memory mirror for the page load, so a blocked-storage browser still shows who signed in (until reload).
+var memSession_ = null;
+
+function currentSession_() {
+  return readStoredSession(sessionStorage_()) || memSession_;
+}
+
+function onSessionChanged_() {
+  if (!readStoredSession(sessionStorage_())) memSession_ = null;
+  renderSignIn_();
+}
+
+// atc-dfr rev 3 (adr/0012): folders other than the initial one need a session.
+var initialFolderId_ = null;       // set by the app from the initial listing
+var pendingSignInResume_ = null;   // navigation to complete after a successful sign-in
+var SIGN_IN_PROMPT_ = 'Sign in to open other folders';
+var signInPrompt_ = '';
+
+function isSignedIn_() { return !!currentSession_(); }
+
+/** Initial folder (or its cached '__initial__' alias) is always allowed; anything else needs a session. */
+function isAllowedFolder_(folderId) {
+  return isSignedIn_() || folderId === '__initial__' || (!!initialFolderId_ && folderId === initialFolderId_);
+}
+
+/** Opens the sign-in panel with the prompt; `resume` runs after a successful sign-in. */
+function requireSignIn_(resume) {
+  pendingSignInResume_ = typeof resume === 'function' ? resume : null;
+  signInPrompt_ = SIGN_IN_PROMPT_;
+  openSignIn_();
+}
+
+/** Server said sign_in_required: drop the stored session and show the panel. */
+function onSignInRequired_() {
+  clearStoredSession(sessionStorage_());
+  memSession_ = null;
+  renderSignIn_();
+  signInPrompt_ = SIGN_IN_PROMPT_;
+  openSignIn_();
+}
+
+function renderLocks_() {
+  var signedIn = isSignedIn_();
+  document.querySelectorAll('.subfolder-btn').forEach(function (b) {
+    var locked = !signedIn && b.dataset.folderId !== initialFolderId_;
+    b.dataset.locked = locked ? 'true' : 'false';
+  });
+}
+
+function renderSignIn_() {
+  var cur = currentSession_();
+  var q = function (id) { return document.querySelector('[data-testid="' + id + '"]'); };
+  var name = q('signin-name');
+  name.textContent = cur ? cur.firstName : '';
+  name.classList.toggle('hidden', !cur);
+  q('signout-btn').classList.toggle('hidden', !cur);
+  q('signin-btn').classList.toggle('hidden', !!cur);
+  if (cur) q('signin-panel').classList.add('hidden');
+  renderLocks_();
+}
+
+function setSignInMessage_(text, isError) {
+  var el = document.querySelector('[data-testid="signin-msg"]');
+  el.textContent = text || '';
+  el.classList.toggle('error', !!isError);
+}
+
+function signOut_() {
+  clearStoredSession(sessionStorage_());
+  memSession_ = null;
+  pendingSignInResume_ = null;
+  signInPrompt_ = '';
+  if (typeof onSignedOutHook_ === 'function') onSignedOutHook_();
+  try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ }
+  renderSignIn_();
+}
+
+function loadGis_() {
+  return new Promise(function (resolve, reject) {
+    if (window.google && google.accounts && google.accounts.id) { resolve(); return; }
+    var tag = document.createElement('script');
+    tag.src = 'https://accounts.google.com/gsi/client';
+    tag.async = true;
+    tag.onload = function () { resolve(); };
+    tag.onerror = function () { reject(new Error('Could not load Google sign-in.')); };
+    document.head.appendChild(tag);
+  });
+}
+
+var gisReady_ = false;
+async function openSignIn_() {
+  var panel = document.querySelector('[data-testid="signin-panel"]');
+  panel.classList.remove('hidden');
+  if (!STATIC_DISPATCH_URL_ || !STATIC_ASSERTION_AUD_) {
+    setSignInMessage_('Sign-in is not available in this build.', true);
+    return;
+  }
+  setSignInMessage_(signInPrompt_ || 'Loading Google sign-in…');
+  try { await loadGis_(); } catch (e) { setSignInMessage_(e.message, true); return; }
+  if (!gisReady_) {
+    google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID_, callback: onGoogleCredential_, auto_select: false });
+    google.accounts.id.renderButton(document.getElementById('gis-signin-button'), { type: 'standard', shape: 'pill' });
+    gisReady_ = true;
+  }
+  setSignInMessage_(signInPrompt_);
+}
+
+async function onGoogleCredential_(credentialResponse) {
+  setSignInMessage_('Signing you in…');
+  try {
+    // text/plain keeps this a CORS-simple request (Apps Script implements no OPTIONS).
+    var r = await fetch(STATIC_DISPATCH_URL_, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'verify_identity', idToken: credentialResponse.credential, aud: STATIC_ASSERTION_AUD_ })
+    });
+    var res = JSON.parse(await r.text());
+    if (!res.verified || !res.assertion) throw new Error('Google sign-in could not be verified.');
+    var signedIn = await callApi('signIn', { assertion: res.assertion });
+    if (!signedIn || !signedIn.session) throw new Error('Sign-in was not accepted.');
+    var value = { session: signedIn.session, email: signedIn.email, firstName: firstNameFor(givenNameFromCredential(credentialResponse.credential), signedIn.email) };
+    if (!writeStoredSession(sessionStorage_(), value)) memSession_ = value;
+    setSignInMessage_('');
+    signInPrompt_ = '';
+    renderSignIn_();
+    var resume = pendingSignInResume_;
+    pendingSignInResume_ = null;
+    if (resume) resume();
+  } catch (e) {
+    setSignInMessage_('Sign-in failed. You can keep using Practice Mix without signing in.', true);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelector('[data-testid="signin-btn"]').addEventListener('click', openSignIn_);
+  document.querySelector('[data-testid="signout-btn"]').addEventListener('click', signOut_);
+  renderSignIn_();
+});
 </script>
   <!-- Version Footer -->
   <footer class="version-footer" data-testid="version-footer" id="version-footer"></footer>
@@ -4057,6 +4432,7 @@ const UI = (() => {
 
   // Two tiers: state.folderCache (memory) over localStorage (pmix.<target>.v1.folder.<id>).
   function getCachedListing(folderId) {
+    if (!isAllowedFolder_(folderId)) return null; // atc-dfr rev 3: never show a non-initial listing while signed out
     const mem = state.folderCache.get(folderId);
     if (mem && !mem.error) return mem;
     const stored = loadListingPersistent(folderId);
@@ -4263,6 +4639,7 @@ const UI = (() => {
   // ================================================================
 
   function handleOpenNewClick() {
+    if (!isSignedIn_()) { requireSignIn_(handleOpenNewClick); return; }
     el.folderIdInput.value = '';
     showFolderStatus('', '');
     showFolderPicker(true);
@@ -4290,6 +4667,7 @@ const UI = (() => {
       showFolderStatus('Enter a valid folder ID or Drive URL', 'error');
       return;
     }
+    if (!isAllowedFolder_(folderId)) { requireSignIn_(handleFolderGoClick); return; }
 
     // Immediately flip to content area with loading state so the user sees
     // feedback before the RPC resolves (can take several seconds first time).
@@ -4327,6 +4705,7 @@ const UI = (() => {
       if (cachedGo) revalidateListing(folderId, result.folderId);
     } catch (error) {
       showFolderPicker(true);
+      if (error && error.code === 'sign_in_required') { pendingSignInResume_ = handleFolderGoClick; return; }
       showFolderStatus('Failed to load folder: ' + error, 'error');
     }
   }
@@ -4383,7 +4762,10 @@ const UI = (() => {
   function syncAddressBar() {
     if (!state.folderId) return;
     const driveUrl = 'https://drive.google.com/drive/folders/' + encodeURIComponent(state.folderId);
-    document.querySelectorAll('.btn-drive').forEach((a) => { a.href = driveUrl; });
+    document.querySelectorAll('.btn-drive').forEach((a) => {
+      a.href = driveUrl;
+      a.onclick = () => { logActivity_('driveFolder', { folderId: state.folderId, folderName: state.folderName }); };
+    });
     try {
       const url = new URL(window.location.href);
       url.searchParams.delete('webapp');
@@ -4511,12 +4893,16 @@ const UI = (() => {
         btn.title = 'Shortcut to another folder';
         btn.dataset.shortcut = 'true';
       }
+      btn.dataset.folderId = folder.id;
+      btn.dataset.locked = (!isSignedIn_() && folder.id !== initialFolderId_) ? 'true' : 'false';
+      if (btn.dataset.locked === 'true') btn.title = (folder.isShortcut ? 'Shortcut to another folder. ' : '') + 'Sign in to open';
       btn.addEventListener('click', () => handleSubFolderClick(folder.id));
       el.subfoldersList.appendChild(btn);
     });
   }
 
   function prefetchSubfolders(subfolders) {
+    if (!isSignedIn_()) return; // atc-dfr rev 3: nothing beyond the initial folder is fetched while signed out
     subfolders.slice(0, 10).forEach(subfolder => {
       if (getCachedListing(subfolder.id)) return;
       callApi('listFilesAndFolders', { folderId: subfolder.id, folderPath: [] }).then(result => {
@@ -4562,6 +4948,7 @@ const UI = (() => {
   }
 
   async function handleSubFolderClick(folderId) {
+    if (!isAllowedFolder_(folderId)) { requireSignIn_(() => handleSubFolderClick(folderId)); return; }
     pushNav();
 
     // Invalidate any in-flight track loads immediately, before any await.
@@ -4604,9 +4991,29 @@ const UI = (() => {
       renderSubFolders();
     } catch (error) {
       handleSelectionBack();
+      if (error && error.code === 'sign_in_required') {
+        pendingSignInResume_ = () => handleSubFolderClick(folderId); // panel already opened by callApi
+        return;
+      }
       showSelectionStatus('Failed to open folder: ' + error, 'error');
     }
   }
+
+  // Signing out while inside a non-initial folder returns to the initial one (never asks).
+  window.onSignedOutHook_ = function () {
+    if (!initialFolderId_ || state.folderId === initialFolderId_ || state.currentPage !== 'selection') return;
+    const init = state.folderCache.get('__initial__') || loadListingPersistent('__initial__');
+    if (!init) return;
+    state.folderToken++;
+    prefetcher.cancel();
+    state.navStack = [];
+    state.currentPath = [];
+    showListing(init);
+    clearSelectedTracks();
+    el.selectionBackBtn.style.display = 'none';
+    renderTrackButtons();
+    renderSubFolders();
+  };
 
   async function handleTrackButtonClick(fileId) {
     const btn = document.querySelector(`[data-file-id="${fileId}"]`);
@@ -5446,6 +5853,7 @@ const UI = (() => {
       }
 
       if (!folderResult.error) {
+        initialFolderId_ = folderResult.folderId;
         showListing(folderResult);
         renderTrackButtons();
         renderSubFolders();
@@ -5467,6 +5875,7 @@ const UI = (() => {
   } else {
     init();
   }
+  sendPageLoad_();
 
   return { getState: () => state, getElements: () => el };
 })();
@@ -5479,6 +5888,14 @@ const UI = (() => {
         <h3 id="schedule-title">Choir Schedule</h3>
         <button id="schedule-close-btn" data-testid="schedule-close-btn" class="btn btn-close" aria-label="Close">✕</button>
       </div>
+      <details class="schedule-cal-note" id="schedule-cal-note" data-testid="schedule-cal-note">
+        <summary data-testid="schedule-cal-note-summary">Get all choir dates on your calendar<span class="schedule-cal-note-chevron" aria-hidden="true">›</span></summary>
+        <div class="schedule-cal-note-body">
+        <p class="schedule-cal-explain" data-testid="schedule-cal-explain">This subscribes your calendar to the Northlake UU choir schedule. All choir dates appear in your calendar, and changes show up automatically. To add just one date, use + Add beside it.</p>
+        <div class="schedule-sub-buttons" id="schedule-sub-buttons"></div>
+        <p class="schedule-cal-note-small"><button type="button" class="schedule-feed-copy" id="schedule-feed-copy" data-testid="schedule-feed-copy">Copy address</button><a class="schedule-cal-help" data-testid="schedule-cal-help" href="calendar-help.html" target="_blank" rel="noopener">Help</a></p>
+        </div>
+      </details>
       <div id="schedule-list" data-testid="schedule-list" class="schedule-body"></div>
       <div id="schedule-source" class="schedule-source" hidden></div>
     </div>
@@ -5514,7 +5931,7 @@ const UI = (() => {
 
 <script>
 /**
- * Calendar export (bd atc-73d). Each schedule item gets one calendar icon button opening a provider menu.
+ * Calendar export (bd atc-73d). Each schedule date gets one "+ Add" button opening a provider menu (bd atc-eb1).
  *
  * Maintainer edits only the three tables below:
  *  - CALENDAR_CONFIG: time zone, title prefix, and the subscription feed's name and refresh interval.
@@ -5522,7 +5939,8 @@ const UI = (() => {
  *    matches, its matched text is removed from the working string, so later rules cannot match it
  *    again (e.g. "Dress Rehearsal" never also yields a "rehearse" match). An item yields ONE event:
  *    matched rules are combined (earliest start, latest end); no match -> one all-day event.
- *  - CALENDAR_PROVIDERS: registry of {id, label, format, href(event, now), download?(event)}, in menu order.
+ *  - CALENDAR_PROVIDERS: registry of {id, label, format, href(event, now), download?(event), subLabel, subHref(feedUrl, feedName)},
+ *    in menu order (also the order of the popup's subscribe buttons).
  *    format ('html' | 'text') is how the provider's description is rendered; switching Outlook is a one-word edit. To add a
  *    provider add one object here; rules and render code need no change. Hrefs must start with
  *    https:// or data:text/calendar to be rendered.
@@ -5532,7 +5950,11 @@ const CALENDAR_CONFIG = {
   appUrl: 'https://northlakeuu.org/pmix',
   location: '308 4th Ave South, Kirkland, WA 98033',
   // Subscription feed (bd atc-07h): built by tools/build-choir-ics.js, published as pub/pmix-cal/choir.ics.
-  feedName: 'Northlake UU Choir Schedule', feedRefresh: 'PT12H',
+  feedName: 'Choir Schedule-Northlake UU Church', feedRefresh: 'PT12H',
+  // Where subscribers point their calendars; calendar-help.html shows the same address (bd atc-hu9).
+  feedUrl: 'https://nuuc-it.github.io/Static/pub/pmix-cal/choir.ics',
+  // Title suffix for each candidate date of an undecided group item (bd atc-c2z).
+  alternateSuffix: ' (alternate date — not yet confirmed)',
 };
 
 const CALENDAR_EVENT_RULES = [
@@ -5543,16 +5965,40 @@ const CALENDAR_EVENT_RULES = [
 ];
 
 const CALENDAR_PROVIDERS = [
-  { id: 'google', label: 'Google Calendar', format: 'html', href: (ev) => googleCalendarHref(ev) },
+  { id: 'google', label: 'Google Calendar', format: 'html', href: (ev) => googleCalendarHref(ev),
+    subLabel: 'Google Calendar',
+    subHref: (feed) => 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(calendarWebcalUrl(feed)) },
   { id: 'apple', label: 'Apple / iPhone (.ics)', format: 'text', href: (ev, now) => icsCalendarHref(ev, now),
-    download: (ev) => ev.date + '-' + ev.type.replace(/[^a-z0-9]+/gi, '-') + '.ics' },
-  { id: 'outlook', label: 'Outlook.com', format: 'html', href: (ev) => outlookCalendarHref(ev) },
+    download: (ev) => ev.date + '-' + ev.type.replace(/[^a-z0-9]+/gi, '-') + '.ics',
+    subLabel: 'iPhone / Mac', subHref: (feed) => calendarWebcalUrl(feed) },
+  { id: 'outlook', label: 'Outlook.com', format: 'html', href: (ev) => outlookCalendarHref(ev),
+    subLabel: 'Outlook',
+    subHref: (feed, name) => 'https://outlook.live.com/calendar/0/addfromweb?url=' + encodeURIComponent(feed) + '&name=' + encodeURIComponent(name) },
 ];
 
-/** Providers with the remembered one (by id) first; an unknown id changes nothing. */
-function orderedProviders(rememberedId) {
-  const first = CALENDAR_PROVIDERS.filter((p) => p.id === rememberedId);
-  return first.concat(CALENDAR_PROVIDERS.filter((p) => p.id !== rememberedId));
+/** The feed address with a webcal:// scheme (subscribes instead of downloading). */
+function calendarWebcalUrl(feedUrl) {
+  return 'webcal://' + String(feedUrl).replace(/^https?:\/\//i, '');
+}
+
+/** One-tap subscribe links, in provider order: [{ id, label, href }] (bd atc-eb1). */
+function subscribeLinks() {
+  return CALENDAR_PROVIDERS.map((p) => ({ id: p.id, label: p.subLabel,
+    href: p.subHref(CALENDAR_CONFIG.feedUrl, CALENDAR_CONFIG.feedName) }));
+}
+
+/** Item text for a calendar title: parentheticals ending in "?" (open questions) are left out. */
+function calendarCleanTitle(text) {
+  const s = String(text == null ? '' : text);
+  const out = s.replace(/\s*\([^()]*\?\s*\)/g, '');
+  return out === s ? s : out.trim();
+}
+
+/** Start-end for a date heading, e.g. "9:00-1:45" (12-hour, no AM/PM); '' for an all-day event. */
+function calendarShortTime(entry) {
+  if (entry.allDay) return '';
+  const f = (hhmm) => { const p = hhmm.split(':').map(Number); return ((p[0] % 12) || 12) + ':' + (p[1] < 10 ? '0' : '') + p[1]; };
+  return f(entry.start) + '-' + f(entry.end);
 }
 
 /** Rules matched by `text`, in rule order, each consuming its matched text. */
@@ -5596,7 +6042,7 @@ function buildCalendarEvent(date, itemText, schedule, detailsPrefix) {
   lines.push({ text: 'Practice Mix', url: CALENDAR_CONFIG.appUrl });
   return {
     type: rules.length ? rules.map((r) => r.type).join('+') : 'all-day',
-    title: CALENDAR_CONFIG.titlePrefix + itemText,
+    title: CALENDAR_CONFIG.titlePrefix + calendarCleanTitle(itemText),
     date,
     location: CALENDAR_CONFIG.location,
     start: rules.length ? rules.map((r) => r.start).sort()[0] : null,
@@ -5732,18 +6178,52 @@ function icsFold(line) {
 }
 
 /**
+ * One date's calendar events (bd atc-9kl): items matching >=1 rule merge into ONE event (texts joined
+ * by '; ': earliest start, latest end); each unmatched item is its own all-day event. Returns
+ * [{ ev, itemIndexes }] ordered by each entry's first item index.
+ */
+function scheduleDayEvents(date, items, schedule, detailsPrefix) {
+  const timed = [];
+  const out = [];
+  (items || []).forEach((it, i) => {
+    if (classifyScheduleItem(it.text).length > 0) {
+      if (!timed.length) out.push({ timed: true, first: i });
+      timed.push(i);
+    } else {
+      out.push({ ev: buildCalendarEvent(date, it.text, schedule, detailsPrefix), itemIndexes: [i] });
+    }
+  });
+  return out.map((x) => (x.timed
+    ? { ev: buildCalendarEvent(date, timed.map((i) => items[i].text).join('; '), schedule, detailsPrefix), itemIndexes: timed }
+    : x));
+}
+
+/**
  * Every calendar event the schedule yields, in document order: each item of each dated event, then
- * each group item with exactly one date (several dates = an unresolved choice, omitted).
+ * each group item: one date = one event; several dates (an unresolved choice) = one tentative
+ * "alternate date" event per date (bd atc-c2z).
  */
 function scheduleCalendarEvents(schedule) {
   const out = [];
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const short = (d) => { const p = d.split('-'); return MONTHS[Number(p[1]) - 1] + ' ' + Number(p[2]); };
   ((schedule && schedule.events) || []).forEach((e) => {
-    (e.items || []).forEach((it) => out.push(buildCalendarEvent(e.date, it.text, schedule)));
+    scheduleDayEvents(e.date, e.items || [], schedule).forEach((x) => out.push(x.ev));
   });
   ((schedule && schedule.groups) || []).forEach((g) => {
     (g.items || []).forEach((it) => {
-      if (Array.isArray(it.dates) && it.dates.length === 1) {
+      if (!Array.isArray(it.dates)) return;
+      if (it.dates.length === 1) {
         out.push(buildCalendarEvent(it.dates[0], it.text, schedule, g.title + ' (optional)'));
+      } else if (it.dates.length > 1) {
+        const choice = it.dates.map(short).join(' or ');
+        it.dates.forEach((d) => {
+          const ev = buildCalendarEvent(d, it.text, schedule, g.title + ' (optional)');
+          ev.title += CALENDAR_CONFIG.alternateSuffix;
+          ev.detailLines.splice(1, 0, { text: 'Alternate date: one of ' + choice + ' — not yet confirmed. Check the Choir Schedule for the final date.' });
+          ev.details = calendarDetailsText(ev.detailLines, '\n');
+          out.push(ev);
+        });
       }
     });
   });
@@ -5792,7 +6272,7 @@ function placeCalMenu(rect, size, viewport, gap, margin) {
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel, buildCalendarFeed, scheduleCalendarEvents, calendarUid };
+if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, subscribeLinks, calendarShortTime, calendarCleanTitle, classifyScheduleItem, buildCalendarEvent, scheduleDayEvents, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel, buildCalendarFeed, scheduleCalendarEvents, calendarUid };
 </script>
 
 <script>
@@ -5967,6 +6447,7 @@ function createDocPopup(cfg) {
 
   function open(btn) {
     opener = btn;
+    if (cfg.onOpen) cfg.onOpen();
     modal.classList.remove('hidden');
     closeBtn.focus();
     if (!cached) cached = readStored();
@@ -6028,13 +6509,6 @@ function closeCalMenu() {
   return true;
 }
 
-function readCalProvider() {
-  try { return localStorage.getItem('pmix.calProvider'); } catch (e) { return null; }
-}
-function writeCalProvider(pid) {
-  try { localStorage.setItem('pmix.calProvider', pid); } catch (e) { /* storage unavailable */ }
-}
-
 function bindCalGlobals() {
   if (calGlobalsBound) return;
   calGlobalsBound = true;
@@ -6058,22 +6532,19 @@ function positionCalMenu(btn, menu) {
   menu.setAttribute('data-placement', p.placement);
 }
 
-const CALENDAR_ICON_SVG = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" '
-  + 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-  + '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 9h18M12 12v6M9 15h6"/></svg>';
-
-function buildCalendarControl(ev) {
+/**
+ * "+ Add" control (bd atc-eb1) for entries [{ ev, label }]: a labelled button opening the provider menu
+ * (fixed order). With several entries the menu shows each entry's label above its providers.
+ */
+function buildAddControl(entries) {
   bindCalGlobals();
   const wrap = docNode('span', 'schedule-cal-wrap');
-  const btn = docNode('button', 'schedule-cal-btn', 'schedule-cal-btn');
+  const btn = docNode('button', 'schedule-add-btn', 'schedule-add-btn');
   btn.setAttribute('type', 'button');
-  // Icon only (calendar with a plus) keeps each item on one line; the name is the aria-label.
-  btn.innerHTML = CALENDAR_ICON_SVG;
-  btn.setAttribute('title', 'Add to calendar');
-  btn.setAttribute('data-cal-type', ev.type);
+  btn.textContent = '+ Add';
   btn.setAttribute('aria-haspopup', 'menu');
   btn.setAttribute('aria-expanded', 'false');
-  btn.setAttribute('aria-label', 'Add to calendar: ' + ev.title + ' (' + calendarTimeLabel(ev) + ')');
+  btn.setAttribute('aria-label', 'Add to calendar: ' + entries.map((x) => x.ev.title).join('; '));
   btn.addEventListener('click', () => {
     const wasMine = openCalMenu && openCalMenu.btn === btn;
     closeCalMenu();
@@ -6081,18 +6552,28 @@ function buildCalendarControl(ev) {
     const menu = docNode('div', 'schedule-cal-menu', 'schedule-cal-menu');
     menu.setAttribute('role', 'menu');
     const now = new Date();
-    orderedProviders(readCalProvider()).forEach((prov) => {
-      const href = prov.href(ev, now);
-      const a = docNode('a', 'schedule-cal-item', 'schedule-cal-' + prov.id);
-      a.setAttribute('role', 'menuitem');
-      a.textContent = prov.label;
-      if (typeof href === 'string' && (href.indexOf('https://') === 0 || href.indexOf('data:text/calendar') === 0)) {
-        a.setAttribute('href', href);
+    entries.forEach((x) => {
+      if (entries.length > 1) {
+        const head = docNode('div', 'schedule-cal-menu-event', 'schedule-cal-menu-event');
+        head.textContent = x.label;
+        menu.appendChild(head);
       }
-      if (typeof prov.download === 'function') a.setAttribute('download', prov.download(ev));
-      else { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); }
-      a.addEventListener('click', () => { writeCalProvider(prov.id); closeCalMenu(); });
-      menu.appendChild(a);
+      CALENDAR_PROVIDERS.forEach((prov) => {
+        const href = prov.href(x.ev, now);
+        const a = docNode('a', 'schedule-cal-item', 'schedule-cal-' + prov.id);
+        a.setAttribute('role', 'menuitem');
+        a.textContent = prov.label;
+        if (typeof href === 'string' && (href.indexOf('https://') === 0 || href.indexOf('data:text/calendar') === 0)) {
+          a.setAttribute('href', href);
+        }
+        if (typeof prov.download === 'function') a.setAttribute('download', prov.download(x.ev));
+        else { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); }
+        a.addEventListener('click', () => {
+          if (typeof logActivity_ === 'function') logActivity_('addEvent', { provider: prov.id, date: x.ev.date, title: x.ev.title });
+          closeCalMenu();
+        });
+        menu.appendChild(a);
+      });
     });
     wrap.appendChild(menu);
     positionCalMenu(btn, menu);
@@ -6120,12 +6601,22 @@ function renderScheduleList(result, list, today) {
       badge.textContent = 'Today';
       h.appendChild(badge);
     }
+    // One "+ Add" per date heading; its menu reaches every calendar event of the date (merged timed items share one).
+    const day = scheduleDayEvents(e.date, e.items || [], result);
+    const timed = day.find((x) => !x.ev.allDay);
+    if (timed) {
+      const t = docNode('span', 'schedule-date-time', 'schedule-date-time');
+      t.textContent = calendarShortTime(timed.ev);
+      h.appendChild(t);
+    }
+    if (day.length) {
+      h.appendChild(buildAddControl(day.map((x) => ({ ev: x.ev, label: x.itemIndexes.map((i) => e.items[i].text).join('; ') }))));
+    }
     block.appendChild(h);
     const ul = docNode('ul', 'schedule-items');
     (e.items || []).forEach((it) => {
       const li = document.createElement('li');
       li.appendChild(document.createTextNode(it.text));
-      li.appendChild(buildCalendarControl(buildCalendarEvent(e.date, it.text, result)));
       ul.appendChild(li);
     });
     block.appendChild(ul);
@@ -6141,9 +6632,9 @@ function renderScheduleList(result, list, today) {
     g.items.forEach((it) => {
       const li = document.createElement('li');
       li.appendChild(document.createTextNode(it.text));
-      // Several dates = an unresolved choice: no button. Exactly one date >= today: the usual control.
+      // Several dates = an unresolved choice: no button. Exactly one date >= today: a labelled "+ Add" on the line.
       if (it.dates.length === 1 && it.upcoming.length === 1) {
-        li.appendChild(buildCalendarControl(buildCalendarEvent(it.upcoming[0], it.text, result, g.title + ' (optional)')));
+        li.appendChild(buildAddControl([{ ev: buildCalendarEvent(it.upcoming[0], it.text, result, g.title + ' (optional)'), label: it.text }]));
       }
       ul.appendChild(li);
     });
@@ -6203,15 +6694,49 @@ if (typeof document !== 'undefined') {
   createDocPopup({
     prefix: 'schedule', buttonClass: 'btn-schedule', action: 'getSchedule', storeKey: 'pmix.schedule',
     defaultTitle: 'Choir Schedule', loadingText: 'Loading schedule…', failText: 'The schedule could not be loaded.',
-    render: renderScheduleList
+    render: renderScheduleList,
+    onOpen: () => { document.getElementById('schedule-cal-note').open = false; } // subscribe box starts collapsed (atc-eb1 AC7)
   });
   createDocPopup({
     prefix: 'links', buttonClass: 'btn-links', action: 'getLinks', storeKey: 'pmix.links',
     defaultTitle: 'Links to Learn By', loadingText: 'Loading links…', failText: 'The links could not be loaded.',
     render: renderLinksList
   });
+  document.getElementById('links-list').addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a');
+    if (a) logActivity_('linkOpen', { title: a.textContent, url: a.getAttribute('href') });
+  });
   initHelpGuide();
+  initScheduleCalNote();
   initMediaViewer();
+}
+
+/** Schedule popup's subscribe box (bd atc-hu9, atc-eb1): buttons and feed address come from the calendar block. */
+function initScheduleCalNote() {
+  const url = CALENDAR_CONFIG.feedUrl;
+  const box = document.getElementById('schedule-sub-buttons');
+  subscribeLinks().forEach((l) => {
+    const a = document.createElement('a');
+    a.className = 'schedule-sub-btn';
+    a.setAttribute('data-testid', 'schedule-sub-' + l.id);
+    a.setAttribute('href', l.href);
+    if (l.href.indexOf('https://') === 0) { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); }
+    a.textContent = l.label;
+    a.addEventListener('click', () => { if (typeof logActivity_ === 'function') logActivity_('subscribe', { provider: l.id }); });
+    box.appendChild(a);
+  });
+  const helpLink = box.parentNode.querySelector('[data-testid="schedule-cal-help"]');
+  if (helpLink) helpLink.addEventListener('click', () => { logActivity_('calendarHelp'); });
+  const btn = document.getElementById('schedule-feed-copy');
+  btn.addEventListener('click', () => {
+    if (typeof logActivity_ === 'function') logActivity_('subscribe', { provider: 'copy' });
+    const done = () => { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy address'; }, 2500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, () => window.prompt('Copy this address:', url));
+    } else {
+      window.prompt('Copy this address:', url);
+    }
+  });
 }
 
 /**
@@ -6311,6 +6836,8 @@ function renderFolderMedia(videos, pdfs) {
     b.title = label;
     b.setAttribute('aria-label', label);
     b.onclick = () => {
+      if (pdfs.length === 1) logActivity_('pdfOpen', { fileId: pdfs[0].id, fileName: pdfs[0].name });
+      else logActivity_('pdfOpen', { fileId: '', fileName: 'Folder PDFs (' + pdfs.length + ')' });
       if (!mediaViewer_) return;
       if (pdfs.length === 1) mediaViewer_.openFile(pdfs[0], b);
       else mediaViewer_.openChooser(pdfs, b);
@@ -6380,7 +6907,7 @@ function initMediaViewer() {
       name.className = 'video-name';
       name.textContent = f.name;
       b.append(icon, name);
-      b.addEventListener('click', () => load(f));
+      b.addEventListener('click', () => { logActivity_('pdfOpen', { fileId: f.id, fileName: f.name }); load(f); });
       choices.appendChild(b);
     });
     choices.hidden = false;

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2026 Stuart Donaldson. Licensed under MIT License. -->
+<!-- Choir calendar help (bd atc-hu9). Plain-language steps for subscribing to the choir calendar feed
+     (bd atc-07h) or adding one date. The feed address must match CALENDAR_CONFIG.feedUrl in index.html. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choir Calendar — How to Add It</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+    :root {
+      --bg: #0b0d10; --surface-1: #161a20; --surface-2: #1d2229; --border: #262c35; --border-strong: #3a4452;
+      --text: #f5f7fa; --text-2: #c0c8d4; --text-3: #8a93a1;
+      --green: oklch(0.72 0.16 155); --blue: oklch(0.72 0.14 240); --amber: oklch(0.78 0.14 70);
+      --radius: 10px; --spacing: 16px;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      line-height: 1.5; color: var(--text-2); background: var(--bg); overflow-x: hidden;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: var(--spacing); padding-bottom: 40px; }
+    header { text-align: center; padding: 8px 0 4px; }
+    h1 { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .sub { font-size: 14px; color: var(--text-3); }
+    .intro { margin: 16px 0 0; }
+    .intro p + p { margin-top: 8px; }
+    .intro strong, .step strong { color: var(--text); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px;
+      border-radius: var(--radius); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none;
+      border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+    }
+    .btn-primary { background: var(--green); border-color: var(--green); color: #06130c; }
+    .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .address {
+      margin-top: 16px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: var(--spacing);
+    }
+    .address .label { font-size: 13px; color: var(--text-3); }
+    .address code {
+      display: block; margin: 4px 0 10px; font-size: 14px; color: var(--text); overflow-wrap: anywhere;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .step { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--spacing); margin-top: 16px; }
+    .step h2 { font-size: 17px; color: var(--text); margin-bottom: 8px; }
+    .step p, .step ol { font-size: 15px; }
+    .step .lead { margin-bottom: 10px; }
+    .step .btn { width: 100%; margin-bottom: 12px; }
+    .step ol { margin-left: 22px; }
+    .step ol li + li { margin-top: 6px; }
+    .step .alt { margin-top: 12px; font-size: 14px; color: var(--text-3); }
+    .step .alt + ol { margin-top: 6px; }
+    .path { color: var(--text); font-weight: 600; }
+    .tips { margin-top: 20px; }
+    .tips h2 { font-size: 16px; color: var(--text); margin-bottom: 6px; }
+    .tips ul { margin-left: 20px; font-size: 15px; }
+    .tips li + li { margin-top: 4px; }
+    .actions { margin: 20px 0 0; }
+    .actions .btn { width: 100%; }
+    footer { margin-top: 20px; font-size: 12px; color: var(--text-3); text-align: center; }
+    @media print { .btn { display: none; } }
+  </style>
+</head>
+<body>
+<main class="wrap" data-testid="cal-help-page">
+  <header>
+    <h1>Choir Calendar</h1>
+    <p class="sub">How to put choir dates on your calendar</p>
+  </header>
+
+  <section class="intro">
+    <p>There are two ways:</p>
+    <p><strong>1. Subscribe to the choir calendar (recommended).</strong> Every choir date appears on your
+      calendar, and it stays up to date by itself when the schedule changes. You only do this once.</p>
+    <p><strong>2. Add just one date</strong> from the Choir Schedule in Practice Mix.</p>
+  </section>
+
+  <section class="address">
+    <p class="label">The choir calendar address</p>
+    <code data-testid="cal-help-url">https://nuuc-it.github.io/Static/pub/pmix-cal/choir.ics</code>
+    <button type="button" class="btn" data-testid="cal-help-copy">Copy address</button>
+  </section>
+
+  <section class="step" data-testid="cal-help-section-google">
+    <h2>Google Calendar</h2>
+    <p class="lead">This is easiest on a <strong>computer</strong>. Once added, the dates also show in the Google Calendar app on your phone.</p>
+    <a class="btn btn-primary" data-testid="cal-help-google" href="https://calendar.google.com/calendar/render?cid=webcal%3A%2F%2Fnuuc-it.github.io%2FStatic%2Fpub%2Fpmix-cal%2Fchoir.ics" target="_blank" rel="noopener">Add to Google Calendar</a>
+    <p class="alt">On an Android phone, if the button doesn't open Google Calendar, do this once on a computer - the calendar then appears on your phone.</p>
+    <ol>
+      <li>Click <strong>Add to Google Calendar</strong> and sign in to Google if asked.</li>
+      <li>Click <strong>Add</strong> when Google asks whether to add the calendar.</li>
+    </ol>
+    <p class="alt">If that doesn't work:</p>
+    <ol>
+      <li>Click <strong>Copy address</strong> above.</li>
+      <li>Open <span class="path">calendar.google.com</span>. On the left, next to <strong>Other calendars</strong>, click <strong>+</strong>.</li>
+      <li>Choose <strong>From URL</strong>, paste the address, and click <strong>Add calendar</strong>.</li>
+    </ol>
+  </section>
+
+  <section class="step" data-testid="cal-help-section-apple">
+    <h2>iPhone, iPad or Mac (Apple Calendar)</h2>
+    <p class="lead">Easiest: open this page in <strong>Safari</strong> and tap the button.</p>
+    <a class="btn btn-primary" data-testid="cal-help-apple" href="webcal://nuuc-it.github.io/Static/pub/pmix-cal/choir.ics">Subscribe on iPhone / Mac</a>
+    <ol>
+      <li>Tap <strong>Subscribe on iPhone / Mac</strong>.</li>
+      <li>When asked, tap <strong>Subscribe</strong>.</li>
+      <li>Tap <strong>Done</strong> (or <strong>Add</strong>). The choir dates now show in your Calendar app.</li>
+    </ol>
+    <p class="alt">If the button does nothing (for example in Chrome), add it in Settings instead:</p>
+    <ol>
+      <li>Tap <strong>Copy address</strong> above.</li>
+      <li>Open <span class="path">Settings › Apps › Calendar › Calendar Accounts</span>
+        (on older iPhones: <span class="path">Settings › Calendar › Accounts</span>).</li>
+      <li>Tap <strong>Add Account</strong> › <strong>Other</strong> › <strong>Add Subscribed Calendar</strong>.</li>
+      <li>Paste the address into <strong>Server</strong>, tap <strong>Next</strong>, then <strong>Save</strong>.</li>
+    </ol>
+  </section>
+
+  <section class="step" data-testid="cal-help-section-outlook">
+    <h2>Outlook</h2>
+    <p class="lead">Do this once on the <strong>outlook.com</strong> website (on a computer or in your phone's browser). The dates then show in the Outlook app too.</p>
+    <ol>
+      <li>Tap <strong>Copy address</strong> above.</li>
+      <li>Go to <span class="path">outlook.com</span>, sign in, and open the <strong>Calendar</strong>.</li>
+      <li>Choose <strong>Add calendar</strong>, then <strong>Subscribe from web</strong>.</li>
+      <li>Paste the address, name it <strong>Choir Schedule-Northlake UU Church</strong>, and choose <strong>Import</strong>.</li>
+    </ol>
+    <p class="alt">Work or school Outlook: the same steps on <span class="path">outlook.office.com</span>.</p>
+  </section>
+
+  <section class="step" data-testid="cal-help-section-one">
+    <h2>Add just one date</h2>
+    <p class="lead">In the app's schedule, tap <strong>+ Add</strong> beside a date.</p>
+  </section>
+
+  <section class="tips">
+    <h2>Good to know</h2>
+    <ul>
+      <li>Changes to the schedule can take up to a day to appear on a subscribed calendar.</li>
+      <li>Undecided dates (such as "12/13 or 12/27") appear on each possible date, marked "not yet confirmed". Once the date is settled, the extra one disappears.</li>
+      <li>To stop, delete or unsubscribe from <strong>Choir Schedule-Northlake UU Church</strong> in your calendar.</li>
+    </ul>
+  </section>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="./" data-testid="cal-help-open-app">Open Practice Mix</a>
+  </div>
+
+  <footer>Practice Mix · choir calendar help</footer>
+</main>
+
+<script>
+(function () {
+  var btn = document.querySelector('[data-testid="cal-help-copy"]');
+  var url = document.querySelector('[data-testid="cal-help-url"]').textContent.trim();
+  btn.addEventListener('click', function () {
+    var done = function () { btn.textContent = 'Copied ✓'; setTimeout(function () { btn.textContent = 'Copy address'; }, 2500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, function () { window.prompt('Copy this address:', url); });
+    } else {
+      window.prompt('Copy this address:', url);
+    }
+  });
+})();
+</script>
+</body>
+</html>
