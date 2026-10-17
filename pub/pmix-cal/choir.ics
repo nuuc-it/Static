@@ -3,7 +3,7 @@ VERSION:2.0
 PRODID:-//PracticeMix//Choir Schedule Feed//EN
 CALSCALE:GREGORIAN
 METHOD:PUBLISH
-X-WR-CALNAME:Northlake UU Choir Schedule
+X-WR-CALNAME:Choir Schedule-Northlake UU Church
 X-WR-TIMEZONE:America/Los_Angeles
 REFRESH-INTERVAL;VALUE=DURATION:PT12H
 X-PUBLISHED-TTL:PT12H
@@ -44,40 +44,24 @@ URL:https://northlakeuu.org/pmix
 LOCATION:308 4th Ave South\, Kirkland\, WA 98033
 END:VEVENT
 BEGIN:VEVENT
-UID:2026-09-27-sing-choir-pickup-choir-sings-we-are-one-by-linda-smi@practi
- cemix
+UID:2026-09-27-sing-rehearse-choir-pickup-choir-sings-we-are-one-by-linda-s
+ mi@practicemix
 DTSTAMP:20261009T171748Z
 DTSTART:20260927T160000Z
-DTEND:20260927T183000Z
-SUMMARY:Choir: Pickup choir sings: “We are One\,” by Linda Smith Koehle
- r (SOL)
-DESCRIPTION:Choir Schedule: Fall 2026\nSchedule document: https://docs.goog
- le.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=dr
- ivesdk\nPractice Mix: https://northlakeuu.org/pmix
-X-ALT-DESC;FMTTYPE=text/html:<html><body>Choir Schedule: Fall 2026<br>Sched
- ule document: <a href="https://docs.google.com/document/d/1etmbV2xNTPXGAms
- YLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk">https://docs.google.com/do
- cument/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a
- ><br>Practice Mix: <a href="https://northlakeuu.org/pmix">https://northlak
- euu.org/pmix</a></body></html>
-URL:https://northlakeuu.org/pmix
-LOCATION:308 4th Ave South\, Kirkland\, WA 98033
-END:VEVENT
-BEGIN:VEVENT
-UID:2026-09-27-rehearse-choir-rehearse@practicemix
-DTSTAMP:20261009T171748Z
-DTSTART:20260927T191500Z
 DTEND:20260927T204500Z
-SUMMARY:Choir: Rehearse
-DESCRIPTION:Choir Schedule: Fall 2026\nSchedule document: https://docs.goog
- le.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=dr
- ivesdk\nPractice Mix: https://northlakeuu.org/pmix
-X-ALT-DESC;FMTTYPE=text/html:<html><body>Choir Schedule: Fall 2026<br>Sched
- ule document: <a href="https://docs.google.com/document/d/1etmbV2xNTPXGAms
- YLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk">https://docs.google.com/do
- cument/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a
- ><br>Practice Mix: <a href="https://northlakeuu.org/pmix">https://northlak
- euu.org/pmix</a></body></html>
+SUMMARY:Choir: Pickup choir sings: “We are One\,” by Linda Smith Koehle
+ r (SOL)\; Rehearse
+DESCRIPTION:Sing: 9:00–11:30 AM\nRehearse: 12:15–1:45 PM\nChoir Schedul
+ e: Fall 2026\nSchedule document: https://docs.google.com/document/d/1etmbV
+ 2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk\nPractice Mix: ht
+ tps://northlakeuu.org/pmix
+X-ALT-DESC;FMTTYPE=text/html:<html><body>Sing: 9:00–11:30 AM<br>Rehearse:
+  12:15–1:45 PM<br>Choir Schedule: Fall 2026<br>Schedule document: <a hre
+ f="https://docs.google.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnS
+ d3nr043s/edit?usp=drivesdk">https://docs.google.com/document/d/1etmbV2xNTP
+ XGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a><br>Practice Mix: <
+ a href="https://northlakeuu.org/pmix">https://northlakeuu.org/pmix</a></bo
+ dy></html>
 URL:https://northlakeuu.org/pmix
 LOCATION:308 4th Ave South\, Kirkland\, WA 98033
 END:VEVENT
@@ -142,40 +126,24 @@ URL:https://northlakeuu.org/pmix
 LOCATION:308 4th Ave South\, Kirkland\, WA 98033
 END:VEVENT
 BEGIN:VEVENT
-UID:2026-11-08-sing-choir-sing-te-deum-laudamus-ancient-text-music-b@practi
- cemix
+UID:2026-11-08-sing-rehearse-choir-sing-te-deum-laudamus-ancient-text-music
+ -b@practicemix
 DTSTAMP:20261009T171748Z
 DTSTART:20261108T170000Z
-DTEND:20261108T193000Z
-SUMMARY:Choir: Sing: “Te Deum Laudamus\,” ancient text\, music by Juzef
-  Furmanik (with recorder & vielle?)
-DESCRIPTION:Choir Schedule: Fall 2026\nSchedule document: https://docs.goog
- le.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=dr
- ivesdk\nPractice Mix: https://northlakeuu.org/pmix
-X-ALT-DESC;FMTTYPE=text/html:<html><body>Choir Schedule: Fall 2026<br>Sched
- ule document: <a href="https://docs.google.com/document/d/1etmbV2xNTPXGAms
- YLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk">https://docs.google.com/do
- cument/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a
- ><br>Practice Mix: <a href="https://northlakeuu.org/pmix">https://northlak
- euu.org/pmix</a></body></html>
-URL:https://northlakeuu.org/pmix
-LOCATION:308 4th Ave South\, Kirkland\, WA 98033
-END:VEVENT
-BEGIN:VEVENT
-UID:2026-11-08-rehearse-choir-rehearse@practicemix
-DTSTAMP:20261009T171748Z
-DTSTART:20261108T201500Z
 DTEND:20261108T214500Z
-SUMMARY:Choir: Rehearse
-DESCRIPTION:Choir Schedule: Fall 2026\nSchedule document: https://docs.goog
- le.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=dr
- ivesdk\nPractice Mix: https://northlakeuu.org/pmix
-X-ALT-DESC;FMTTYPE=text/html:<html><body>Choir Schedule: Fall 2026<br>Sched
- ule document: <a href="https://docs.google.com/document/d/1etmbV2xNTPXGAms
- YLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk">https://docs.google.com/do
- cument/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a
- ><br>Practice Mix: <a href="https://northlakeuu.org/pmix">https://northlak
- euu.org/pmix</a></body></html>
+SUMMARY:Choir: Sing: “Te Deum Laudamus\,” ancient text\, music by Juzef
+  Furmanik\; Rehearse
+DESCRIPTION:Sing: 9:00–11:30 AM\nRehearse: 12:15–1:45 PM\nChoir Schedul
+ e: Fall 2026\nSchedule document: https://docs.google.com/document/d/1etmbV
+ 2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk\nPractice Mix: ht
+ tps://northlakeuu.org/pmix
+X-ALT-DESC;FMTTYPE=text/html:<html><body>Sing: 9:00–11:30 AM<br>Rehearse:
+  12:15–1:45 PM<br>Choir Schedule: Fall 2026<br>Schedule document: <a hre
+ f="https://docs.google.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnS
+ d3nr043s/edit?usp=drivesdk">https://docs.google.com/document/d/1etmbV2xNTP
+ XGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a><br>Practice Mix: <
+ a href="https://northlakeuu.org/pmix">https://northlakeuu.org/pmix</a></bo
+ dy></html>
 URL:https://northlakeuu.org/pmix
 LOCATION:308 4th Ave South\, Kirkland\, WA 98033
 END:VEVENT
@@ -198,39 +166,24 @@ URL:https://northlakeuu.org/pmix
 LOCATION:308 4th Ave South\, Kirkland\, WA 98033
 END:VEVENT
 BEGIN:VEVENT
-UID:2026-11-29-sing-choir-sing-in-meeting-we-are-blessed-gatsnahos-r@practi
- cemix
+UID:2026-11-29-sing-rehearse-choir-sing-in-meeting-we-are-blessed-gatsnahos
+ -r@practicemix
 DTSTAMP:20261009T171748Z
 DTSTART:20261129T170000Z
-DTEND:20261129T193000Z
-SUMMARY:Choir: Sing “In Meeting We are Blessed\,” Gatsnahos/Robertson
-DESCRIPTION:Choir Schedule: Fall 2026\nSchedule document: https://docs.goog
- le.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=dr
- ivesdk\nPractice Mix: https://northlakeuu.org/pmix
-X-ALT-DESC;FMTTYPE=text/html:<html><body>Choir Schedule: Fall 2026<br>Sched
- ule document: <a href="https://docs.google.com/document/d/1etmbV2xNTPXGAms
- YLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk">https://docs.google.com/do
- cument/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a
- ><br>Practice Mix: <a href="https://northlakeuu.org/pmix">https://northlak
- euu.org/pmix</a></body></html>
-URL:https://northlakeuu.org/pmix
-LOCATION:308 4th Ave South\, Kirkland\, WA 98033
-END:VEVENT
-BEGIN:VEVENT
-UID:2026-11-29-rehearse-choir-rehearse@practicemix
-DTSTAMP:20261009T171748Z
-DTSTART:20261129T201500Z
 DTEND:20261129T214500Z
-SUMMARY:Choir: Rehearse
-DESCRIPTION:Choir Schedule: Fall 2026\nSchedule document: https://docs.goog
- le.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=dr
- ivesdk\nPractice Mix: https://northlakeuu.org/pmix
-X-ALT-DESC;FMTTYPE=text/html:<html><body>Choir Schedule: Fall 2026<br>Sched
- ule document: <a href="https://docs.google.com/document/d/1etmbV2xNTPXGAms
- YLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk">https://docs.google.com/do
- cument/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a
- ><br>Practice Mix: <a href="https://northlakeuu.org/pmix">https://northlak
- euu.org/pmix</a></body></html>
+SUMMARY:Choir: Sing “In Meeting We are Blessed\,” Gatsnahos/Robertson\;
+  Rehearse
+DESCRIPTION:Sing: 9:00–11:30 AM\nRehearse: 12:15–1:45 PM\nChoir Schedul
+ e: Fall 2026\nSchedule document: https://docs.google.com/document/d/1etmbV
+ 2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk\nPractice Mix: ht
+ tps://northlakeuu.org/pmix
+X-ALT-DESC;FMTTYPE=text/html:<html><body>Sing: 9:00–11:30 AM<br>Rehearse:
+  12:15–1:45 PM<br>Choir Schedule: Fall 2026<br>Schedule document: <a hre
+ f="https://docs.google.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnS
+ d3nr043s/edit?usp=drivesdk">https://docs.google.com/document/d/1etmbV2xNTP
+ XGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a><br>Practice Mix: <
+ a href="https://northlakeuu.org/pmix">https://northlakeuu.org/pmix</a></bo
+ dy></html>
 URL:https://northlakeuu.org/pmix
 LOCATION:308 4th Ave South\, Kirkland\, WA 98033
 END:VEVENT
@@ -308,6 +261,54 @@ X-ALT-DESC;FMTTYPE=text/html:<html><body>Small group options (optional)<br>
  ivesdk">https://docs.google.com/document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzP
  jGdnSd3nr043s/edit?usp=drivesdk</a><br>Practice Mix: <a href="https://nort
  hlakeuu.org/pmix">https://northlakeuu.org/pmix</a></body></html>
+URL:https://northlakeuu.org/pmix
+LOCATION:308 4th Ave South\, Kirkland\, WA 98033
+END:VEVENT
+BEGIN:VEVENT
+UID:2026-12-13-all-day-choir-special-music-on-12-13-or-12-27-alternate@prac
+ ticemix
+DTSTAMP:20261009T171748Z
+DTSTART;VALUE=DATE:20261213
+DTEND;VALUE=DATE:20261214
+SUMMARY:Choir: Special music on 12/13 or 12/27 (alternate date — not yet 
+ confirmed)
+DESCRIPTION:Small group options (optional)\nAlternate date: one of Dec 13 o
+ r Dec 27 — not yet confirmed. Check the Choir Schedule for the final dat
+ e.\nChoir Schedule: Fall 2026\nSchedule document: https://docs.google.com/
+ document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk\
+ nPractice Mix: https://northlakeuu.org/pmix
+X-ALT-DESC;FMTTYPE=text/html:<html><body>Small group options (optional)<br>
+ Alternate date: one of Dec 13 or Dec 27 — not yet confirmed. Check the C
+ hoir Schedule for the final date.<br>Choir Schedule: Fall 2026<br>Schedule
+  document: <a href="https://docs.google.com/document/d/1etmbV2xNTPXGAmsYLJ
+ lldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk">https://docs.google.com/docum
+ ent/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a><b
+ r>Practice Mix: <a href="https://northlakeuu.org/pmix">https://northlakeuu
+ .org/pmix</a></body></html>
+URL:https://northlakeuu.org/pmix
+LOCATION:308 4th Ave South\, Kirkland\, WA 98033
+END:VEVENT
+BEGIN:VEVENT
+UID:2026-12-27-all-day-choir-special-music-on-12-13-or-12-27-alternate@prac
+ ticemix
+DTSTAMP:20261009T171748Z
+DTSTART;VALUE=DATE:20261227
+DTEND;VALUE=DATE:20261228
+SUMMARY:Choir: Special music on 12/13 or 12/27 (alternate date — not yet 
+ confirmed)
+DESCRIPTION:Small group options (optional)\nAlternate date: one of Dec 13 o
+ r Dec 27 — not yet confirmed. Check the Choir Schedule for the final dat
+ e.\nChoir Schedule: Fall 2026\nSchedule document: https://docs.google.com/
+ document/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk\
+ nPractice Mix: https://northlakeuu.org/pmix
+X-ALT-DESC;FMTTYPE=text/html:<html><body>Small group options (optional)<br>
+ Alternate date: one of Dec 13 or Dec 27 — not yet confirmed. Check the C
+ hoir Schedule for the final date.<br>Choir Schedule: Fall 2026<br>Schedule
+  document: <a href="https://docs.google.com/document/d/1etmbV2xNTPXGAmsYLJ
+ lldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk">https://docs.google.com/docum
+ ent/d/1etmbV2xNTPXGAmsYLJlldTV6oPFYzPjGdnSd3nr043s/edit?usp=drivesdk</a><b
+ r>Practice Mix: <a href="https://northlakeuu.org/pmix">https://northlakeuu
+ .org/pmix</a></body></html>
 URL:https://northlakeuu.org/pmix
 LOCATION:308 4th Ave South\, Kirkland\, WA 98033
 END:VEVENT
