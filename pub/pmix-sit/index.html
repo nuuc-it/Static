@@ -1053,21 +1053,26 @@ body {
 .schedule-items { margin: 0; padding-left: 20px; font-size: 14px; color: var(--text-2); }
 .schedule-items li + li { margin-top: 4px; }
 .schedule-items a, .links-notes a { color: var(--blue); }
-.schedule-cal-wrap { position: relative; display: inline-block; margin-left: 8px; }
-.schedule-cal-btn {
+.schedule-cal-wrap { position: relative; display: inline-block; margin-left: auto; }
+li > .schedule-cal-wrap { margin-left: 8px; }
+.schedule-add-btn {
   display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
-  width: 26px; height: 24px; padding: 0; border-radius: 6px; cursor: pointer;
+  min-height: 28px; padding: 0 12px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
   background: var(--surface-2); color: var(--blue); border: 1px solid var(--border-strong);
 }
-.schedule-cal-btn:hover, .schedule-cal-btn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
+.schedule-add-btn:hover, .schedule-add-btn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
+@media (max-width: 600px) { .schedule-add-btn { min-height: 44px; min-width: 44px; } }
+.schedule-date-time { font-size: 13px; font-weight: 400; color: var(--text-3); }
 .schedule-cal-menu {
-  position: fixed; top: 0; left: 0; z-index: 1002; min-width: 180px; max-width: calc(100vw - 16px);
-  display: flex; flex-direction: column; padding: 4px;
+  position: fixed; top: 0; left: 0; z-index: 1002; min-width: 180px; max-width: min(320px, calc(100vw - 16px));
+  display: flex; flex-direction: column; padding: 4px; font-size: 13px; font-weight: 400;
   background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 8px;
   box-shadow: 0 10px 40px rgba(0,0,0,.6);
 }
-.schedule-items .schedule-cal-item { display: block; padding: 6px 10px; border-radius: 6px; font-size: 13px; white-space: nowrap; color: var(--text-2); text-decoration: none; }
-.schedule-items .schedule-cal-item:hover, .schedule-items .schedule-cal-item:focus { background: var(--surface-3); color: var(--text); }
+.schedule-cal-menu-event { padding: 6px 10px 2px; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.schedule-cal-menu-event:not(:first-child) { margin-top: 4px; border-top: 1px solid var(--border); }
+.schedule-cal-item { display: block; padding: 8px 10px; border-radius: 6px; font-size: 13px; white-space: nowrap; color: var(--text-2); text-decoration: none; }
+.schedule-cal-item:hover, .schedule-cal-item:focus { background: var(--surface-3); color: var(--text); }
 .schedule-group { padding: var(--spacing-sm) 0; border-top: 1px solid var(--border); }
 .schedule-group-title { margin: 0 0 4px; font-size: 14px; color: var(--text); }
 .links-heading { font-weight: 400; color: var(--text-2); }
@@ -1075,29 +1080,23 @@ body {
 .links-notes p { margin: 0 0 4px; }
 .schedule-source { padding: var(--spacing-sm) var(--spacing); border-top: 1px solid var(--border); font-size: 12px; color: var(--text-3); }
 .schedule-source a { color: var(--blue); }
-/* Subscribe / one-date note under the schedule list (bd atc-hu9). */
+/* Subscribe box at the top of the schedule popup (bd atc-hu9, atc-eb1). */
 .schedule-cal-note {
   --cal-note-accent: oklch(0.68 0.08 300);
-  flex: none; margin: var(--spacing-sm) var(--spacing); border: 1px solid var(--cal-note-accent); border-radius: var(--radius);
-  overflow: hidden; font-size: 13px; color: var(--text-2);
+  flex: none; margin: var(--spacing-sm) var(--spacing) 0; padding: 10px 12px; border: 1px solid var(--cal-note-accent); border-radius: var(--radius);
+  background: color-mix(in oklab, var(--cal-note-accent) 10%, transparent); font-size: 13px; color: var(--text-2);
 }
-.schedule-cal-note summary {
-  list-style: none; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px;
-  padding: 8px 12px; background: color-mix(in oklab, var(--cal-note-accent) 16%, transparent);
-  color: var(--text); font-weight: 600; cursor: pointer;
+.schedule-cal-note-title { margin: 0 0 8px; font-size: 14px; color: var(--text); }
+.schedule-sub-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.schedule-sub-btn {
+  flex: 1 1 100px; display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 10px;
+  border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+  font: inherit; font-weight: 600; text-decoration: none; text-align: center;
 }
-.schedule-cal-note summary::-webkit-details-marker { display: none; }
-.schedule-cal-note-summary-icon { display: inline-flex; }
-.schedule-cal-note-chevron { margin-left: auto; font-size: 20px; line-height: 1; transition: transform .15s; }
-.schedule-cal-note[open] .schedule-cal-note-chevron { transform: rotate(90deg); }
-.schedule-cal-note[open] summary { border-bottom: 1px solid color-mix(in oklab, var(--cal-note-accent) 40%, transparent); }
-.schedule-cal-note-body { padding: 10px 12px; background: color-mix(in oklab, var(--cal-note-accent) 6%, transparent); }
-.schedule-cal-note p + p { margin-top: 4px; }
-.schedule-cal-note a { color: var(--blue); font-weight: 600; }
-.schedule-cal-note-icon { display: inline-flex; vertical-align: -3px; color: var(--text); }
-.schedule-feed { display: flex; align-items: center; gap: 8px; }
-.schedule-feed code { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: 12px; color: var(--text); }
-.schedule-feed-copy { flex: none; min-height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+.schedule-sub-btn:hover { background: var(--surface-3); }
+.schedule-cal-note-small { display: flex; align-items: center; gap: 16px; margin: 6px 0 0; font-size: 12px; }
+.schedule-cal-note a.schedule-cal-help { color: var(--blue); font-weight: 600; }
+.schedule-feed-copy { min-height: 32px; padding: 0 4px; border: 0; background: none; color: var(--blue); font: inherit; font-weight: 600; cursor: pointer; }
 .schedule-retry { margin-top: var(--spacing-sm); }
 
 /* ================================================================== */
@@ -1409,10 +1408,10 @@ body {
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.23.9";
+var STATIC_BUILD_VERSION_ = "1.6.23.10";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-17T03:50:32.840Z";
+var STATIC_BUILD_DATE_ = "2026-10-17T06:11:46.564Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -5803,15 +5802,12 @@ const UI = (() => {
         <h3 id="schedule-title">Choir Schedule</h3>
         <button id="schedule-close-btn" data-testid="schedule-close-btn" class="btn btn-close" aria-label="Close">✕</button>
       </div>
+      <div class="schedule-cal-note" data-testid="schedule-cal-note">
+        <h4 class="schedule-cal-note-title">Get all choir dates on your calendar</h4>
+        <div class="schedule-sub-buttons" id="schedule-sub-buttons"></div>
+        <p class="schedule-cal-note-small"><button type="button" class="schedule-feed-copy" id="schedule-feed-copy" data-testid="schedule-feed-copy">Copy address</button><a class="schedule-cal-help" data-testid="schedule-cal-help" href="calendar-help.html" target="_blank" rel="noopener">Help</a></p>
+      </div>
       <div id="schedule-list" data-testid="schedule-list" class="schedule-body"></div>
-      <details class="schedule-cal-note" data-testid="schedule-cal-note">
-        <summary data-testid="schedule-cal-note-summary"><span class="schedule-cal-note-summary-icon" id="schedule-cal-note-summary-icon"></span>Add to your calendar<span class="schedule-cal-note-chevron" aria-hidden="true">›</span></summary>
-        <div class="schedule-cal-note-body" data-testid="schedule-cal-note-body">
-        <p>Add one date: tap <span class="schedule-cal-note-icon" id="schedule-cal-note-icon"></span> beside it. Or subscribe to the choir calendar to get every date, kept up to date for you:</p>
-        <p class="schedule-feed"><code id="schedule-feed-url" data-testid="schedule-feed-url"></code><button type="button" class="schedule-feed-copy" id="schedule-feed-copy" data-testid="schedule-feed-copy">Copy</button></p>
-        <p><a data-testid="schedule-cal-help" href="calendar-help.html" target="_blank" rel="noopener">How to add the choir calendar</a></p>
-        </div>
-      </details>
       <div id="schedule-source" class="schedule-source" hidden></div>
     </div>
   </div>
@@ -5846,7 +5842,7 @@ const UI = (() => {
 
 <script>
 /**
- * Calendar export (bd atc-73d). Each schedule item gets one calendar icon button opening a provider menu.
+ * Calendar export (bd atc-73d). Each schedule date gets one "+ Add" button opening a provider menu (bd atc-eb1).
  *
  * Maintainer edits only the three tables below:
  *  - CALENDAR_CONFIG: time zone, title prefix, and the subscription feed's name and refresh interval.
@@ -5854,7 +5850,8 @@ const UI = (() => {
  *    matches, its matched text is removed from the working string, so later rules cannot match it
  *    again (e.g. "Dress Rehearsal" never also yields a "rehearse" match). An item yields ONE event:
  *    matched rules are combined (earliest start, latest end); no match -> one all-day event.
- *  - CALENDAR_PROVIDERS: registry of {id, label, format, href(event, now), download?(event)}, in menu order.
+ *  - CALENDAR_PROVIDERS: registry of {id, label, format, href(event, now), download?(event), subLabel, subHref(feedUrl, feedName)},
+ *    in menu order (also the order of the popup's subscribe buttons).
  *    format ('html' | 'text') is how the provider's description is rendered; switching Outlook is a one-word edit. To add a
  *    provider add one object here; rules and render code need no change. Hrefs must start with
  *    https:// or data:text/calendar to be rendered.
@@ -5879,16 +5876,40 @@ const CALENDAR_EVENT_RULES = [
 ];
 
 const CALENDAR_PROVIDERS = [
-  { id: 'google', label: 'Google Calendar', format: 'html', href: (ev) => googleCalendarHref(ev) },
+  { id: 'google', label: 'Google Calendar', format: 'html', href: (ev) => googleCalendarHref(ev),
+    subLabel: 'Google Calendar',
+    subHref: (feed) => 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(calendarWebcalUrl(feed)) },
   { id: 'apple', label: 'Apple / iPhone (.ics)', format: 'text', href: (ev, now) => icsCalendarHref(ev, now),
-    download: (ev) => ev.date + '-' + ev.type.replace(/[^a-z0-9]+/gi, '-') + '.ics' },
-  { id: 'outlook', label: 'Outlook.com', format: 'html', href: (ev) => outlookCalendarHref(ev) },
+    download: (ev) => ev.date + '-' + ev.type.replace(/[^a-z0-9]+/gi, '-') + '.ics',
+    subLabel: 'iPhone / Mac', subHref: (feed) => calendarWebcalUrl(feed) },
+  { id: 'outlook', label: 'Outlook.com', format: 'html', href: (ev) => outlookCalendarHref(ev),
+    subLabel: 'Outlook',
+    subHref: (feed, name) => 'https://outlook.live.com/calendar/0/addfromweb?url=' + encodeURIComponent(feed) + '&name=' + encodeURIComponent(name) },
 ];
 
-/** Providers with the remembered one (by id) first; an unknown id changes nothing. */
-function orderedProviders(rememberedId) {
-  const first = CALENDAR_PROVIDERS.filter((p) => p.id === rememberedId);
-  return first.concat(CALENDAR_PROVIDERS.filter((p) => p.id !== rememberedId));
+/** The feed address with a webcal:// scheme (subscribes instead of downloading). */
+function calendarWebcalUrl(feedUrl) {
+  return 'webcal://' + String(feedUrl).replace(/^https?:\/\//i, '');
+}
+
+/** One-tap subscribe links, in provider order: [{ id, label, href }] (bd atc-eb1). */
+function subscribeLinks() {
+  return CALENDAR_PROVIDERS.map((p) => ({ id: p.id, label: p.subLabel,
+    href: p.subHref(CALENDAR_CONFIG.feedUrl, CALENDAR_CONFIG.feedName) }));
+}
+
+/** Item text for a calendar title: parentheticals ending in "?" (open questions) are left out. */
+function calendarCleanTitle(text) {
+  const s = String(text == null ? '' : text);
+  const out = s.replace(/\s*\([^()]*\?\s*\)/g, '');
+  return out === s ? s : out.trim();
+}
+
+/** Start-end for a date heading, e.g. "9:00-1:45" (12-hour, no AM/PM); '' for an all-day event. */
+function calendarShortTime(entry) {
+  if (entry.allDay) return '';
+  const f = (hhmm) => { const p = hhmm.split(':').map(Number); return ((p[0] % 12) || 12) + ':' + (p[1] < 10 ? '0' : '') + p[1]; };
+  return f(entry.start) + '-' + f(entry.end);
 }
 
 /** Rules matched by `text`, in rule order, each consuming its matched text. */
@@ -5932,7 +5953,7 @@ function buildCalendarEvent(date, itemText, schedule, detailsPrefix) {
   lines.push({ text: 'Practice Mix', url: CALENDAR_CONFIG.appUrl });
   return {
     type: rules.length ? rules.map((r) => r.type).join('+') : 'all-day',
-    title: CALENDAR_CONFIG.titlePrefix + itemText,
+    title: CALENDAR_CONFIG.titlePrefix + calendarCleanTitle(itemText),
     date,
     location: CALENDAR_CONFIG.location,
     start: rules.length ? rules.map((r) => r.start).sort()[0] : null,
@@ -6162,7 +6183,7 @@ function placeCalMenu(rect, size, viewport, gap, margin) {
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, orderedProviders, classifyScheduleItem, buildCalendarEvent, scheduleDayEvents, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel, buildCalendarFeed, scheduleCalendarEvents, calendarUid };
+if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CONFIG, CALENDAR_EVENT_RULES, CALENDAR_PROVIDERS, subscribeLinks, calendarShortTime, calendarCleanTitle, classifyScheduleItem, buildCalendarEvent, scheduleDayEvents, calendarDetailsText, calendarDetailsHtml, calendarDetailsFor, zoneOffset, googleCalendarHref, outlookCalendarHref, icsCalendarHref, calendarTimeLabel, buildCalendarFeed, scheduleCalendarEvents, calendarUid };
 </script>
 
 <script>
@@ -6398,13 +6419,6 @@ function closeCalMenu() {
   return true;
 }
 
-function readCalProvider() {
-  try { return localStorage.getItem('pmix.calProvider'); } catch (e) { return null; }
-}
-function writeCalProvider(pid) {
-  try { localStorage.setItem('pmix.calProvider', pid); } catch (e) { /* storage unavailable */ }
-}
-
 function bindCalGlobals() {
   if (calGlobalsBound) return;
   calGlobalsBound = true;
@@ -6428,22 +6442,19 @@ function positionCalMenu(btn, menu) {
   menu.setAttribute('data-placement', p.placement);
 }
 
-const CALENDAR_ICON_SVG = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" '
-  + 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-  + '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 9h18M12 12v6M9 15h6"/></svg>';
-
-function buildCalendarControl(ev) {
+/**
+ * "+ Add" control (bd atc-eb1) for entries [{ ev, label }]: a labelled button opening the provider menu
+ * (fixed order). With several entries the menu shows each entry's label above its providers.
+ */
+function buildAddControl(entries) {
   bindCalGlobals();
   const wrap = docNode('span', 'schedule-cal-wrap');
-  const btn = docNode('button', 'schedule-cal-btn', 'schedule-cal-btn');
+  const btn = docNode('button', 'schedule-add-btn', 'schedule-add-btn');
   btn.setAttribute('type', 'button');
-  // Icon only (calendar with a plus) keeps each item on one line; the name is the aria-label.
-  btn.innerHTML = CALENDAR_ICON_SVG;
-  btn.setAttribute('title', 'Add to calendar');
-  btn.setAttribute('data-cal-type', ev.type);
+  btn.textContent = '+ Add';
   btn.setAttribute('aria-haspopup', 'menu');
   btn.setAttribute('aria-expanded', 'false');
-  btn.setAttribute('aria-label', 'Add to calendar: ' + ev.title + ' (' + calendarTimeLabel(ev) + ')');
+  btn.setAttribute('aria-label', 'Add to calendar: ' + entries.map((x) => x.ev.title).join('; '));
   btn.addEventListener('click', () => {
     const wasMine = openCalMenu && openCalMenu.btn === btn;
     closeCalMenu();
@@ -6451,18 +6462,25 @@ function buildCalendarControl(ev) {
     const menu = docNode('div', 'schedule-cal-menu', 'schedule-cal-menu');
     menu.setAttribute('role', 'menu');
     const now = new Date();
-    orderedProviders(readCalProvider()).forEach((prov) => {
-      const href = prov.href(ev, now);
-      const a = docNode('a', 'schedule-cal-item', 'schedule-cal-' + prov.id);
-      a.setAttribute('role', 'menuitem');
-      a.textContent = prov.label;
-      if (typeof href === 'string' && (href.indexOf('https://') === 0 || href.indexOf('data:text/calendar') === 0)) {
-        a.setAttribute('href', href);
+    entries.forEach((x) => {
+      if (entries.length > 1) {
+        const head = docNode('div', 'schedule-cal-menu-event', 'schedule-cal-menu-event');
+        head.textContent = x.label;
+        menu.appendChild(head);
       }
-      if (typeof prov.download === 'function') a.setAttribute('download', prov.download(ev));
-      else { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); }
-      a.addEventListener('click', () => { writeCalProvider(prov.id); closeCalMenu(); });
-      menu.appendChild(a);
+      CALENDAR_PROVIDERS.forEach((prov) => {
+        const href = prov.href(x.ev, now);
+        const a = docNode('a', 'schedule-cal-item', 'schedule-cal-' + prov.id);
+        a.setAttribute('role', 'menuitem');
+        a.textContent = prov.label;
+        if (typeof href === 'string' && (href.indexOf('https://') === 0 || href.indexOf('data:text/calendar') === 0)) {
+          a.setAttribute('href', href);
+        }
+        if (typeof prov.download === 'function') a.setAttribute('download', prov.download(x.ev));
+        else { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); }
+        a.addEventListener('click', () => { closeCalMenu(); });
+        menu.appendChild(a);
+      });
     });
     wrap.appendChild(menu);
     positionCalMenu(btn, menu);
@@ -6490,15 +6508,22 @@ function renderScheduleList(result, list, today) {
       badge.textContent = 'Today';
       h.appendChild(badge);
     }
+    // One "+ Add" per date heading; its menu reaches every calendar event of the date (merged timed items share one).
+    const day = scheduleDayEvents(e.date, e.items || [], result);
+    const timed = day.find((x) => !x.ev.allDay);
+    if (timed) {
+      const t = docNode('span', 'schedule-date-time', 'schedule-date-time');
+      t.textContent = calendarShortTime(timed.ev);
+      h.appendChild(t);
+    }
+    if (day.length) {
+      h.appendChild(buildAddControl(day.map((x) => ({ ev: x.ev, label: x.itemIndexes.map((i) => e.items[i].text).join('; ') }))));
+    }
     block.appendChild(h);
     const ul = docNode('ul', 'schedule-items');
-    const day = scheduleDayEvents(e.date, e.items || [], result);
-    (e.items || []).forEach((it, i) => {
+    (e.items || []).forEach((it) => {
       const li = document.createElement('li');
       li.appendChild(document.createTextNode(it.text));
-      // One control per calendar event, on its first item (merged timed items share it).
-      const entry = day.find((x) => x.itemIndexes[0] === i);
-      if (entry) li.appendChild(buildCalendarControl(entry.ev));
       ul.appendChild(li);
     });
     block.appendChild(ul);
@@ -6514,9 +6539,9 @@ function renderScheduleList(result, list, today) {
     g.items.forEach((it) => {
       const li = document.createElement('li');
       li.appendChild(document.createTextNode(it.text));
-      // Several dates = an unresolved choice: no button. Exactly one date >= today: the usual control.
+      // Several dates = an unresolved choice: no button. Exactly one date >= today: a labelled "+ Add" on the line.
       if (it.dates.length === 1 && it.upcoming.length === 1) {
-        li.appendChild(buildCalendarControl(buildCalendarEvent(it.upcoming[0], it.text, result, g.title + ' (optional)')));
+        li.appendChild(buildAddControl([{ ev: buildCalendarEvent(it.upcoming[0], it.text, result, g.title + ' (optional)'), label: it.text }]));
       }
       ul.appendChild(li);
     });
@@ -6588,15 +6613,22 @@ if (typeof document !== 'undefined') {
   initMediaViewer();
 }
 
-/** Schedule popup's subscribe note (bd atc-hu9): the feed address and icon come from the calendar block. */
+/** Schedule popup's subscribe box (bd atc-hu9, atc-eb1): buttons and feed address come from the calendar block. */
 function initScheduleCalNote() {
   const url = CALENDAR_CONFIG.feedUrl;
-  document.getElementById('schedule-feed-url').textContent = url;
-  document.getElementById('schedule-cal-note-icon').innerHTML = CALENDAR_ICON_SVG;
-  document.getElementById('schedule-cal-note-summary-icon').innerHTML = CALENDAR_ICON_SVG;
+  const box = document.getElementById('schedule-sub-buttons');
+  subscribeLinks().forEach((l) => {
+    const a = document.createElement('a');
+    a.className = 'schedule-sub-btn';
+    a.setAttribute('data-testid', 'schedule-sub-' + l.id);
+    a.setAttribute('href', l.href);
+    if (l.href.indexOf('https://') === 0) { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); }
+    a.textContent = l.label;
+    box.appendChild(a);
+  });
   const btn = document.getElementById('schedule-feed-copy');
   btn.addEventListener('click', () => {
-    const done = () => { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy'; }, 2500); };
+    const done = () => { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy address'; }, 2500); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(url).then(done, () => window.prompt('Copy this address:', url));
     } else {

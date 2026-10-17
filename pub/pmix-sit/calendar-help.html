@@ -53,10 +53,6 @@
     .step .alt { margin-top: 12px; font-size: 14px; color: var(--text-3); }
     .step .alt + ol { margin-top: 6px; }
     .path { color: var(--text); font-weight: 600; }
-    .icon {
-      display: inline-flex; align-items: center; justify-content: center; vertical-align: -6px; width: 26px; height: 24px;
-      border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-2); color: var(--text);
-    }
     .tips { margin-top: 20px; }
     .tips h2 { font-size: 16px; color: var(--text); margin-bottom: 6px; }
     .tips ul { margin-left: 20px; font-size: 15px; }
@@ -87,6 +83,23 @@
     <button type="button" class="btn" data-testid="cal-help-copy">Copy address</button>
   </section>
 
+  <section class="step" data-testid="cal-help-section-google">
+    <h2>Google Calendar</h2>
+    <p class="lead">This is easiest on a <strong>computer</strong>. Once added, the dates also show in the Google Calendar app on your phone.</p>
+    <a class="btn btn-primary" data-testid="cal-help-google" href="https://calendar.google.com/calendar/render?cid=webcal%3A%2F%2Fnuuc-it.github.io%2FStatic%2Fpub%2Fpmix-cal%2Fchoir.ics" target="_blank" rel="noopener">Add to Google Calendar</a>
+    <p class="alt">On an Android phone, if the button doesn't open Google Calendar, do this once on a computer - the calendar then appears on your phone.</p>
+    <ol>
+      <li>Click <strong>Add to Google Calendar</strong> and sign in to Google if asked.</li>
+      <li>Click <strong>Add</strong> when Google asks whether to add the calendar.</li>
+    </ol>
+    <p class="alt">If that doesn't work:</p>
+    <ol>
+      <li>Click <strong>Copy address</strong> above.</li>
+      <li>Open <span class="path">calendar.google.com</span>. On the left, next to <strong>Other calendars</strong>, click <strong>+</strong>.</li>
+      <li>Choose <strong>From URL</strong>, paste the address, and click <strong>Add calendar</strong>.</li>
+    </ol>
+  </section>
+
   <section class="step" data-testid="cal-help-section-apple">
     <h2>iPhone, iPad or Mac (Apple Calendar)</h2>
     <p class="lead">Easiest: open this page in <strong>Safari</strong> and tap the button.</p>
@@ -106,22 +119,6 @@
     </ol>
   </section>
 
-  <section class="step" data-testid="cal-help-section-google">
-    <h2>Google Calendar</h2>
-    <p class="lead">This is easiest on a <strong>computer</strong>. Once added, the dates also show in the Google Calendar app on your phone.</p>
-    <a class="btn btn-primary" data-testid="cal-help-google" href="https://calendar.google.com/calendar/render?cid=webcal%3A%2F%2Fnuuc-it.github.io%2FStatic%2Fpub%2Fpmix-cal%2Fchoir.ics" target="_blank" rel="noopener">Add to Google Calendar</a>
-    <ol>
-      <li>Click <strong>Add to Google Calendar</strong> and sign in to Google if asked.</li>
-      <li>Click <strong>Add</strong> when Google asks whether to add the calendar.</li>
-    </ol>
-    <p class="alt">If that doesn't work:</p>
-    <ol>
-      <li>Click <strong>Copy address</strong> above.</li>
-      <li>Open <span class="path">calendar.google.com</span>. On the left, next to <strong>Other calendars</strong>, click <strong>+</strong>.</li>
-      <li>Choose <strong>From URL</strong>, paste the address, and click <strong>Add calendar</strong>.</li>
-    </ol>
-  </section>
-
   <section class="step" data-testid="cal-help-section-outlook">
     <h2>Outlook</h2>
     <p class="lead">Do this once on the <strong>outlook.com</strong> website (on a computer or in your phone's browser). The dates then show in the Outlook app too.</p>
@@ -136,14 +133,7 @@
 
   <section class="step" data-testid="cal-help-section-one">
     <h2>Add just one date</h2>
-    <ol>
-      <li>In Practice Mix, tap <strong>📅</strong> at the top to open the <strong>Choir Schedule</strong>.</li>
-      <li>Tap the calendar icon
-        <span class="icon" aria-label="calendar icon"><svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 9h18M12 12v6M9 15h6"/></svg></span>
-        beside the date you want.</li>
-      <li>Choose your calendar: <strong>Google Calendar</strong>, <strong>Apple / iPhone</strong> or <strong>Outlook.com</strong>, then save the event.</li>
-    </ol>
-    <p class="alt">On iPhone, the Apple option works best in Safari. For Outlook, sign in to outlook.com in your browser first.</p>
+    <p class="lead">In the app's schedule, tap <strong>+ Add</strong> beside a date.</p>
   </section>
 
   <section class="tips">
