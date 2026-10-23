@@ -1429,10 +1429,10 @@ li > .schedule-cal-wrap { margin-left: 8px; }
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.29.4";
+var STATIC_BUILD_VERSION_ = "1.6.31.1";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-23T21:57:14.764Z";
+var STATIC_BUILD_DATE_ = "2026-10-23T22:32:00.664Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -1704,6 +1704,14 @@ var AUDIO_KEY_PREFIX = './__pmix_audio__/';
 function audioCacheName(target) { return 'pmix-audio-' + target + '-v1'; }
 function audioMetaKey(target) { return 'pmix.' + target + '.v1.audioMeta'; }
 function audioPersistKey(target) { return 'pmix.' + target + '.v1.persistRequested'; }
+/**
+ * Cache identity of an entry: the source id, or source id + '@' + rate for a pre-rendered speed variant
+ * (bd atc-8s0, ADR-0013). Together with the version stamp in the key (variant modified) it keeps variants
+ * apart from the source and from each other.
+ */
+function audioIdent(e) {
+  return e.rate ? e.id + '@' + e.rate : e.id;
+}
 function audioCacheKey(fileId, modified) {
   return AUDIO_KEY_PREFIX + encodeURIComponent(fileId) + '?m=' + (modified || 0);
 }
@@ -1735,7 +1743,7 @@ function selectEvictions(meta, capBytes, protectedIds) {
   var out = [];
   var order = (meta || []).slice().sort(function (a, b) { return (a.lastUsed || 0) - (b.lastUsed || 0); });
   for (var i = 0; i < order.length && total > capBytes; i++) {
-    if (protectedIds && protectedIds.has(order[i].fileId)) continue;
+    if (protectedIds && protectedIds.has(String(order[i].fileId).split('@')[0])) continue;
     out.push(order[i]);
     total -= order[i].bytes || 0;
   }
@@ -1751,7 +1759,7 @@ function dataUriToBytes(dataUri) {
 }
 
 /**
- * opts: caches (CacheStorage or undefined), storage, target, now(), fetchBase64(fileId) -> {dataUri}|{error},
+ * opts: caches (CacheStorage or undefined), storage, target, now(), fetchBase64(fileId[, rate, folderId]) -> {dataUri}|{error},
  * getProtectedIds() -> Set of displayed-folder audio ids, ttlMs, capBytes.
  */
 function createAudioCache(opts) {
@@ -1770,12 +1778,16 @@ function createAudioCache(opts) {
   }
   function touch(key, e, bytes) {
     var meta = readAudioMeta(opts.storage, opts.target).filter(function (m) { return m.key !== key; });
-    meta.push({ key: key, fileId: e.id, modified: e.modified || 0, bytes: bytes, lastUsed: opts.now() });
+    meta.push({ key: key, fileId: audioIdent(e), modified: modOf(e), bytes: bytes, lastUsed: opts.now() });
     writeAudioMeta(opts.storage, opts.target, meta);
   }
 
+  function modOf(e) {
+    return (e.rate ? e.variantModified : e.modified) || 0;
+  }
+
   async function download(e) {
-    var res = await opts.fetchBase64(e.id);
+    var res = e.rate ? await opts.fetchBase64(e.id, e.rate, e.folderId) : await opts.fetchBase64(e.id);
     if (!res || res.error || !res.dataUri) throw new Error((res && res.error) || 'download failed');
     return dataUriToBytes(res.dataUri);
   }
@@ -1783,7 +1795,7 @@ function createAudioCache(opts) {
   async function store(cache, key, e, bytes) {
     try {
       var stale = readAudioMeta(opts.storage, opts.target)
-        .filter(function (m) { return m.fileId === e.id && m.key !== key; }).map(function (m) { return m.key; });
+        .filter(function (m) { return m.fileId === audioIdent(e) && m.key !== key; }).map(function (m) { return m.key; });
       await cache.put(key, new Response(bytes.slice(0), { headers: { 'content-type': e.mimeType || 'application/octet-stream' } }));
       await removeKeys(cache, stale);
       var meta = readAudioMeta(opts.storage, opts.target).filter(function (m) { return stale.indexOf(m.key) < 0; });
@@ -1818,7 +1830,7 @@ function createAudioCache(opts) {
 
   /** Bytes for entry {id, name, mimeType, modified}: cache hit, else download + store. Same-key calls share one run. Each caller gets its own ArrayBuffer. */
   async function fetchTrackBytes(e) {
-    var key = audioCacheKey(e.id, e.modified);
+    var key = audioCacheKey(audioIdent(e), modOf(e));
     var p = inflight.get(key);
     if (!p) {
       p = fetchOnce(e, key);
@@ -1860,7 +1872,52 @@ function createAudioCache(opts) {
   return { fetchTrackBytes: fetchTrackBytes, pruneOnOpen: pruneOnOpen, requestPersist: requestPersist };
 }
 
-if (typeof module !== 'undefined') module.exports = { audioCacheName, audioMetaKey, audioCacheKey, readAudioMeta, writeAudioMeta, selectExpired, selectEvictions, dataUriToBytes, createAudioCache };
+if (typeof module !== 'undefined') module.exports = { audioCacheName, audioMetaKey, audioCacheKey, audioIdent, readAudioMeta, writeAudioMeta, selectExpired, selectEvictions, dataUriToBytes, createAudioCache };
+</script>
+
+<script>
+/**
+ * Pre-rendered speed variants, client side - pmixSpeedVariants (bd atc-8s0, ADR-0013).
+ * The listing tells which rates a track has (audio[].speeds = {'0.8': <variant modified>}); the client asks for
+ * (source id, rate, folder id) through the audio cache and never sees a variant file id. Any failure resolves
+ * null so the caller stretches in the browser (WSOLA) with no error shown.
+ */
+function variantRateKey(rate) {
+  if (typeof rate !== 'number') return null;
+  if (Math.abs(rate - 0.8) < 1e-6) return '0.8';
+  if (Math.abs(rate - 0.9) < 1e-6) return '0.9';
+  return null;
+}
+
+/** The listed variant modified for file at rate, or null when the listing shows none. */
+function variantModifiedFor(file, rate) {
+  var key = variantRateKey(rate);
+  if (!key || !file || !file.speeds) return null;
+  var m = file.speeds[key];
+  return (typeof m === 'number' && m > 0) ? m : null;
+}
+
+/** A decoded variant must be about source length / rate; anything else is rejected (WSOLA instead). */
+function variantLengthOk(variantLength, sourceLength, rate) {
+  var expected = sourceLength / rate;
+  return Math.abs(variantLength - expected) <= expected * 0.02;
+}
+
+/** Variant bytes through the audio cache, or null (no variant listed, or any failure). */
+async function loadVariantBytes(o) {
+  var modified = variantModifiedFor(o.file, o.rate);
+  if (modified === null) return null;
+  try {
+    return await o.fetchTrackBytes({
+      id: o.file.id, name: o.file.name, mimeType: 'audio/mpeg', modified: o.file.modified,
+      rate: variantRateKey(o.rate), variantModified: modified, folderId: o.folderId
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+if (typeof module !== 'undefined') module.exports = { variantRateKey, variantModifiedFor, variantLengthOk, loadVariantBytes };
 </script>
 <script>
 /**
@@ -3152,8 +3209,9 @@ const AudioEngine = (() => {
   }
 
   /**
-   * Produces a stretched buffer for every unstretched track at the current rate: `lookup(trackId, rate)` (persistent
-   * cache; decoded {sampleRate,length,channels} or null) first, else WSOLA. Yields before each track so the UI paints.
+   * Produces a stretched buffer for every unstretched track at the current rate: `variant(trackId, rate)` (a
+   * pre-rendered variant's bytes or null, bd atc-8s0) first, then `lookup(trackId, rate)` (persistent
+   * cache; decoded {sampleRate,length,channels} or null), else WSOLA. Yields before each track so the UI paints.
    * Returns [{trackId, rate, fresh}] where fresh = built by WSOLA.
    */
   async function ensureStretched(opts) {
@@ -3165,21 +3223,37 @@ const AudioEngine = (() => {
       const track = tracks.get(trackId);
       if (!track || playbackRate !== rate || peekStretchedBuffer(trackId)) continue;
       const t0 = performance.now();
-      let decoded = null;
-      if (lookup) { try { decoded = await lookup(trackId, rate); } catch (e) { decoded = null; } }
       const src = track.buffer;
       let buf = null;
       let fresh = true;
-      if (decoded && decoded.channels && decoded.channels.length === src.numberOfChannels &&
+      let how = 'wsola';
+      if (opts && opts.variant) {
+        try {
+          const vbytes = await opts.variant(trackId, rate);
+          if (vbytes) {
+            const vbuf = ensureStereo(await audioContext.decodeAudioData(vbytes));
+            if (vbuf.sampleRate === src.sampleRate && variantLengthOk(vbuf.length, src.length, rate)) {
+              buf = vbuf;
+              fresh = false;
+              how = 'variant';
+            }
+          }
+        } catch (e) { buf = null; }
+        if (playbackRate !== rate || peekStretchedBuffer(trackId)) continue;
+      }
+      let decoded = null;
+      if (!buf && lookup) { try { decoded = await lookup(trackId, rate); } catch (e) { decoded = null; } }
+      if (!buf && decoded && decoded.channels && decoded.channels.length === src.numberOfChannels &&
           decoded.sampleRate === src.sampleRate && decoded.length === Math.round(src.length / rate)) {
         buf = audioContext.createBuffer(src.numberOfChannels, decoded.length, src.sampleRate);
         for (let ch = 0; ch < src.numberOfChannels; ch++) buf.getChannelData(ch).set(decoded.channels[ch]);
         fresh = false;
-      } else {
+        how = 'cache';
+      } else if (!buf) {
         buf = buildStretchedBuffer(track);
       }
       storeStretchedBuffer(trackId, buf);
-      console.log(`[speed] stretch ${trackId} ${rate.toFixed(1)} ${fresh ? 'wsola' : 'cache'} ${(performance.now() - t0).toFixed(0)}ms`);
+      console.log(`[speed] stretch ${trackId} ${rate.toFixed(1)} ${how} ${(performance.now() - t0).toFixed(0)}ms`);
       results.push({ trackId, rate, fresh });
     }
     return results;
@@ -5415,10 +5489,11 @@ const UI = (() => {
     target: pmixTarget(),
     now: () => Date.now(),
     getProtectedIds: () => new Set((state.folderFiles || []).map(f => f.id)),
-    fetchBase64: async (fileId) => {
+    fetchBase64: async (fileId, rate, folderId) => {
       const t0 = performance.now();
+      const args = rate ? { fileId: fileId, rate: rate, folderId: folderId } : { fileId: fileId };
       const result = await Promise.race([
-        callApi('getFileAsBase64', { fileId: fileId }),
+        callApi('getFileAsBase64', args),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('getFileAsBase64 timeout')), 18000)
         )
@@ -5819,12 +5894,22 @@ const UI = (() => {
     try { return await stretchCache.get(trackId, fileModified(trackId), rate); } catch (e) { return null; }
   }
 
+  /** Pre-rendered variant bytes for a loaded track at rate (bd atc-8s0), or null -> WSOLA. Covered by the spinner in syncStretch. */
+  async function variantBytes(trackId, rate) {
+    const f = (state.folderFiles || []).find(x => x.id === trackId);
+    if (!f) return null;
+    return loadVariantBytes({
+      file: f, rate: rate, folderId: state.folderId,
+      fetchTrackBytes: (e) => audioCache.fetchTrackBytes(e)
+    });
+  }
+
   /** Ensures every loaded track has a buffer at the current rate, with the spinner shown while it works. */
   async function syncStretch() {
     if (AudioEngine.getUnstretchedTrackIds().length === 0) return;
     setSpeedProcessing(true);
     try {
-      const results = await AudioEngine.ensureStretched({ lookup: stretchLookup });
+      const results = await AudioEngine.ensureStretched({ lookup: stretchLookup, variant: variantBytes });
       results.forEach(r => {
         if (r.fresh) pendingPersist.set(`${r.trackId}|${r.rate.toFixed(1)}`, { trackId: r.trackId, rate: r.rate });
       });
