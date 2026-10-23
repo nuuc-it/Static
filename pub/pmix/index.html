@@ -505,6 +505,17 @@ body {
 .speed-display.speed-fast  { color: var(--green); }
 .speed-display.speed-slow  { color: var(--red); }
 .speed-display.speed-normal{ color: var(--text); }
+.speed-display[data-pending="true"] { opacity: .6; font-style: italic; }
+
+/* Spinner shown while tracks are stretched (bd atc-di0) */
+.speed-spinner {
+  width: 16px; height: 16px; flex: 0 0 16px; border-radius: 50%;
+  border: 2px solid var(--border-strong); border-top-color: var(--text);
+  animation: speed-spin .8s linear infinite;
+}
+.speed-spinner[hidden] { display: none; }
+@keyframes speed-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .speed-spinner { animation-duration: 3s; } }
 
 /* ================================================================== */
 /* TIME & SEEK                                                         */
@@ -1271,6 +1282,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="speed-slow-btn" data-testid="speed-slow" class="btn btn-speed" title="Slow down 10%">−</button>
           <span id="speed-display" data-testid="speed-display" class="speed-display">1.0×</span>
           <button id="speed-fast-btn" data-testid="speed-fast" class="btn btn-speed" title="Speed up 10%">+</button>
+          <span class="speed-spinner" data-testid="speed-spinner" role="status" aria-label="Processing speed change" hidden></span>
           <label class="loop-toggle">
             <input type="checkbox" id="repeat-checkbox">
             <span class="toggle-track"></span>
@@ -1417,10 +1429,10 @@ li > .schedule-cal-wrap { margin-left: 8px; }
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.29";
+var STATIC_BUILD_VERSION_ = "1.6.31";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-10-17T19:24:47.122Z";
+var STATIC_BUILD_DATE_ = "2026-10-23T22:23:54.270Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbz-YsKzVeoehCr05zF4kF_wbKuTAhMm1RU1KSXK-W6UOKt9zg1zVTUi_TKKYnpkhSR-/exec";
@@ -1852,6 +1864,192 @@ if (typeof module !== 'undefined') module.exports = { audioCacheName, audioMetaK
 </script>
 <script>
 /**
+ * Persistent stretch cache - pmixStretchCache (bd atc-di0; AC 7-10). WSOLA output is stored as 16-bit PCM in
+ * Cache Storage pmix-stretch-<target>-v1 under synthetic same-origin keys; LRU/TTL metadata lives in localStorage
+ * (pmix.<target>.v1.stretchMeta). Everything is injected and try/catch'd: any failure resolves null / no-op so the
+ * caller falls back to a WSOLA rebuild. Local selectExpired/selectEvictions equivalents are used (not the audio
+ * cache's) so this block loads standalone in unit tests.
+ */
+var STRETCH_TTL_MS = 16 * 86400000;
+var STRETCH_CAP_BYTES = 512 * 1024 * 1024;
+var STRETCH_KEY_PREFIX = './__pmix_stretch__/';
+var STRETCH_MAGIC = 0x504D5354;
+var STRETCH_VERSION = 1;
+var STRETCH_HEADER_BYTES = 20;
+
+function stretchCacheName(target) { return 'pmix-stretch-' + target + '-v1'; }
+function stretchMetaKey(target) { return 'pmix.' + target + '.v1.stretchMeta'; }
+function stretchRateKey(rate) { return Number(rate).toFixed(1); }
+function stretchCacheKey(fileId, modified, rate) {
+  return STRETCH_KEY_PREFIX + encodeURIComponent(fileId) + '?m=' + (modified || 0) + '&r=' + stretchRateKey(rate);
+}
+function stretchKeyFromUrl(url) {
+  var i = String(url).indexOf('/__pmix_stretch__/');
+  return i < 0 ? null : '.' + String(url).slice(i);
+}
+
+/** Header (magic, version, channels, sampleRate, length as Uint32) then planar Int16 samples. */
+function encodePcm16(channels, sampleRate) {
+  var n = channels.length ? channels[0].length : 0;
+  var buf = new ArrayBuffer(STRETCH_HEADER_BYTES + channels.length * n * 2);
+  var h = new Uint32Array(buf, 0, 5);
+  h[0] = STRETCH_MAGIC; h[1] = STRETCH_VERSION; h[2] = channels.length; h[3] = sampleRate; h[4] = n;
+  var pcm = new Int16Array(buf, STRETCH_HEADER_BYTES);
+  for (var c = 0; c < channels.length; c++) {
+    var src = channels[c];
+    for (var i = 0; i < n; i++) {
+      var v = src[i];
+      v = v > 1 ? 1 : v < -1 ? -1 : v;
+      pcm[c * n + i] = Math.round(v * 32767);
+    }
+  }
+  return buf;
+}
+
+/** {sampleRate, length, channels: Float32Array[]} or null when magic/version/size do not match. */
+function decodePcm16(arrayBuffer) {
+  try {
+    if (!arrayBuffer || arrayBuffer.byteLength < STRETCH_HEADER_BYTES) return null;
+    var h = new Uint32Array(arrayBuffer, 0, 5);
+    if (h[0] !== STRETCH_MAGIC || h[1] !== STRETCH_VERSION) return null;
+    var nch = h[2], sr = h[3], n = h[4];
+    if (nch < 1 || arrayBuffer.byteLength !== STRETCH_HEADER_BYTES + nch * n * 2) return null;
+    var pcm = new Int16Array(arrayBuffer, STRETCH_HEADER_BYTES);
+    var channels = [];
+    for (var c = 0; c < nch; c++) {
+      var out = new Float32Array(n);
+      for (var i = 0; i < n; i++) out[i] = pcm[c * n + i] / 32767;
+      channels.push(out);
+    }
+    return { sampleRate: sr, length: n, channels: channels };
+  } catch (e) { return null; }
+}
+
+function readStretchMeta(storage, target) {
+  try {
+    var v = JSON.parse(storage.getItem(stretchMetaKey(target)) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+function writeStretchMeta(storage, target, meta) {
+  try { storage.setItem(stretchMetaKey(target), JSON.stringify(meta)); return true; } catch (e) { return false; }
+}
+function stretchSelectExpired(meta, now, ttlMs) {
+  return (meta || []).filter(function (e) { return now - (e.lastUsed || 0) > ttlMs; });
+}
+function stretchSelectEvictions(meta, capBytes) {
+  var total = 0;
+  (meta || []).forEach(function (e) { total += e.bytes || 0; });
+  var out = [];
+  var order = (meta || []).slice().sort(function (a, b) { return (a.lastUsed || 0) - (b.lastUsed || 0); });
+  for (var i = 0; i < order.length && total > capBytes; i++) { out.push(order[i]); total -= order[i].bytes || 0; }
+  return out;
+}
+
+/** opts: caches (CacheStorage or undefined), storage, target, now(), ttlMs, capBytes. */
+function createStretchCache(opts) {
+  var ttlMs = opts.ttlMs || STRETCH_TTL_MS;
+  var capBytes = opts.capBytes || STRETCH_CAP_BYTES;
+
+  async function openCache() {
+    try { return opts.caches ? await opts.caches.open(stretchCacheName(opts.target)) : null; } catch (e) { return null; }
+  }
+  async function removeKeys(cache, keys) {
+    for (var i = 0; i < keys.length; i++) { try { await cache.delete(keys[i]); } catch (e) { /* ignore */ } }
+  }
+
+  async function get(fileId, modified, rate) {
+    try {
+      var cache = await openCache();
+      if (!cache) return null;
+      var key = stretchCacheKey(fileId, modified, rate);
+      var res = await cache.match(key);
+      if (!res) return null;
+      var decoded = decodePcm16(await res.arrayBuffer());
+      if (!decoded) return null;
+      var meta = readStretchMeta(opts.storage, opts.target);
+      meta.forEach(function (m) { if (m.key === key) m.lastUsed = opts.now(); });
+      writeStretchMeta(opts.storage, opts.target, meta);
+      return decoded;
+    } catch (e) { return null; }
+  }
+
+  async function put(fileId, modified, rate, channels, sampleRate) {
+    try {
+      var cache = await openCache();
+      if (!cache) return;
+      var key = stretchCacheKey(fileId, modified, rate);
+      var meta = readStretchMeta(opts.storage, opts.target);
+      var stale = meta.filter(function (m) { return m.fileId === fileId && (m.modified || 0) !== (modified || 0); });
+      await removeKeys(cache, stale.map(function (m) { return m.key; }));
+      meta = meta.filter(function (m) { return stale.indexOf(m) < 0 && m.key !== key; });
+      var buf = encodePcm16(channels, sampleRate);
+      await cache.put(key, new Response(buf));
+      meta.push({ key: key, fileId: fileId, modified: modified || 0, rate: stretchRateKey(rate), bytes: buf.byteLength, lastUsed: opts.now() });
+      var victims = stretchSelectEvictions(meta, capBytes);
+      await removeKeys(cache, victims.map(function (m) { return m.key; }));
+      meta = meta.filter(function (m) { return victims.indexOf(m) < 0; });
+      if (!writeStretchMeta(opts.storage, opts.target, meta)) await removeKeys(cache, [key]); // untracked bytes would never be pruned
+    } catch (e) { /* uncached operation */ }
+  }
+
+  /** App open: drop entries unused > ttl and any cache keys with no metadata. */
+  async function pruneOnOpen() {
+    try {
+      var cache = await openCache();
+      if (!cache) return;
+      var meta = readStretchMeta(opts.storage, opts.target);
+      var present = new Set();
+      (await cache.keys()).forEach(function (r) { var k = stretchKeyFromUrl(r.url); if (k) present.add(k); });
+      var expired = new Set(stretchSelectExpired(meta, opts.now(), ttlMs).map(function (m) { return m.key; }));
+      var known = new Set(meta.map(function (m) { return m.key; }));
+      var keep = meta.filter(function (m) { return !expired.has(m.key) && present.has(m.key); });
+      var drop = [];
+      present.forEach(function (k) { if (expired.has(k) || !known.has(k)) drop.push(k); });
+      await removeKeys(cache, drop);
+      writeStretchMeta(opts.storage, opts.target, keep);
+    } catch (e) { /* uncached operation */ }
+  }
+
+  return { get: get, put: put, pruneOnOpen: pruneOnOpen };
+}
+
+if (typeof module !== 'undefined') module.exports = { STRETCH_TTL_MS, STRETCH_CAP_BYTES, STRETCH_KEY_PREFIX, stretchCacheName, stretchMetaKey, stretchRateKey, stretchCacheKey, encodePcm16, decodePcm16, createStretchCache };
+</script>
+<script>
+/**
+ * Speed commit debouncer - pmixSpeedDebounce (bd atc-di0; AC 1-3). Accumulates +/-0.1 nudges into a pending target
+ * (clamped 0.7-1.3) and commits SPEED_COMMIT_DELAY_MS after the last nudge; flush() commits immediately.
+ */
+var SPEED_COMMIT_DELAY_MS = 600;
+
+function createSpeedDebouncer(o) {
+  var pending = null;
+  var timer = null;
+
+  function commit() {
+    if (timer !== null) { o.clearTimeout(timer); timer = null; }
+    var p = pending;
+    pending = null;
+    if (p !== null && p !== o.getCommitted()) return Promise.resolve(o.onCommit(p));
+    if (p !== null) o.onPending(null);
+    return Promise.resolve();
+  }
+  function nudge(delta) {
+    var base = pending !== null ? pending : o.getCommitted();
+    var next = Math.max(0.7, Math.min(1.3, Math.round((base + delta) * 10) / 10));
+    pending = next;
+    o.onPending(next);
+    if (timer !== null) o.clearTimeout(timer);
+    timer = o.setTimeout(function () { timer = null; commit().catch(function () { /* onCommit handles its own errors */ }); }, o.delayMs);
+  }
+  return { nudge: nudge, flush: commit, pending: function () { return pending; } };
+}
+
+if (typeof module !== 'undefined') module.exports = { SPEED_COMMIT_DELAY_MS, createSpeedDebouncer };
+</script>
+<script>
+/**
  * Focus-first prefetch queue - pmixPrefetch (bd atc-cy2.5, ADR-0010 Decision 3; FR-1.5.3, FR-1.6.8-10).
  * Pure: every dependency is injected. P0 (user selections) bypasses this queue entirely; the queue only
  * holds P1 (remembered focus part) and P2 (remaining tracks), runs one download at a time, and never
@@ -1968,7 +2166,15 @@ if (typeof module !== 'undefined') module.exports = { focusPartKey, backoffMs, i
  * access is try/catch'd, so blocked storage just means "signed out". The stored value is {session, email}; the
  * session is PracticeMix's own 90-day sliding token (src/Session.js), never a Google token.
  */
-var SESSION_STORE_KEY = 'pmixSession.v1';
+/**
+ * TEST gets its own key (bd atc-wel): the TEST and PROD static pages share one origin, and TEST's server rejects a
+ * PROD token (separate signing keys) and the client then clears it. PROD keeps the original name so existing
+ * sessions survive.
+ */
+function sessionStoreKey(envLabel) {
+  return envLabel === 'TEST' ? 'pmixSession.v1.test' : 'pmixSession.v1';
+}
+var SESSION_STORE_KEY = sessionStoreKey(typeof STATIC_ENV_LABEL_ !== 'undefined' ? STATIC_ENV_LABEL_ : null);
 
 function readStoredSession(storage) {
   try {
@@ -2894,42 +3100,98 @@ const AudioEngine = (() => {
    * playbackRate, building and caching it on first use.
    * Returns null when rate is effectively 1.0 (no processing needed).
    */
-  function getStretchedBuffer(track) {
-    if (Math.abs(playbackRate - 1.0) < 1e-6) return null;
+  function stretchRateKeyNow() { return playbackRate.toFixed(1); }
 
-    if (!stretchedBufferCache.has(track.id)) {
-      stretchedBufferCache.set(track.id, new Map());
-    }
-    const byRate = stretchedBufferCache.get(track.id);
+  /** Stretched buffer already held in memory for `track` at the current rate, or null. */
+  function peekStretchedBuffer(trackId) {
+    const byRate = stretchedBufferCache.get(trackId);
+    return byRate ? (byRate.get(stretchRateKeyNow()) || null) : null;
+  }
 
-    const key = playbackRate.toFixed(1);
-    if (byRate.has(key)) return byRate.get(key);
+  function storeStretchedBuffer(trackId, buf) {
+    if (!stretchedBufferCache.has(trackId)) stretchedBufferCache.set(trackId, new Map());
+    stretchedBufferCache.get(trackId).set(stretchRateKeyNow(), buf);
+  }
 
-    // Build stretched buffer channel-by-channel
+  /** The single WSOLA build path: stretches `track.buffer` channel-by-channel at the current rate. */
+  function buildStretchedBuffer(track) {
     const src = track.buffer;
     const outLen = Math.round(src.length / playbackRate);
     const outBuf = audioContext.createBuffer(src.numberOfChannels, outLen, src.sampleRate);
-
     for (let ch = 0; ch < src.numberOfChannels; ch++) {
-      const inData  = src.getChannelData(ch);
-      const outData = wsola(inData, playbackRate, src.sampleRate);
-      outBuf.getChannelData(ch).set(outData);
+      outBuf.getChannelData(ch).set(wsola(src.getChannelData(ch), playbackRate, src.sampleRate));
     }
+    return outBuf;
+  }
 
-    byRate.set(key, outBuf);
+  function getStretchedBuffer(track) {
+    if (Math.abs(playbackRate - 1.0) < 1e-6) return null;
+    const hit = peekStretchedBuffer(track.id);
+    if (hit) return hit;
+    const outBuf = buildStretchedBuffer(track);
+    storeStretchedBuffer(track.id, outBuf);
     return outBuf;
   }
 
   function setPlaybackRate(rate) {
     playbackRate = Math.max(0.7, Math.min(1.3, rate));
-    // Eagerly build and cache stretched buffers for all loaded tracks so play() is instant.
-    tracks.forEach(track => getStretchedBuffer(track));
 
     // Notify UI timing listeners immediately so seek max/time displays stay in sync
-    // even before playback starts at the new rate.
+    // even before playback starts at the new rate. Stretching is deferred to ensureStretched().
     if (onTimeUpdate) {
       onTimeUpdate(getCurrentTime(), getTotalDuration());
     }
+  }
+
+  /** Ids of loaded tracks with no in-memory stretched buffer at the current rate ([] at rate 1.0). */
+  function getUnstretchedTrackIds() {
+    if (Math.abs(playbackRate - 1.0) < 1e-6) return [];
+    const ids = [];
+    tracks.forEach(track => { if (!peekStretchedBuffer(track.id)) ids.push(track.id); });
+    return ids;
+  }
+
+  /**
+   * Produces a stretched buffer for every unstretched track at the current rate: `lookup(trackId, rate)` (persistent
+   * cache; decoded {sampleRate,length,channels} or null) first, else WSOLA. Yields before each track so the UI paints.
+   * Returns [{trackId, rate, fresh}] where fresh = built by WSOLA.
+   */
+  async function ensureStretched(opts) {
+    const lookup = opts && opts.lookup;
+    const results = [];
+    const rate = playbackRate;
+    for (const trackId of getUnstretchedTrackIds()) {
+      await new Promise(r => setTimeout(r, 0));
+      const track = tracks.get(trackId);
+      if (!track || playbackRate !== rate || peekStretchedBuffer(trackId)) continue;
+      const t0 = performance.now();
+      let decoded = null;
+      if (lookup) { try { decoded = await lookup(trackId, rate); } catch (e) { decoded = null; } }
+      const src = track.buffer;
+      let buf = null;
+      let fresh = true;
+      if (decoded && decoded.channels && decoded.channels.length === src.numberOfChannels &&
+          decoded.sampleRate === src.sampleRate && decoded.length === Math.round(src.length / rate)) {
+        buf = audioContext.createBuffer(src.numberOfChannels, decoded.length, src.sampleRate);
+        for (let ch = 0; ch < src.numberOfChannels; ch++) buf.getChannelData(ch).set(decoded.channels[ch]);
+        fresh = false;
+      } else {
+        buf = buildStretchedBuffer(track);
+      }
+      storeStretchedBuffer(trackId, buf);
+      console.log(`[speed] stretch ${trackId} ${rate.toFixed(1)} ${fresh ? 'wsola' : 'cache'} ${(performance.now() - t0).toFixed(0)}ms`);
+      results.push({ trackId, rate, fresh });
+    }
+    return results;
+  }
+
+  /** {channels: Float32Array[], sampleRate} of the current-rate stretched buffer, or null (for persisting). */
+  function getStretchedChannels(trackId) {
+    const buf = peekStretchedBuffer(trackId);
+    if (!buf) return null;
+    const channels = [];
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch));
+    return { channels, sampleRate: buf.sampleRate };
   }
 
   /**
@@ -3743,6 +4005,9 @@ const AudioEngine = (() => {
     dbToGain,
     gainToDb,
     setPlaybackRate,
+    getUnstretchedTrackIds,
+    ensureStretched,
+    getStretchedChannels,
 
     // Playback
     play,
@@ -5121,6 +5386,16 @@ const UI = (() => {
   /** Count of in-flight user-selection (P0) loads; the prefetch queue pauses while > 0 (bd atc-cy2.5). */
   let selectionLoads = 0;
 
+  /** Persistent stretch cache (bd atc-di0), same wiring as audioCache. */
+  const stretchCache = createStretchCache({
+    caches: (() => { try { return window.caches; } catch (e) { return undefined; } })(),
+    storage: (() => { try { return window.localStorage; } catch (e) { return null; } })(),
+    target: pmixTarget(),
+    now: () => Date.now()
+  });
+  /** WSOLA-built buffers awaiting persistence once played: `${trackId}|${rateKey}` -> {trackId, rate}. */
+  const pendingPersist = new Map();
+
   /** Focus-first prefetch queue (bd atc-cy2.5). Declared before audioCache is used; fetch resolves audioCache lazily. */
   const prefetcher = createPrefetcher({
     storage: (() => { try { return window.localStorage; } catch (e) { return null; } })(),
@@ -5452,8 +5727,11 @@ const UI = (() => {
         AudioEngine.pause();
         setPlayingState(false);
       } else {
+        await speedDebouncer.flush();   // commit any pending speed target first (atc-di0 AC 3)
+        await syncStretch();            // every loaded track needs a buffer at this rate (AC 5)
         await AudioEngine.play();
         setPlayingState(true);
+        persistPlayed();                // fire-and-forget; never delays playback (AC 7)
       }
     });
 
@@ -5522,43 +5800,92 @@ const UI = (() => {
     el.speedSlowBtn.disabled = processing;
     el.speedFastBtn.disabled = processing;
     el.playBtn.disabled = processing;
-    if (processing) {
-      el.speedDisplay.textContent = '⏳';
-      el.speedDisplay.className = 'speed-display speed-normal';
+    const controls = el.speedDisplay.closest('.speed-controls');
+    if (controls) {
+      controls.setAttribute('data-processing', processing ? 'true' : 'false');
+      controls.setAttribute('aria-busy', processing ? 'true' : 'false');
+    }
+    const spinner = document.querySelector('[data-testid="speed-spinner"]');
+    if (spinner) spinner.hidden = !processing;
+  }
+
+  function fileModified(trackId) {
+    const f = (state.folderFiles || []).find(x => x.id === trackId);
+    return f ? f.modified : 0;
+  }
+
+  /** Persistent-cache lookup for AudioEngine.ensureStretched; errors resolve null (WSOLA rebuild). */
+  async function stretchLookup(trackId, rate) {
+    try { return await stretchCache.get(trackId, fileModified(trackId), rate); } catch (e) { return null; }
+  }
+
+  /** Ensures every loaded track has a buffer at the current rate, with the spinner shown while it works. */
+  async function syncStretch() {
+    if (AudioEngine.getUnstretchedTrackIds().length === 0) return;
+    setSpeedProcessing(true);
+    try {
+      const results = await AudioEngine.ensureStretched({ lookup: stretchLookup });
+      results.forEach(r => {
+        if (r.fresh) pendingPersist.set(`${r.trackId}|${r.rate.toFixed(1)}`, { trackId: r.trackId, rate: r.rate });
+      });
+    } finally {
+      setSpeedProcessing(false);
     }
   }
 
-  async function handleSpeedChange(delta) {
-    const newSpeed = Math.max(0.7, Math.min(1.3,
-      Math.round((state.playbackSpeed + delta) * 10) / 10
-    ));
+  /** Background write of WSOLA-built buffers at the rate now playing. Never awaited before play. */
+  function persistPlayed() {
+    (async () => {
+      const rateKey = state.playbackSpeed.toFixed(1);
+      for (const [key, item] of Array.from(pendingPersist.entries())) {
+        if (key !== `${item.trackId}|${rateKey}`) continue;
+        pendingPersist.delete(key);
+        try {
+          const sc = AudioEngine.getStretchedChannels(item.trackId);
+          if (sc) await stretchCache.put(item.trackId, fileModified(item.trackId), item.rate, sc.channels, sc.sampleRate);
+        } catch (e) { /* cache is best-effort */ }
+      }
+    })();
+  }
 
-    // Already at this rate (boundary clamp) — nothing to process
-    if (newSpeed === state.playbackSpeed) return;
-
-    // Stop playback immediately so there is no conflict with WSOLA
+  async function commitSpeed(speed) {
     if (state.isPlaying) {
       AudioEngine.stop();
       setPlayingState(false);
     }
-
-    state.playbackSpeed = newSpeed;
-
-    // Show ⏳ synchronously so the browser paints it before WSOLA runs
-    setSpeedProcessing(true);
-
-    // Yield so the browser paints ⏳ before WSOLA blocks the thread
-    await new Promise(resolve => setTimeout(resolve, 0));
-    AudioEngine.setPlaybackRate(newSpeed);
-
-    setSpeedProcessing(false);
+    state.playbackSpeed = speed;
+    AudioEngine.setPlaybackRate(speed);
+    try {
+      await syncStretch();
+    } catch (e) {
+      console.error('[speed] stretch failed', e);
+    }
     updateSpeedDisplay();
     updatePlaybackUI();
   }
 
+  const speedDebouncer = createSpeedDebouncer({
+    delayMs: SPEED_COMMIT_DELAY_MS,
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (h) => clearTimeout(h),
+    getCommitted: () => state.playbackSpeed,
+    onPending: (v) => {
+      if (v === null) {
+        el.speedDisplay.removeAttribute('data-pending');
+        updateSpeedDisplay();
+      } else {
+        el.speedDisplay.textContent = v.toFixed(1) + '×';
+        el.speedDisplay.setAttribute('data-pending', 'true');
+      }
+    },
+    onCommit: async (speed) => {
+      try { await commitSpeed(speed); } finally { el.speedDisplay.removeAttribute('data-pending'); updateSpeedDisplay(); }
+    }
+  });
+
   function setupSpeedControls() {
-    el.speedSlowBtn.addEventListener('click', () => handleSpeedChange(-0.1));
-    el.speedFastBtn.addEventListener('click', () => handleSpeedChange(+0.1));
+    el.speedSlowBtn.addEventListener('click', () => speedDebouncer.nudge(-0.1));
+    el.speedFastBtn.addEventListener('click', () => speedDebouncer.nudge(+0.1));
   }
 
   // ================================================================
@@ -5758,6 +6085,7 @@ const UI = (() => {
 
     // Audio byte cache housekeeping (bd atc-cy2.4); never blocks or fails startup
     audioCache.pruneOnOpen();
+    stretchCache.pruneOnOpen();
     audioCache.requestPersist(navigator);
 
     // Initialize AudioEngine
