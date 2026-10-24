@@ -1431,10 +1431,10 @@ li > .schedule-cal-wrap { margin-left: 8px; }
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.6.31.4";
+var STATIC_BUILD_VERSION_ = "1.6.31.9";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-24T02:34:18.396Z";
+var STATIC_BUILD_DATE_ = "2026-10-24T03:20:11.258Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -3270,13 +3270,21 @@ const AudioEngine = (() => {
     if (opts && opts.variant) {
       ids.forEach(id => pendingVariants.set(id, Promise.resolve().then(() => opts.variant(id, rate)).catch(() => null)));
     }
+    // Every row is busy from now: its download runs in parallel with the others (bd atc-5wd). endRow ends
+    // each row exactly once, and the finally below ends any row left over when a track throws.
+    const ended = new Set();
+    const endRow = (id, phase) => { if (onTrack && !ended.has(id)) { ended.add(id); onTrack(id, phase); } };
+    if (onTrack) {
+      ids.forEach(id => onTrack(id, 'start'));
+      await new Promise(r => setTimeout(r, 0));     // let the spinners paint before WSOLA blocks the thread
+    }
+    try {
     for (const trackId of ids) {
       await new Promise(r => setTimeout(r, 0));
       const track = tracks.get(trackId);
-      if (!track || playbackRate !== rate || peekStretchedBuffer(trackId)) continue;
-      if (onTrack) {
-        onTrack(trackId, 'start');
-        await new Promise(r => setTimeout(r, 0));   // let the row's spinner paint before WSOLA blocks the thread
+      if (!track || playbackRate !== rate || peekStretchedBuffer(trackId)) {
+        endRow(trackId, 'done');
+        continue;
       }
       let failed = false;
       try {
@@ -3317,8 +3325,11 @@ const AudioEngine = (() => {
         failed = true;
         throw e;
       } finally {
-        if (onTrack) onTrack(trackId, failed ? 'error' : 'done');   // the continue paths above also end the row
+        endRow(trackId, failed ? 'error' : 'done');   // the continue paths above also end the row
       }
+    }
+    } finally {
+      ids.forEach(id => endRow(id, 'done'));
     }
     return results;
   }
