@@ -265,14 +265,11 @@ body {
 .subfolders-container.collapsed { display: none; }
 
 .subfolders-toggle {
-  display: none; align-items: center; min-height: 32px; padding: 0 8px; margin: -4px 0;
+  align-items: center; min-height: 32px; padding: 0 8px; margin: -4px 0;
   background: var(--surface-1); color: var(--text-3); border: 1px solid var(--border, currentColor);
   border-radius: var(--radius); font: inherit; font-size: 14px; cursor: pointer;
 }
 .subfolders-toggle:hover { color: var(--text-1, inherit); }
-
-.subfolders-list { display: none; }
-.subfolders-container.collapsed h3 { margin-bottom: 0; }
 
 .subfolders-list { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
 
@@ -1685,6 +1682,7 @@ function createClientTelemetry(deps) {
         if (win.document && typeof win.document.addEventListener === 'function') {
           win.document.addEventListener('visibilitychange', function () {
             if (win.document.visibilityState === 'hidden') api.flushOnHide();
+            else if (win.document.visibilityState === 'visible') beaconed = {};   // back on screen: a later hide re-beacons
           });
         }
       } catch (e) { /* never throws */ }
@@ -1713,10 +1711,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.0.4";
+var STATIC_BUILD_VERSION_ = "1.7.0.5";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-26T16:44:23.774Z";
+var STATIC_BUILD_DATE_ = "2026-10-26T16:58:30.547Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -2032,25 +2030,30 @@ function startConnectionMonitor_() {
 /**
  * bd atc-gat: reports a failed selection load. failed() shows the selection status line and flashes the
  * track button's error state for 3s; loaded() clears that message (and only that message) after a later success.
- * deps: showStatus(message, type), setButtonError(fileId, on), setTimeout.
+ * loaded(fileId) clears only when that file is the one whose message is showing.
+ * deps: showStatus(message, type), setButtonError(fileId, on), setTimeout, clearTimeout (default: global), getStatus.
  */
 function createLoadFailureReporter_(deps) {
   var shown = '';
+  var shownFileId = null;   // the file whose failure message is showing
+  var clearT = deps.clearTimeout || (typeof clearTimeout === 'function' ? clearTimeout : null);
   var resetTimers = {};   // fileId -> handle of the pending button error reset
   return {
     failed: function (fileId, label, err) {
       var reason = (err && err.network) ? 'no connection' : ((err && err.message) || 'load failed');
       shown = "Couldn't load " + label + ': ' + reason + '. Tap to retry.';
+      shownFileId = fileId;
       deps.showStatus(shown, 'error');
       deps.setButtonError(fileId, true);
-      if (resetTimers[fileId] !== undefined && typeof deps.clearTimeout === 'function') deps.clearTimeout(resetTimers[fileId]);
+      if (resetTimers[fileId] !== undefined && clearT) clearT(resetTimers[fileId]);
       resetTimers[fileId] = deps.setTimeout(function () { delete resetTimers[fileId]; deps.setButtonError(fileId, false); }, 3000);
       return shown;
     },
-    loaded: function () {
-      if (!shown) return;
+    loaded: function (fileId) {
+      if (!shown || fileId !== shownFileId) return;   // another file's success must not clear this file's message
       var mine = shown;
       shown = '';
+      shownFileId = null;
       // Leave the line alone if something else has since taken it.
       if (typeof deps.getStatus === 'function' && deps.getStatus() !== mine) return;
       deps.showStatus('', '');
@@ -2070,7 +2073,8 @@ function callWithTimeout_(start, ms, makeTimeoutError, setTimer, clearTimer) {
   var timeout = new Promise(function (_, reject) {
     handle = setT(function () { reject(makeTimeoutError()); }, ms);
   });
-  return Promise.race([start(), timeout]).then(
+  // start inside a promise: a synchronous throw rejects through the race, so the timer is cleared
+  return Promise.race([Promise.resolve().then(start), timeout]).then(
     function (v) { clearT(handle); return v; },
     function (e) { clearT(handle); throw e; }
   );
@@ -5600,6 +5604,8 @@ const UI = (() => {
     el.trackButtons.innerHTML = '';
     el.subfoldersContainer.style.display = 'none';
     el.subfoldersToggle.style.display = 'none';
+    delete el.subfoldersContainer.dataset.folderId;
+    delete el.subfoldersContainer.dataset.hasTracks;
     renderFolderMedia([], []);
     el.songTitle.textContent = '';
     el.trackCountInfo.textContent = '';
@@ -5738,15 +5744,21 @@ const UI = (() => {
 
   // <subfolders-toggle>
   function setSubfoldersCollapsed_(container, toggle, collapsed) {
-    if (collapsed) container.classList.add('collapsed'); else container.classList.remove('collapsed');
-    container.style.display = collapsed ? 'none' : 'block';
+    container.classList.toggle('collapsed', collapsed); // the only collapse state (CSS display:none)
     toggle.textContent = collapsed ? '📁 ▸' : '📁 ▾';
     toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     toggle.setAttribute('aria-label', collapsed ? 'Show folders' : 'Hide folders');
   }
-  function syncSubfolders_(container, toggle, count, hasTracks) {
-    if (!count) { container.style.display = 'none'; toggle.style.display = 'none'; return; }
-    toggle.style.display = 'inline-flex';
+  // Re-rendering the same folder (background revalidation) keeps the user's choice; the default
+  // (collapsed with tracks, expanded without) applies when the folder id or its has-tracks state changes.
+  function syncSubfolders_(container, toggle, count, hasTracks, folderId) {
+    if (!count) { container.style.display = 'none'; toggle.style.display = 'none'; delete container.dataset.folderId; delete container.dataset.hasTracks; return; }
+    container.style.display = '';
+    toggle.style.display = 'inline-flex';   // the one visibility mechanism (markup starts display:none)
+    var known = folderId !== null && folderId !== undefined;
+    if (known && container.dataset.folderId === String(folderId) && container.dataset.hasTracks === String(!!hasTracks)) return;
+    if (known) { container.dataset.folderId = String(folderId); container.dataset.hasTracks = String(!!hasTracks); }
+    else { delete container.dataset.folderId; delete container.dataset.hasTracks; }
     setSubfoldersCollapsed_(container, toggle, hasTracks);
   }
   function toggleSubfolders_(container, toggle) {
@@ -5761,7 +5773,7 @@ const UI = (() => {
 
     // Collapse when tracks are also present so tracks remain the primary focus
     syncSubfolders_(el.subfoldersContainer, el.subfoldersToggle,
-      state.folderSubFolders ? state.folderSubFolders.length : 0, state.folderFiles.length > 0);
+      state.folderSubFolders ? state.folderSubFolders.length : 0, state.folderFiles.length > 0, state.folderId);
     if (!state.folderSubFolders || state.folderSubFolders.length === 0) return;
 
     el.subfoldersList.innerHTML = '';
@@ -5940,7 +5952,7 @@ const UI = (() => {
         if (AudioEngine.hasTrack(fileId)) {
           if (currentBtn) updateTrackBtnState(currentBtn, 'loaded');
           state.trackLoadStatus.set(fileId, 'loaded');
-          loadFailureReporter.loaded();
+          loadFailureReporter.loaded(fileId);
         } else {
           // Load failed — deselect so a single click re-selects and retries
           state.selectedFileIds.delete(fileId);
