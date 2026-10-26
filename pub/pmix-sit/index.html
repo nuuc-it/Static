@@ -241,6 +241,16 @@ body {
 .track-btn[data-status="loaded"]   .track-btn-state { color: var(--green); }
 .track-btn[data-status="loading"]  .track-btn-state { color: var(--amber); }
 .track-btn[data-status="available"] .track-btn-state { color: var(--text-3); }
+.track-btn[data-status="error"]     .track-btn-state { color: var(--red); }
+
+/* Connection banner (bd atc-gat): fixed to the top edge, never in flow (nothing shifts) and never
+   intercepts a tap (non-blocking). One short line at 360px; the pages' own top padding clears it. */
+.connection-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+  padding: 4px var(--spacing-sm); text-align: center; font-size: 12px; line-height: 1.3;
+  background: var(--surface-1); color: var(--amber); border-bottom: 1px solid oklch(0.78 0.14 70 / .45);
+  pointer-events: none;
+}
 
 /* ================================================================== */
 /* SUBFOLDERS                                                          */
@@ -1148,6 +1158,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
 </style>
 </head>
 <body>
+  <div id="connection-banner" data-testid="connection-banner" class="connection-banner" role="status" style="display:none">Can't reach the server. Tracks already loaded still play.</div>
   <!-- ============================================================ -->
   <!-- SELECTION PAGE (Track Selection & Loading)                   -->
   <!-- ============================================================ -->
@@ -1698,10 +1709,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.0.1";
+var STATIC_BUILD_VERSION_ = "1.7.0.2";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-26T14:55:47.154Z";
+var STATIC_BUILD_DATE_ = "2026-10-26T15:17:41.377Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -1953,6 +1964,8 @@ async function callApi(action, args) {
     var netErr_ = new Error('Could not reach the server (' + (e && e.message ? e.message : e) + ')');
     // Captured here, where the request never reached GAS; marked so the unhandledrejection handler skips it.
     tel_.captureError('callApi', netErr_, { action: action, rid: rid_, elapsedMs: Date.now() - startedAt_ });
+    netErr_.network = true;       // bd atc-gat: lets the UI say "no connection" rather than the raw message
+    signalConnection_(true);
     throw netErr_;
   }
 
@@ -1969,6 +1982,7 @@ async function callApi(action, args) {
     throw jsonErr_;
   }
   tel_.settle(carried_, body);
+  signalConnection_(false);       // bd atc-gat: any parsed response proves the server is reachable
 
   // A refreshed session replaces the stored one; signedOut clears it. Either way the call itself succeeded.
   if (absorbSessionFields(sessionStorage_(), body) && typeof onSessionChanged_ === 'function') onSessionChanged_();
@@ -1983,6 +1997,57 @@ async function callApi(action, args) {
     throw err;
   }
   return body.result;
+}
+
+/**
+ * bd atc-gat: server-connection banner. callApi (and the getFileAsBase64 timeout) report network-level
+ * failures through signalConnection_; navigator.onLine alone is not trusted (it stays true in the real failure).
+ * Shown on a network failure, 'offline', or offline at load; hidden on the next parsed response or 'online'.
+ */
+var CONNECTION_BANNER_TEXT_ = "Can't reach the server. Tracks already loaded still play.";
+var connectionShown_ = false;
+function renderConnectionBanner_(show) {
+  connectionShown_ = !!show;
+  try {
+    var el = document.getElementById('connection-banner');
+    if (!el) return;
+    el.textContent = CONNECTION_BANNER_TEXT_;
+    el.style.display = show ? '' : 'none';
+  } catch (e) { /* the banner never breaks a request */ }
+}
+/** down=true: a network-level failure; down=false: a response was parsed. */
+function signalConnection_(down) { renderConnectionBanner_(down); }
+function startConnectionMonitor_() {
+  try {
+    window.addEventListener('offline', function () { renderConnectionBanner_(true); });
+    window.addEventListener('online', function () { renderConnectionBanner_(false); });
+    renderConnectionBanner_(typeof navigator !== 'undefined' && navigator.onLine === false);
+  } catch (e) { /* ignore */ }
+}
+
+/**
+ * bd atc-gat: reports a failed selection load. failed() shows the selection status line and flashes the
+ * track button's error state for 3s; loaded() clears that message (and only that message) after a later success.
+ * deps: showStatus(message, type), setButtonError(fileId, on), setTimeout.
+ */
+function createLoadFailureReporter_(deps) {
+  var shown = '';
+  return {
+    failed: function (fileId, label, err) {
+      var reason = (err && err.network) ? 'no connection' : ((err && err.message) || 'unknown error');
+      shown = "Couldn't load " + label + ': ' + reason + '. Tap to retry.';
+      deps.showStatus(shown, 'error');
+      deps.setButtonError(fileId, true);
+      deps.setTimeout(function () { deps.setButtonError(fileId, false); }, 3000);
+      return shown;
+    },
+    loaded: function () {
+      if (!shown) return;
+      shown = '';
+      deps.showStatus('', '');
+    },
+    current: function () { return shown; }
+  };
 }
 
 /**
@@ -5154,6 +5219,7 @@ if (typeof module !== 'undefined') {
 const UI = (() => {
   // bd atc-f49: global error capture starts before any state exists; the context provider is added below.
   startClientTelemetry_();
+  startConnectionMonitor_();
   // ================================================================
   // STATE
   // ================================================================
@@ -5172,6 +5238,7 @@ const UI = (() => {
     // Track selection & loading
     selectedFileIds: new Set(),
     trackLoadStatus: new Map(),
+    lastLoadError: new Map(),   // bd atc-gat: fileId -> the Error that failed its last selection load
     songTitle: '',
     loadedTracks: new Map(),
     trackMixSettings: new Map(),
@@ -5628,6 +5695,7 @@ const UI = (() => {
     if (!stateEl) return;
     if (status === 'loaded')   { stateEl.textContent = '✓ Loaded'; }
     else if (status === 'loading') { stateEl.textContent = '⏳ Loading'; }
+    else if (status === 'error')   { stateEl.textContent = '⚠ Failed'; }
     else                       { stateEl.textContent = '○ Available'; }
   }
 
@@ -5834,11 +5902,15 @@ const UI = (() => {
         if (AudioEngine.hasTrack(fileId)) {
           if (currentBtn) updateTrackBtnState(currentBtn, 'loaded');
           state.trackLoadStatus.set(fileId, 'loaded');
+          loadFailureReporter.loaded();
         } else {
           // Load failed — deselect so a single click re-selects and retries
           state.selectedFileIds.delete(fileId);
           state.trackLoadStatus.delete(fileId);
           if (currentBtn) { currentBtn.dataset.selected = 'false'; updateTrackBtnState(currentBtn, 'available'); }
+          // bd atc-gat: say so (status line + 3s button error state); one tap re-selects and retries.
+          const failLabel = parseTrackLabels(state.folderFiles).labels.get(fileId) || (state.folderFiles.find(f => f.id === fileId) || {}).name || fileId;
+          loadFailureReporter.failed(fileId, failLabel, state.lastLoadError.get(fileId));
         }
       }
     }
@@ -5890,11 +5962,25 @@ const UI = (() => {
       console.log(`[load] decode: ${(t2 - t1).toFixed(0)}ms  TOTAL: ${(t2 - t0).toFixed(0)}ms`);
 
       state.loadedTracks.set(fileId, trackInfo);
+      state.lastLoadError.delete(fileId);
     } catch (error) {
       console.error('[load] Error loading track:', error);
+      state.lastLoadError.set(fileId, error);
       state.trackLoadStatus.set(fileId, 'available');
     }
   }
+
+  /** bd atc-gat: selection-load failure messaging. Prefetch never calls it (it loads via audioCache directly). */
+  const loadFailureReporter = createLoadFailureReporter_({
+    showStatus: showSelectionStatus,
+    setButtonError: (fileId, on) => {
+      const b = document.querySelector(`[data-file-id="${fileId}"]`);
+      if (!b) return;
+      if (on) updateTrackBtnState(b, 'error');
+      else if (b.dataset.status === 'error') updateTrackBtnState(b, 'available');
+    },
+    setTimeout: (fn, ms) => setTimeout(fn, ms)
+  });
 
   /** Count of in-flight user-selection (P0) loads; the prefetch queue pauses while > 0 (bd atc-cy2.5). */
   let selectionLoads = 0;
@@ -5938,6 +6024,8 @@ const UI = (() => {
             const timeoutErr = new Error('getFileAsBase64 timeout');
             // bd atc-f49: a timeout never reaches the server log by itself (the slow call may still finish there).
             getClientTelemetry_().captureError('getFileAsBase64', timeoutErr, { action: 'getFileAsBase64', fileId: fileId, rate: rate || '', elapsedMs: Math.round(performance.now() - t0) });
+            timeoutErr.network = true;
+            signalConnection_(true);
             reject(timeoutErr);
           }, 18000)
         )
