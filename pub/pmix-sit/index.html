@@ -1450,9 +1450,20 @@ li > .schedule-cal-wrap { margin-left: 8px; }
  * once per page session), which has no response and therefore never dequeues. Nothing in this module throws, and a failed flush never
  * captures a record (that would feed itself).
  *
+ * Channels: deps.channel 'error' (default) or 'activity'. An activity instance has its own queue
+ * (200 records / 7 days, attach <=10 / 2048 bytes, flush <=25; deps.limits overrides any of
+ * queueMax, maxAgeMs, attachMax, attachMaxBytes, flushBatchMax). Its capture() appends in memory only;
+ * storage is read once at creation and written later, coalesced (requestIdleCallback, else
+ * setTimeout 2 s), and again before a hide beacon. Its flush is low-rate: no send within 60 s of a
+ * carry or a send, then only when >=20 records are unsent or the oldest is 5 min old; flush() and
+ * 'online' only check. An instance given deps.channel stamps it on every record; an error and an
+ * activity instance can attach() to the same payload (error records first, each within its own budget).
+ *
  * deps: storage {getItem,setItem}|null, key, now()->ms, newId()->string, setTimeout, clearTimeout,
  *       context()->object, send(records)->Promise<body>, beacon(records)->boolean,
- *       clientVersion (string|function, optional), isOnline() (optional).
+ *       clientVersion (string|function, optional), isOnline() (optional),
+ *       channel ('error'|'activity', optional), limits (object, optional),
+ *       requestIdleCallback (optional; activity persist, else the global one, else setTimeout).
  */
 var TELEMETRY_QUEUE_MAX_ = 25;
 var TELEMETRY_QUEUE_MAX_AGE_MS_ = 7 * 24 * 60 * 60 * 1000;
@@ -1465,11 +1476,27 @@ var TELEMETRY_STACK_MAX_ = 1200;
 // Keys GasLogger stamps on every row; a record may not carry them (the server renames to client_<key>).
 var TELEMETRY_RESERVED_KEYS_ = ['version', 'env', 'op', 'parentOp', 'ts', 'tag'];
 var TELEMETRY_CAPTURED_FLAG_ = '__telemetryCaptured';
+var TELEMETRY_ACTIVITY_LIMITS_ = { queueMax: 200, maxAgeMs: TELEMETRY_QUEUE_MAX_AGE_MS_, attachMax: 10, attachMaxBytes: 2048, flushBatchMax: 25 };
+var TELEMETRY_ACTIVITY_QUIET_MS_ = 60 * 1000;          // no activity send within 60 s of a carry or a send
+var TELEMETRY_ACTIVITY_FLUSH_COUNT_ = 20;              // send once this many records are unsent...
+var TELEMETRY_ACTIVITY_FLUSH_AGE_MS_ = 5 * 60 * 1000;  // ...or the oldest unsent record is this old
+var TELEMETRY_PERSIST_DELAY_MS_ = 2000;
+// Server dedupe window of ClientTelemetryLog.js (CLIENT_TELEMETRY_DEDUPE_TTL_SECONDS_ = 6 h, a CacheService TTL).
+// Keep in step with that constant: a beaconed record older than this would no longer be deduped, so it is dropped.
+var TELEMETRY_BEACON_DEDUPE_TTL_MS_ = 6 * 60 * 60 * 1000;
 
 function createClientTelemetry(deps) {
   deps = deps || {};
   var pageSession = safe_(function () { return deps.newId(); }, 'ps-' + Math.random().toString(16).slice(2));
-  var mem = [];                 // in-memory queue: the fallback when storage is unavailable
+  var activity = deps.channel === 'activity';
+  var stampChannel = deps.channel !== undefined && deps.channel !== null;   // default instance: records as before
+  var channel = activity ? 'activity' : 'error';
+  var limits = limits_();
+  var mem = [];                 // in-memory queue: the fallback when storage is unavailable (activity: authoritative)
+  var dirty = false;            // activity: mem changed since the last persist
+  var persistPending = false;   // activity: a deferred persist is scheduled
+  var retryAt = 0;              // activity: no send before this (failure backoff)
+  var timerAt = 0;              // activity: when the armed timer is due
   var inFlight = {};            // id -> true while a request or flush carries the record
   var backoffIndex = 0;
   var lastCarriedAt = 0;
@@ -1481,7 +1508,21 @@ function createClientTelemetry(deps) {
   function nowMs_() { return safe_(function () { return deps.now(); }, Date.now()); }
   function intervalMs_() { return TELEMETRY_BACKOFF_SECONDS_[backoffIndex] * 1000; }
 
-  function load_() {
+  /** Channel defaults, each overridable by a positive number in deps.limits. */
+  function limits_() {
+    var base = activity ? TELEMETRY_ACTIVITY_LIMITS_ : {
+      queueMax: TELEMETRY_QUEUE_MAX_, maxAgeMs: TELEMETRY_QUEUE_MAX_AGE_MS_, attachMax: TELEMETRY_ATTACH_MAX_,
+      attachMaxBytes: TELEMETRY_ATTACH_MAX_BYTES_, flushBatchMax: TELEMETRY_FLUSH_BATCH_MAX_
+    };
+    var out = {};
+    Object.keys(base).forEach(function (k) {
+      var v = deps.limits && typeof deps.limits === 'object' ? deps.limits[k] : undefined;
+      out[k] = (typeof v === 'number' && v > 0) ? v : base[k];
+    });
+    return out;
+  }
+
+  function read_() {
     var list = null;
     try {
       if (deps.storage && deps.key) {
@@ -1492,23 +1533,76 @@ function createClientTelemetry(deps) {
     if (!Array.isArray(list)) list = mem;
     return list.filter(function (r) { return r && typeof r === 'object' && r.id; });
   }
+  /** Error channel: storage on every call. Activity: the in-memory queue (storage was read once at creation). */
+  function load_() { return activity ? mem : read_(); }
   function save_(list) {
     mem = list;
+    if (activity) { dirty = true; schedulePersist_(); return; }
+    write_(list);
+  }
+  function write_(list) {
     try { if (deps.storage && deps.key) deps.storage.setItem(deps.key, JSON.stringify(list)); } catch (e) { /* in-memory only */ }
   }
-  function prune_(list) {
-    var cutoff = nowMs_() - TELEMETRY_QUEUE_MAX_AGE_MS_;
-    var kept = list.filter(function (r) {
+  function pruneAge_(list) {
+    var cutoff = nowMs_() - limits.maxAgeMs;
+    return list.filter(function (r) {
       var t = Date.parse(r.at);
       return isNaN(t) || t >= cutoff;
     });
-    return kept.length > TELEMETRY_QUEUE_MAX_ ? kept.slice(kept.length - TELEMETRY_QUEUE_MAX_) : kept;
+  }
+  function prune_(list) {
+    var kept = pruneAge_(list);
+    return kept.length > limits.queueMax ? kept.slice(kept.length - limits.queueMax) : kept;
+  }
+
+  /** Activity: writes the queue (age-pruned) if it changed since the last persist. */
+  function persist_() {
+    persistPending = false;
+    if (!dirty) return;
+    dirty = false;
+    mem = pruneAge_(mem);
+    write_(mem);
+  }
+  /** Activity: one deferred persist per batch of changes, off the calling tick. */
+  function schedulePersist_() {
+    if (persistPending) return;
+    persistPending = true;
+    try {
+      var ric = typeof deps.requestIdleCallback === 'function' ? deps.requestIdleCallback
+        : (typeof requestIdleCallback === 'function' ? requestIdleCallback : null);
+      if (ric) ric(persist_, { timeout: TELEMETRY_PERSIST_DELAY_MS_ });
+      else if (typeof deps.setTimeout === 'function') deps.setTimeout(persist_, TELEMETRY_PERSIST_DELAY_MS_);
+      else persist_();      // no way to defer: persist now rather than never
+    } catch (e) { persistPending = false; }
   }
   function dequeue_(ids) {
     if (!ids || !ids.length) return;
     var set = {};
     ids.forEach(function (id) { set[String(id)] = true; });
-    save_(load_().filter(function (r) { return !set[String(r.id)]; }));
+    var before = load_();
+    var after = before.filter(function (r) { return !set[String(r.id)]; });
+    if (after.length !== before.length) save_(after);
+  }
+  /** Drops records a beacon accepted more than the server dedupe window ago (they could no longer be deduped). */
+  function dropStaleBeaconed_(list) {
+    var cutoff = nowMs_() - TELEMETRY_BEACON_DEDUPE_TTL_MS_;
+    return list.filter(function (r) { return typeof r.beaconedAt !== 'number' || r.beaconedAt >= cutoff; });
+  }
+  /** Persists beaconedAt on the records a beacon accepted. */
+  function markBeaconed_(batch) {
+    var at = nowMs_();
+    var set = {};
+    batch.forEach(function (r) { set[r.id] = true; });
+    if (activity) {
+      mem.forEach(function (r) { if (set[r.id]) r.beaconedAt = at; });
+      dirty = true;
+      persist_();
+      return;
+    }
+    var list = load_();
+    list.forEach(function (r) { if (set[r.id]) r.beaconedAt = at; });
+    write_(list);
+    mem = list;
   }
   function utf8Bytes_(s) {
     var n = 0;
@@ -1522,9 +1616,23 @@ function createClientTelemetry(deps) {
   function mark_(err) { try { if (err && typeof err === 'object') err[TELEMETRY_CAPTURED_FLAG_] = true; } catch (e) { /* frozen */ } }
 
   function release_(ids) { (ids || []).forEach(function (id) { delete inFlight[id]; }); }
+  function unsent_() { return load_().filter(function (r) { return !inFlight[r.id]; }); }
 
+  /** Activity: the earliest time a send may go (ms), or -1 when nothing is unsent. */
+  function activityDueAt_() {
+    var unsent = unsent_();
+    if (!unsent.length) return -1;
+    var due = 0;
+    if (unsent.length < TELEMETRY_ACTIVITY_FLUSH_COUNT_) {
+      var t = Date.parse(unsent[0].at);
+      due = isNaN(t) ? 0 : t + TELEMETRY_ACTIVITY_FLUSH_AGE_MS_;
+    }
+    if (lastCarriedAt) due = Math.max(due, lastCarriedAt + TELEMETRY_ACTIVITY_QUIET_MS_);
+    return Math.max(due, retryAt);
+  }
   /** Arms the single flush timer (if the queue is non-empty and none is armed). */
   function schedule_() {
+    if (activity) { armActivity_(); return; }
     if (timer !== null || typeof deps.setTimeout !== 'function') return;
     if (!load_().length) return;
     function arm_(ms) {
@@ -1537,11 +1645,45 @@ function createClientTelemetry(deps) {
     }
     arm_(intervalMs_());
   }
-  function bumpBackoff_() { if (backoffIndex < TELEMETRY_BACKOFF_SECONDS_.length - 1) backoffIndex++; }
+  /** Activity: arms the single timer for when a send becomes due, or pulls an armed one forward. */
+  function armActivity_() {
+    if (typeof deps.setTimeout !== 'function') return;
+    var due = activityDueAt_();
+    if (due < 0) return;
+    var now = nowMs_();
+    var at = Math.max(due, now);
+    if (timer !== null) {
+      if (timerAt <= at) return;
+      safe_(function () { deps.clearTimeout(timer); }, null);
+    }
+    timerAt = at;
+    timer = deps.setTimeout(function () { timer = null; checkActivity_(); }, at - now);
+  }
+  /** Activity flush check (timer, flush(), 'online'): sends only when due, else re-arms. */
+  function checkActivity_() {
+    var due = activityDueAt_();
+    if (due < 0 || flushing) return Promise.resolve();   // a running send re-checks when it settles
+    if (due <= nowMs_()) return doFlush_();
+    armActivity_();
+    return Promise.resolve();
+  }
+  function bumpBackoff_() {
+    if (activity) retryAt = nowMs_() + intervalMs_();   // 30/60/120/300 s, under the 60 s send floor
+    if (backoffIndex < TELEMETRY_BACKOFF_SECONDS_.length - 1) backoffIndex++;
+  }
+  /** Dequeues the acked ids. An ack of none of the ids this instance carried counts as a failure for backoff. */
+  function acked_(ids, carried) {
+    dequeue_(ids);
+    var set = {};
+    (ids || []).forEach(function (id) { set[String(id)] = true; });
+    var mine = (carried || []).some(function (id) { return set[String(id)]; });
+    if (mine) { backoffIndex = 0; retryAt = 0; }
+    else if (carried && carried.length) bumpBackoff_();
+  }
 
   function doFlush_() {
     if (flushing || typeof deps.send !== 'function') return Promise.resolve();
-    var batch = load_().filter(function (r) { return !inFlight[r.id]; }).slice(-TELEMETRY_FLUSH_BATCH_MAX_);
+    var batch = unsent_().slice(-limits.flushBatchMax);
     if (!batch.length) return Promise.resolve();
     var ids = batch.map(function (r) { return r.id; });
     ids.forEach(function (id) { inFlight[id] = true; });
@@ -1550,7 +1692,7 @@ function createClientTelemetry(deps) {
     var p;
     try { p = Promise.resolve(deps.send(batch)); } catch (e) { p = Promise.reject(e); }
     return p.then(function (body) {
-      if (body && Array.isArray(body.telemetryAck)) { dequeue_(body.telemetryAck); backoffIndex = 0; }
+      if (body && Array.isArray(body.telemetryAck)) acked_(body.telemetryAck, ids);
       else bumpBackoff_();
     }, function () {
       bumpBackoff_();     // never captures: a failing flush must not feed the queue it is draining
@@ -1579,13 +1721,23 @@ function createClientTelemetry(deps) {
         var extras = [typeof deps.context === 'function' ? safe_(deps.context, {}) : {}, fields || {}];
         extras.forEach(function (o) {
           Object.keys(o || {}).forEach(function (k) {
-            if (k === 'id' || k === 'at' || k === 'kind' || k === 'source' || k === 'pageSession') return;
+            if (k === 'id' || k === 'at' || k === 'kind' || k === 'source' || k === 'pageSession' || (stampChannel && k === 'channel')) return;
             rec[TELEMETRY_RESERVED_KEYS_.indexOf(k) === -1 ? k : 'client_' + k] = o[k];
           });
         });
         if (rec.msg !== undefined) rec.msg = clip_(String(rec.msg), TELEMETRY_MSG_MAX_);
         if (rec.stack !== undefined) rec.stack = clip_(String(rec.stack), TELEMETRY_STACK_MAX_);
+        if (stampChannel) rec.channel = channel;
         rec = JSON.parse(JSON.stringify(rec));   // plain data only; a circular field drops the record, not the page
+        if (activity) {
+          // Hot path: append in memory; no storage read, no whole-queue JSON. Persist is deferred.
+          mem.push(rec);
+          if (mem.length > limits.queueMax) mem.splice(0, mem.length - limits.queueMax);
+          dirty = true;
+          schedulePersist_();
+          if (timer === null || mem.length >= TELEMETRY_ACTIVITY_FLUSH_COUNT_) schedule_();
+          return rec;
+        }
         save_(prune_(load_().concat([rec])));
         schedule_();
         return rec;
@@ -1604,22 +1756,28 @@ function createClientTelemetry(deps) {
       } catch (e) { return null; }
     },
 
-    /** Adds payload.telemetry.records (<=5 records, <=2048 bytes, newest first, none already in flight). Returns carried ids. */
+    /**
+     * Adds to payload.telemetry.records (error <=5 records / activity <=10, <=2048 bytes, newest first,
+     * none already in flight). Returns carried ids. Records another instance already attached are kept;
+     * the budget counts only this instance's own records. Error records go before them, activity after.
+     */
     attach: function (payload) {
       try {
         if (!payload || typeof payload !== 'object') return [];
-        var queue = load_().filter(function (r) { return !inFlight[r.id]; }).reverse();
+        var queue = unsent_().reverse();
         var picked = [];
         var bytes = 2;
         queue.forEach(function (r) {
-          if (picked.length >= TELEMETRY_ATTACH_MAX_) return;
+          if (picked.length >= limits.attachMax) return;
           var size = utf8Bytes_(JSON.stringify(r)) + 1;
-          if (bytes + size > TELEMETRY_ATTACH_MAX_BYTES_) return;     // too big for the piggyback; flush() carries it
+          if (bytes + size > limits.attachMaxBytes) return;     // too big for the piggyback; flush() carries it
           picked.push(r);
           bytes += size;
         });
         if (!picked.length) return [];
-        payload.telemetry = { records: picked };
+        var t = payload.telemetry;
+        var existing = (t && typeof t === 'object' && Array.isArray(t.records)) ? t.records : [];
+        payload.telemetry = { records: activity ? existing.concat(picked) : picked.concat(existing) };
         lastCarriedAt = nowMs_();
         var ids = picked.map(function (r) { return r.id; });
         ids.forEach(function (id) { inFlight[id] = true; });
@@ -1636,26 +1794,31 @@ function createClientTelemetry(deps) {
     settle: function (carried, body) {
       try {
         release_(carried);
-        if (body && Array.isArray(body.telemetryAck)) {
-          dequeue_(body.telemetryAck);
-          backoffIndex = 0;
-        }
+        if (body && Array.isArray(body.telemetryAck)) acked_(body.telemetryAck, carried);
         schedule_();
       } catch (e) { /* never throws */ }
     },
 
-    /** Sends one batch of <=10 now (page load, 'online'); resolves when settled. Never rejects. */
+    /**
+     * Error channel: sends one batch of <=10 now (page load, 'online'). Activity: a flush check, which
+     * sends <=25 only when due (else arms the timer). Resolves when settled. Never rejects.
+     */
     flush: function () {
-      try { return doFlush_().then(function () {}, function () {}); } catch (e) { return Promise.resolve(); }
+      try { return (activity ? checkActivity_() : doFlush_()).then(function () {}, function () {}); } catch (e) { return Promise.resolve(); }
     },
 
-    /** Page hidden/unloading: beacon the newest <=10 records not yet beaconed this page session. A beacon has no response, so nothing is dequeued. */
+    /**
+     * Page hidden/unloading: beacon the newest <=10 (activity: 25) records not yet beaconed this page
+     * session. A beacon has no response, so nothing is dequeued. Activity persists first.
+     */
     flushOnHide: function () {
       try {
-        var batch = load_().filter(function (r) { return !beaconed[r.id]; }).slice(-TELEMETRY_FLUSH_BATCH_MAX_).reverse();
+        if (activity) persist_();
+        var batch = load_().filter(function (r) { return !beaconed[r.id]; }).slice(-limits.flushBatchMax).reverse();
         if (!batch.length) return false;
         if (typeof deps.beacon === 'function' && deps.beacon(batch)) {
           batch.forEach(function (r) { beaconed[r.id] = true; });
+          markBeaconed_(batch);
           return true;
         }
         api.flush();
@@ -1663,16 +1826,16 @@ function createClientTelemetry(deps) {
       } catch (e) { return false; }
     },
 
-    /** error + unhandledrejection capture, flush on 'online', beacon on visibilitychange hidden / pagehide. */
+    /** error + unhandledrejection capture (error channel only), flush on 'online', beacon on visibilitychange hidden / pagehide. */
     installGlobalHandlers: function (win) {
       try {
         if (!win || typeof win.addEventListener !== 'function') return;
-        win.addEventListener('error', function (e) {
+        if (!activity) win.addEventListener('error', function (e) {
           var err = (e && e.error) || new Error((e && e.message) || 'window error');
           if (err && err[TELEMETRY_CAPTURED_FLAG_]) return;
           api.captureError('window.onerror', err, e && e.filename ? { file: String(e.filename).slice(-200), line: e.lineno, col: e.colno } : {});
         });
-        win.addEventListener('unhandledrejection', function (e) {
+        if (!activity) win.addEventListener('unhandledrejection', function (e) {
           var reason = e && e.reason;
           if (reason && reason[TELEMETRY_CAPTURED_FLAG_]) return;      // already captured where it was thrown
           api.captureError('unhandledrejection', reason instanceof Error ? reason : new Error(String(reason)));
@@ -1689,12 +1852,19 @@ function createClientTelemetry(deps) {
     },
 
     /** Test/diagnostic view of the persisted queue. */
-    pending: function () { return load_(); }
+    pending: function () { return load_().slice(); }
   };
+  if (activity) mem = dropStaleBeaconed_(pruneAge_(read_())).slice(-limits.queueMax);   // the only storage read of an activity instance
+  else {
+    var stored = read_();
+    var fresh = dropStaleBeaconed_(stored);
+    if (fresh.length !== stored.length) write_(fresh);
+    mem = fresh;
+  }
   return api;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { createClientTelemetry: createClientTelemetry };
+if (typeof module !== 'undefined' && module.exports) module.exports = { createClientTelemetry: createClientTelemetry, TELEMETRY_BEACON_DEDUPE_TTL_MS_: TELEMETRY_BEACON_DEDUPE_TTL_MS_ };
 </script>
   <!-- ============================================================ -->
   <!-- Build stamp + API client (PMIX-PLAN P3)                      -->
@@ -1711,10 +1881,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.0.5";
+var STATIC_BUILD_VERSION_ = "1.7.0.6";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-26T16:58:30.547Z";
+var STATIC_BUILD_DATE_ = "2026-10-26T18:47:36.897Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -1835,25 +2005,57 @@ function sendPageLoad_() {
 }
 
 /**
- * UI activity log (bd atc-eb1.1): fire-and-forget. keepalive lets the request outlive the
- * navigation to webcal:/google/outlook; it never blocks the link, never shows anything, and every
- * failure is swallowed. Same envelope as callApi (visitor + optional session) but no response handling.
- * kind: see ACTIVITY_KINDS_ in src/Api.js; fields = that kind's fields.
+ * UI activity log (bd atc-eb1.1, atc-xr8): one capture on the queued activity channel (see getActivityTelemetry_).
+ * No network request, no await, no storage I/O on the calling tick: the record is persisted at idle and
+ * delivered by piggyback / low-rate flush / hide beacon. who keys (ip, visitor, email) are never in the record;
+ * the server stamps them from the carrier request. kind: see ACTIVITY_KINDS_ in src/Api.js. `opts` is unused
+ * (it carried the pageLoad ip; the server now takes ip from the carrier).
  */
 function logActivity_(kind, fields, opts) {
+  try { getActivityTelemetry_().capture(kind, 'ui', fields || {}); } catch (e) { /* swallowed */ }
+}
+
+/**
+ * Play-session log (atc-xr8 AC 2c/2d). start() = one playStart per transition into playing; end(reason, positionSec) =
+ * best-effort playEnd with wall seconds played (1 decimal); hide() reports the open session at page hide and keeps it
+ * open. deps: capture(kind, fields), now()->ms. end/hide with no open session are ignored.
+ */
+function initialNavVia_() {
   try {
-    var url = resolveWebappUrl_();
-    if (!url) return;
-    var payload = Object.assign({ action: 'logActivity', kind: kind }, fields || {}, { visitor: getVisitorId_() });
-    var ip = (opts && 'ip' in opts) ? opts.ip : cachedIp_();
-    if (ip) payload.ip = ip;
-    var sess = readStoredSession(sessionStorage_());
-    if (sess) payload.session = sess.session;
-    var p = fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'cmd=api', {
-      method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload), keepalive: true
-    });
-    if (p && typeof p.catch === 'function') p.catch(function () { /* swallowed */ });
-  } catch (e) { /* swallowed */ }
+    var nav = (typeof performance !== 'undefined' && performance.getEntriesByType) ? performance.getEntriesByType('navigation')[0] : null;
+    if (nav && nav.type === 'reload') return 'reload';
+  } catch (e) { /* unknown */ }
+  try { if (/[?&]folder=/.test(window.location.search)) return 'deeplink'; } catch (e) { /* unknown */ }
+  return 'initial';
+}
+
+function createPlaySessionLog_(deps) {
+  var t0 = null;
+  var hidden = false;   // a hide was already reported in this hidden period (visibilitychange hidden then pagehide gives one)
+  function sec(n) { return Math.round(n * 10) / 10; }
+  function report(reason, positionSec) {
+    var now = deps.now();
+    deps.capture('playEnd', { playedSec: sec((now - t0) / 1000), positionSec: sec(Number(positionSec) || 0), reason: reason });
+    return now;
+  }
+  return {
+    start: function (fileIds, speed) {
+      t0 = deps.now();
+      deps.capture('playStart', { fileIds: (fileIds || []).join(','), trackCount: (fileIds || []).length, speed: speed });
+    },
+    end: function (reason, positionSec) {
+      if (t0 === null) return;
+      report(reason, positionSec);
+      t0 = null;
+    },
+    hide: function (positionSec) {
+      if (hidden) return;
+      hidden = true;
+      if (t0 === null) return;
+      t0 = report('hide', positionSec);
+    },
+    shown: function () { hidden = false; }
+  };
 }
 
 /**
@@ -1869,9 +2071,11 @@ function telemetryEndpoint_() {
   var url = resolveWebappUrl_();
   return url ? url + (url.indexOf('?') === -1 ? '?' : '&') + 'cmd=api' : null;
 }
+/** In-memory signed-in flag for telemetry context: capture must not touch storage. Read once at start, then kept in step with the session. */
+var telemetrySignedIn_ = false;
+function setTelemetrySignedIn_(v) { telemetrySignedIn_ = !!v; }
 function telemetryContext_() {
-  var ctx = { target: pmixTarget(), signedIn: false };
-  try { ctx.signedIn = !!readStoredSession(sessionStorage_()); } catch (e) { /* unknown */ }
+  var ctx = { target: pmixTarget(), signedIn: telemetrySignedIn_ };
   try {
     var extra = telemetryContextProvider_ ? telemetryContextProvider_() : null;
     if (extra) {
@@ -1895,13 +2099,13 @@ function newRequestId_() {
   try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (e) { /* fall through */ }
   return Date.now().toString(36) + '-' + Math.random().toString(16).slice(2);
 }
-function getClientTelemetry_() {
-  if (clientTelemetry_) return clientTelemetry_;
+function telemetryDeps_(key, channel) {
   var storage = null;
   try { storage = window.localStorage; } catch (e) { storage = null; }
-  clientTelemetry_ = createClientTelemetry({
+  return {
     storage: storage,
-    key: 'pmix.telemetry.' + pmixTarget(),
+    key: key,
+    channel: channel,
     now: function () { return Date.now(); },
     newId: newRequestId_,
     setTimeout: function (fn, ms) { return setTimeout(fn, ms); },
@@ -1922,15 +2126,32 @@ function getClientTelemetry_() {
       if (!url || typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false;
       return navigator.sendBeacon(url, new Blob([telemetryBody_(records)], { type: 'text/plain' }));
     }
-  });
+  };
+}
+function getClientTelemetry_() {
+  if (clientTelemetry_) return clientTelemetry_;
+  clientTelemetry_ = createClientTelemetry(telemetryDeps_('pmix.telemetry.' + pmixTarget(), 'error'));
   return clientTelemetry_;
+}
+/** bd atc-xr8: the activity channel (navigation / playback events): its own queue, so it can never evict errors. */
+var activityTelemetry_ = null;
+function getActivityTelemetry_() {
+  if (activityTelemetry_) return activityTelemetry_;
+  activityTelemetry_ = createClientTelemetry(telemetryDeps_('pmix.activity.' + pmixTarget(), 'activity'));
+  return activityTelemetry_;
 }
 /** Once at page load: global error/unhandledrejection capture, flush-on-online / hide, and an initial flush. */
 function startClientTelemetry_() {
+  try { setTelemetrySignedIn_(!!readStoredSession(sessionStorage_())); } catch (e) { /* unknown: signed out */ }
   try {
     var t = getClientTelemetry_();
     t.installGlobalHandlers(window);
     t.flush();
+  } catch (e) { /* telemetry must never break startup */ }
+  try {
+    var a = getActivityTelemetry_();
+    a.installGlobalHandlers(window);
+    a.flush();
   } catch (e) { /* telemetry must never break startup */ }
 }
 
@@ -1946,23 +2167,29 @@ async function callApi(action, args) {
   // Optional sign-in (bd atc-dfr): carry the stored session, if any. The server never denies on it.
   var storedSession_ = readStoredSession(sessionStorage_());
   if (storedSession_) payload.session = storedSession_.session;
+  setTelemetrySignedIn_(!!storedSession_ || (typeof memSession_ !== 'undefined' && !!memSession_));
   // bd atc-f49: a per-call id joins any client error record to this request's server row (api.call rid),
   // and queued browser errors piggyback until a response acks them.
   var tel_ = getClientTelemetry_();
   var rid_ = newRequestId_();
   payload.clientRequestId = rid_;
+  var act_ = getActivityTelemetry_();
   var carried_ = tel_.attach(payload);
+  var actCarried_ = act_.attach(payload);
   var startedAt_ = Date.now();
 
   var response;
+  var text;
   try {
     response = await fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'cmd=api', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload)
     });
+    text = await response.text();    // a body-read rejection is a transport failure: the response never arrived whole
   } catch (e) {
     tel_.release(carried_);
+    act_.release(actCarried_);
     var netErr_ = new Error('Could not reach the server (' + (e && e.message ? e.message : e) + ')');
     // Captured here, where the request never reached GAS; marked so the unhandledrejection handler skips it.
     tel_.captureError('callApi', netErr_, { action: action, rid: rid_, elapsedMs: Date.now() - startedAt_ });
@@ -1971,7 +2198,6 @@ async function callApi(action, args) {
     throw netErr_;
   }
 
-  var text = await response.text();
   var body;
   try {
     body = JSON.parse(text);
@@ -1979,15 +2205,19 @@ async function callApi(action, args) {
     // Non-JSON means the request never reached the cmd=api handler — nearly always a deployment
     // mid-propagation serving an older build. Naming it beats "unexpected token <".
     tel_.release(carried_);
+    act_.release(actCarried_);
     var jsonErr_ = new Error('Server returned a non-JSON response (HTTP ' + response.status + ') — the deployment may be mid-propagation.');
     tel_.captureError('callApi', jsonErr_, { action: action, rid: rid_, httpStatus: response.status, elapsedMs: Date.now() - startedAt_ });
     throw jsonErr_;
   }
   tel_.settle(carried_, body);
+  act_.settle(actCarried_, body);
   signalConnection_(false);       // bd atc-gat: any parsed response proves the server is reachable
 
   // A refreshed session replaces the stored one; signedOut clears it. Either way the call itself succeeded.
-  if (absorbSessionFields(sessionStorage_(), body) && typeof onSessionChanged_ === 'function') onSessionChanged_();
+  var absorbed_ = absorbSessionFields(sessionStorage_(), body);
+  if (absorbed_ === 'signedOut') setTelemetrySignedIn_(false);
+  if (absorbed_ && typeof onSessionChanged_ === 'function') onSessionChanged_();
 
   if (!body.ok) {
     var err = new Error('Server rejected the request: ' + (body.error || 'unknown error'));
@@ -2842,6 +3072,7 @@ function requireSignIn_(resume) {
 function onSignInRequired_() {
   clearStoredSession(sessionStorage_());
   memSession_ = null;
+  setTelemetrySignedIn_(false);
   renderSignIn_();
   signInPrompt_ = SIGN_IN_PROMPT_;
   openSignIn_();
@@ -2876,6 +3107,7 @@ function setSignInMessage_(text, isError) {
 function signOut_() {
   clearStoredSession(sessionStorage_());
   memSession_ = null;
+  setTelemetrySignedIn_(false);
   pendingSignInResume_ = null;
   signInPrompt_ = '';
   if (typeof onSignedOutHook_ === 'function') onSignedOutHook_();
@@ -2928,6 +3160,7 @@ async function onGoogleCredential_(credentialResponse) {
     if (!signedIn || !signedIn.session) throw new Error('Sign-in was not accepted.');
     var value = { session: signedIn.session, email: signedIn.email, firstName: firstNameFor(givenNameFromCredential(credentialResponse.credential), signedIn.email) };
     if (!writeStoredSession(sessionStorage_(), value)) memSession_ = value;
+    setTelemetrySignedIn_(true);
     setSignInMessage_('');
     signInPrompt_ = '';
     renderSignIn_();
@@ -5247,6 +5480,13 @@ if (typeof module !== 'undefined') {
  */
 
 const UI = (() => {
+  // bd atc-xr8: play sessions -> playStart / playEnd on the activity queue. The hide listeners are registered
+  // BEFORE startClientTelemetry_ so the 'hide' playEnd is queued before the activity instance beacons on hide.
+  const playLog_ = createPlaySessionLog_({ capture: logActivity_, now: () => Date.now() });
+  const playHide_ = () => { try { playLog_.hide(AudioEngine.getCurrentTime()); } catch (e) { /* best effort */ } };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') playHide_(); else playLog_.shown(); });
+  window.addEventListener('pagehide', playHide_);
+  window.addEventListener('pageshow', () => playLog_.shown());
   // bd atc-f49: global error capture starts before any state exists; the context provider is added below.
   startClientTelemetry_();
   startConnectionMonitor_();
@@ -5331,6 +5571,15 @@ const UI = (() => {
     state.folderVideos = listing.videos || [];
     state.folderPdfs = listing.pdfs || [];
     el.folderName.textContent = state.folderName;
+  }
+
+  // bd atc-xr8 AC 2a: one nav record per folder shown (call after state holds the folder).
+  function logNav_(via, fromCache) {
+    logActivity_('nav', { folderId: state.folderId, folderName: state.folderName, via: via, fromCache: !!fromCache,
+      trackCount: state.folderFiles.length, subfolderCount: (state.folderSubFolders || []).length });
+  }
+  function trackLabelOf_(fileId) {
+    try { return parseTrackLabels(state.folderFiles).labels.get(fileId) || ''; } catch (e) { return ''; }
   }
 
   let folderUpdatedTimer = null;
@@ -5578,6 +5827,7 @@ const UI = (() => {
       el.selectionBackBtn.style.display = 'none';
       renderTrackButtons();
       renderSubFolders();
+      logNav_('tap', !!cachedGo);
       if (cachedGo) revalidateListing(folderId, result.folderId);
     } catch (error) {
       showFolderPicker(true);
@@ -5819,8 +6069,9 @@ const UI = (() => {
     el.selectionBackBtn.style.display = '';
   }
 
+  /** Pops one folder level. Returns true when it went back; the Back button logs the nav (error paths do not). */
   function handleSelectionBack() {
-    if (!state.navStack.length) return;
+    if (!state.navStack.length) return false;
     state.folderToken++;
     prefetcher.cancel();
     const prev = state.navStack.pop();
@@ -5840,6 +6091,7 @@ const UI = (() => {
       el.selectionBackBtn.style.display = 'none';
     }
     revalidateListing(prev.folderId, prev.folderId);
+    return true;
   }
 
   async function handleSubFolderClick(folderId) {
@@ -5860,6 +6112,7 @@ const UI = (() => {
       clearSelectedTracks();
       renderTrackButtons();
       renderSubFolders();
+      logNav_('tap', true);
       revalidateListing(folderId, cached.folderId);
       return;
     }
@@ -5884,6 +6137,7 @@ const UI = (() => {
       clearSelectedTracks();
       renderTrackButtons();
       renderSubFolders();
+      logNav_('tap', false);
     } catch (error) {
       handleSelectionBack();
       if (error && error.code === 'sign_in_required') {
@@ -5908,6 +6162,7 @@ const UI = (() => {
     el.selectionBackBtn.style.display = 'none';
     renderTrackButtons();
     renderSubFolders();
+    logNav_('back', true);
   };
 
   async function handleTrackButtonClick(fileId) {
@@ -5915,6 +6170,8 @@ const UI = (() => {
 
     // Toggle selection
     const isSelected = state.selectedFileIds.has(fileId);
+    // bd atc-xr8 AC 2b: focus = the first selected track (the singer's own part).
+    logActivity_(isSelected ? 'deselect' : 'select', { fileId: fileId, label: trackLabelOf_(fileId), role: (isSelected ? state.selectedFileIds.values().next().value === fileId : state.selectedFileIds.size === 0) ? 'focus' : 'background' });
     if (isSelected) {
       state.selectedFileIds.delete(fileId);
       state.trackLoadStatus.delete(fileId);
@@ -6115,6 +6372,7 @@ const UI = (() => {
 
   function navigateToSelection() {
     state.currentPage = 'selection';
+    playLog_.end('navigate', AudioEngine.getCurrentTime());
     AudioEngine.stop();
     setPlayingState(false);
 
@@ -6384,6 +6642,7 @@ const UI = (() => {
   function setupTransportControls() {
     el.playBtn.addEventListener('click', async () => {
       if (state.isPlaying) {
+        playLog_.end('pause', AudioEngine.getCurrentTime());
         AudioEngine.pause();
         setPlayingState(false);
       } else {
@@ -6391,11 +6650,13 @@ const UI = (() => {
         await syncStretch();            // every loaded track needs a buffer at this rate (AC 5)
         await AudioEngine.play();
         setPlayingState(true);
+        playLog_.start([...state.selectedFileIds], state.playbackSpeed);
         persistPlayed();                // fire-and-forget; never delays playback (AC 7)
       }
     });
 
     el.stopBtn.addEventListener('click', () => {
+      playLog_.end('stop', AudioEngine.getCurrentTime());
       AudioEngine.stop();
       setPlayingState(false);
     });
@@ -6524,6 +6785,7 @@ const UI = (() => {
 
   async function commitSpeed(speed) {
     if (state.isPlaying) {
+      playLog_.end('stop', AudioEngine.getCurrentTime());
       AudioEngine.stop();
       setPlayingState(false);
     }
@@ -6731,7 +6993,7 @@ const UI = (() => {
 
   function setupEventListeners() {
     el.openNewBtn.addEventListener('click', handleOpenNewClick);
-    el.selectionBackBtn.addEventListener('click', handleSelectionBack);
+    el.selectionBackBtn.addEventListener('click', () => { if (handleSelectionBack()) logNav_('back', true); });
     el.playSelectedBtn.addEventListener('click', navigateToPlayback);
     el.backBtn.addEventListener('click', navigateToSelection);
     el.pickerOverlay.addEventListener('click', () => showFolderPicker(false));
@@ -6771,6 +7033,7 @@ const UI = (() => {
         AudioEngine.play();
       } else {
         // Stop: set UI to stopped state
+        playLog_.end('end', AudioEngine.getTotalDuration());
         setPlayingState(false);
       }
     });
@@ -6834,6 +7097,7 @@ const UI = (() => {
     // An uncached open does a normal RPC, retried once on transient Drive service errors
     // (rate limiting under load).
     try {
+      const startVia = initialNavVia_();   // read before syncAddressBar rewrites the URL
       const cachedInit = getCachedListing('__initial__');
       let folderResult = cachedInit;
 
@@ -6857,6 +7121,7 @@ const UI = (() => {
         showListing(folderResult);
         renderTrackButtons();
         renderSubFolders();
+        logNav_(startVia, !!cachedInit);
         if (cachedInit) revalidateListing(null, folderResult.folderId);
       }
     } catch (error) {
