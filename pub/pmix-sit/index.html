@@ -444,7 +444,12 @@ body {
 .score-label { font-size: 12px; color: var(--text-2); min-width: 38px; text-align: center; white-space: nowrap; }
 .score-bar a.score-title { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
 .score-bar a.score-title:not([href]) { text-decoration: none; }
-.score-mark-now { font-size: 12px; font-weight: 600; color: var(--text-2); white-space: nowrap; align-self: center; }
+.seek-stack { position: relative; }
+.time-section.score-marks-on { padding-top: 14px; }
+.score-seek-marks { position: absolute; left: 0; right: 0; bottom: 100%; height: 14px; pointer-events: none; }
+.score-seek-marks[hidden] { display: none; }
+.score-seek-marks > span { position: absolute; bottom: 1px; transform: translateX(-50%); font-size: 10px; line-height: 12px; color: var(--text-2); pointer-events: none; }
+.score-seek-marks > span[data-current="true"] { color: #fff; background: #e11d48; border-radius: 6px; padding: 0 4px; font-weight: 700; }
 .score-toolrows { display: block; }
 @media (min-width: 900px) {
   /* atc-ore.5 AC 18: the selected-mark controls share the Edit tools row */
@@ -455,7 +460,7 @@ body {
 }
 .score-panel [hidden] { display: none; }
 .score-scroller { flex: 1; min-height: 0; overflow: auto; background: #3a3a3a; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-.score-strip { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 8px; width: max-content; min-width: 100%; box-sizing: border-box; }
+.score-strip { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px; width: max-content; min-width: 100%; box-sizing: border-box; }
 .score-page { position: relative; background: #fff; flex: none; box-shadow: 0 1px 6px rgba(0,0,0,.5); }
 .score-page canvas { display: block; width: 100%; height: 100%; }
 .score-page.score-fail::after { content: "Page could not be drawn"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #b00; font-size: 13px; }
@@ -468,10 +473,11 @@ body {
 .score-chip { background: #b45309; color: #fff; font-weight: 700; font-size: 12px; padding: 3px 8px; border-radius: 10px; }
 .score-react { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); }
 .score-react input { width: 70px; }
+.score-sliders { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 3px 6px; background: var(--surface-2); }
 .score-sel-label { flex: 1 0 100%; font-size: 12px; font-weight: 600; }
 .score-mark { position: absolute; transform: translate(-50%, -50%); pointer-events: none; display: flex; align-items: center; justify-content: center; }
-.score-mark .dot { width: 10px; height: 10px; border-radius: 50%; background: #0e7c86; border: 1px solid #fff; box-sizing: border-box; font-size: 0; }
-.score-mark[data-current="true"] .dot { background: #e11d48; width: 14px; height: 14px; }
+.score-mark .dot { width: 16px; height: 16px; border-radius: 50%; background: #0e7c86; border: 1px solid #fff; box-sizing: border-box; font-size: 9px; line-height: 1; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; }
+.score-mark[data-current="true"] .dot { background: #e11d48; width: 18px; height: 18px; font-size: 10px; }
 .score-mark .mt { display: none; position: absolute; left: 50%; top: 100%; margin-top: 1px; transform: translateX(-50%); font-size: 10px; line-height: 1; padding: 1px 3px; border-radius: 3px; background: rgba(0,0,0,.7); color: #fff; white-space: nowrap; }
 .score-panel[data-edit="on"] .score-mark .dot { width: 20px; height: 20px; font-size: 11px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; }
 .score-panel[data-edit="on"] .score-mark .mt { display: block; }
@@ -1343,11 +1349,8 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <span id="score-edit-chip" data-testid="score-edit-chip" class="score-chip" hidden>Editing</span>
           <button id="score-undo" data-testid="score-undo" class="btn score-tbtn" title="Undo the last change" hidden disabled>Undo</button>
           <button id="score-clear" data-testid="score-clear" class="btn score-tbtn" title="Delete every mark on this score" hidden>Clear all</button>
-          <button id="score-mark-prev" data-testid="score-mark-prev" class="btn score-tbtn" title="Select the previous mark" hidden>&#9664; Mark</button>
-          <button id="score-mark-next" data-testid="score-mark-next" class="btn score-tbtn" title="Select the next mark" hidden>Mark &#9654;</button>
-          <label id="score-react" class="score-react" title="How far before the tap a new mark is placed while playing" hidden>Reaction
-            <input id="score-reaction" data-testid="score-reaction" type="range" min="0" max="0.5" step="0.05" value="0.25">
-            <output id="score-reaction-out" data-testid="score-reaction-out">0.25 s</output></label>
+          <button id="score-mark-prev" data-testid="score-mark-prev" class="btn score-tbtn" title="Previous mark" hidden>&#9664; Mark</button>
+          <button id="score-mark-next" data-testid="score-mark-next" class="btn score-tbtn" title="Next mark" hidden>Mark &#9654;</button>
           <button id="score-resume-follow" data-testid="score-resume-follow" class="btn score-tbtn score-resume" hidden>Resume follow</button>
         </div>
         <div id="score-selbar" data-testid="score-selbar" class="score-tools score-selbar" hidden>
@@ -1356,6 +1359,14 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="score-nudge-plus" data-testid="score-nudge-plus" class="btn score-tbtn" title="Mark 0.1 s later">+0.1 s</button>
           <button id="score-set-now" data-testid="score-set-now" class="btn score-tbtn" title="Move the mark to the playhead">Set to now</button>
           <button id="score-delete" data-testid="score-delete" class="btn score-tbtn" title="Delete this mark">Delete</button>
+        </div>
+        <div id="score-sliders" class="score-sliders" hidden>
+          <label id="score-react" class="score-react" title="How far before the tap a new mark is placed while playing" hidden>Reaction
+            <input id="score-reaction" data-testid="score-reaction" type="range" min="0" max="0.5" step="0.05" value="0.25">
+            <output id="score-reaction-out" data-testid="score-reaction-out">0.25 s</output></label>
+          <label id="score-leadlbl" class="score-react" title="How long before a new line starts the view moves to it" hidden>Lead
+            <input id="score-lead" data-testid="score-lead" type="range" min="0" max="3" step="0.25" value="1">
+            <output id="score-lead-out" data-testid="score-lead-out">1.00 s</output></label>
         </div>
         </div>
         <div id="score-choices" data-testid="score-choices" class="media-choices" hidden></div>
@@ -1394,8 +1405,8 @@ li > .schedule-cal-wrap { margin-left: 8px; }
         <!-- Time and Seek Controls -->
         <div class="time-section">
           <span id="current-time" data-testid="time-display" class="time-display">0:00</span>
-          <span id="score-mark-now" data-testid="score-mark-now" class="score-mark-now" hidden></span>
           <div class="seek-stack">
+            <div id="score-seek-marks" data-testid="score-seek-marks" class="score-seek-marks" hidden></div>
             <input
               type="range"
               id="seek-bar"
@@ -1973,10 +1984,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.6";
+var STATIC_BUILD_VERSION_ = "1.7.1.7";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-27T19:38:23.764Z";
+var STATIC_BUILD_DATE_ = "2026-10-27T20:39:29.260Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -7870,7 +7881,6 @@ if (typeof module !== 'undefined') module.exports = { placeCalMenu, CALENDAR_CON
  * Render budget (spike atc-ore.2): density <= 2, <= 16.7 Mpx per canvas, <= 256 MB live canvas (64 Mpx at 4 B/px),
  * only pages in view plus one either side drawn. Source is ASCII only (HtmlService document.write rule).
  */
-var SCORE_ZOOM_LADDER = [1, 1.5, 2, 3, 4];
 var SCORE_MAX_DPR = 2;
 var SCORE_MAX_CANVAS_PX = 16777216;
 var SCORE_MAX_LIVE_PX = 67108864;
@@ -7880,23 +7890,42 @@ var PDFJS_LEGACY_ = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + PDFJS_VER_ + '/
 // Set by initScorePanel_(), called from the last script's first pass; a hoisted var with no initializer.
 var scorePanel_;
 
-function scoreClampZoom(z) {
+var SCORE_ZOOM_STEPS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
+/** Fit page: the zoom at which the whole page height fits the panel (strip padding 8 px each side), rounded down to 0.01. */
+function scoreFitZoom(viewW, viewH, pageW, pageH) {
+  viewW = Number(viewW); viewH = Number(viewH); pageW = Number(pageW); pageH = Number(pageH);
+  if (!(viewW > 0 && viewH > 0 && pageW > 0 && pageH > 0)) return 0.5;
+  var stripW = Math.max(160, viewW - 16);
+  var f = Math.floor(((viewH - 16) / (stripW * pageH / pageW)) * 100) / 100;
+  return isFinite(f) && f > 0 ? f : 0.5;
+}
+/** Lowest zoom: the fit page value when that is under 50%, else 50% (the fit page needs no rung of its own then). Unknown fit: 50%. */
+function scoreZoomFloor(fit) {
+  fit = Number(fit);
+  return isFinite(fit) && fit > 0 ? Math.min(fit, 0.5) : 0.5;
+}
+/** The zoom ladder: fit page (only when under 50%), 50%, 75%, 100%, 150%, 200%, 300%, 400%. */
+function scoreZoomLadder(fit) {
+  var lo = scoreZoomFloor(fit);
+  return [lo].concat(SCORE_ZOOM_STEPS.filter(function (r) { return r > lo + 1e-6; }));
+}
+function scoreClampZoom(z, fit) {
   z = Number(z);
   if (!isFinite(z)) return 1;
-  return Math.max(1, Math.min(4, z));
+  return Math.max(scoreZoomFloor(fit), Math.min(4, z));
 }
-function scoreParseZoom(s) {
-  return scoreClampZoom(s === null || s === undefined || s === '' ? 1 : Number(s));
+function scoreParseZoom(s, fit) {
+  return scoreClampZoom(s === null || s === undefined || s === '' ? 1 : Number(s), fit);
 }
 /** Next ladder rung above (dir > 0) or below (dir < 0) z; stays at the ends. */
-function scoreZoomStep(z, dir) {
-  var i;
+function scoreZoomStep(z, dir, fit) {
+  var ladder = scoreZoomLadder(fit), i;
   if (dir > 0) {
-    for (i = 0; i < SCORE_ZOOM_LADDER.length; i++) if (SCORE_ZOOM_LADDER[i] > z + 1e-6) return SCORE_ZOOM_LADDER[i];
+    for (i = 0; i < ladder.length; i++) if (ladder[i] > z + 1e-6) return ladder[i];
     return 4;
   }
-  for (i = SCORE_ZOOM_LADDER.length - 1; i >= 0; i--) if (SCORE_ZOOM_LADDER[i] < z - 1e-6) return SCORE_ZOOM_LADDER[i];
-  return 1;
+  for (i = ladder.length - 1; i >= 0; i--) if (ladder[i] < z - 1e-6) return ladder[i];
+  return ladder[0];
 }
 
 /** Canvas size for a page: density capped at 2, then scaled down until it is <= 16.7 Mpx. */
@@ -8011,24 +8040,56 @@ function scoreAnchorView(mark, geo) {
     y: scoreClamp(p.y - (geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay) * geo.H, 0, geo.maxY)
   };
 }
-/** Where the view should be at track time t. geo = {W, H, maxX, maxY, pages:[{left, top, w, h, ptW, ptH}]} in px. */
-function scoreTargetView(marks, t, geo, cur) {
-  if (!marks.length) return { x: cur ? cur.x : 0, y: cur ? cur.y : 0, n: -1, state: 'no marks' };
+var SCORE_LEAD_DEFAULT = 1;
+/** Where the view should be at track time t. geo = {W, H, maxX, maxY, pages:[{left, top, w, h, ptW, ptH}]} in px.
+ *  opt = {lead (wall-clock s before the next line start, default 1), speed (default 1)}. Returns {x, y, n, v, state}:
+ *  n = current mark index, v = the mark the view is built on (the next mark once the lead window has opened), so the
+ *  caller starts the 0.2 s ease when v changes (atc-ore.4 R1). */
+function scoreTargetView(marks, t, geo, cur, opt) {
+  if (!marks.length) return { x: cur ? cur.x : 0, y: cur ? cur.y : 0, n: -1, v: -1, state: 'no marks' };
+  var lead = opt && opt.lead !== undefined ? Number(opt.lead) : SCORE_LEAD_DEFAULT;
+  var speed = opt && Number(opt.speed) > 0 ? Number(opt.speed) : 1;
   var n = scoreIndexAt(marks, t), a, v;
-  if (n < 0) { a = scoreAnchorView(marks[0], geo); return { x: a.x, y: a.y, n: n, state: 'before first mark' }; }
-  if (n === marks.length - 1) { a = scoreAnchorView(marks[n], geo); return { x: a.x, y: a.y, n: n, state: 'hold' }; }
+  if (n < 0) { a = scoreAnchorView(marks[0], geo); return { x: a.x, y: a.y, n: n, v: 0, state: 'before first mark' }; }
+  if (n === marks.length - 1) { a = scoreAnchorView(marks[n], geo); return { x: a.x, y: a.y, n: n, v: n, state: 'hold' }; }
   var mn = marks[n], mm = marks[n + 1];
-  var same = mm.page === mn.page && Math.abs(mm.y - mn.y) <= SCORE_SAME_LINE_PT && mm.x > mn.x;
-  var u = mm.t === mn.t ? 1 : scoreClamp((t - mn.t) / (mm.t - mn.t), 0, 1);
+  var same = mm.page === mn.page && Math.abs(mm.y - mn.y) < 0.005 && mm.x > mn.x; // same line, to the right
   a = scoreAnchorView(mn, geo);
   if (same) {
+    var u = mm.t === mn.t ? 1 : scoreClamp((t - mn.t) / (mm.t - mn.t), 0, 1);
     v = scoreAnchorView(mm, geo);
-    return { x: scoreLerp(a.x, v.x, u), y: scoreLerp(a.y, v.y, u), n: n, state: 'same-line glide' };
+    return { x: scoreLerp(a.x, v.x, u), y: scoreLerp(a.y, v.y, u), n: n, v: n, state: 'same-line glide' };
   }
+  var tLead = Math.max(mn.t, mm.t - lead * speed);
+  if (t >= tLead) { v = scoreAnchorView(mm, geo); return { x: v.x, y: v.y, n: n, v: n + 1, state: 'lead jump' }; }
   var pg = scorePagePx(geo, mn.page);
   var endX = Math.max(a.x, scoreClamp(pg.left + pg.w - geo.W, 0, geo.maxX)); // never backwards, never past the page edge
-  return { x: scoreLerp(a.x, endX, u), y: a.y, n: n, state: 'line-end glide' };
+  var g = tLead === mn.t ? 1 : scoreClamp((t - mn.t) / (tLead - mn.t), 0, 1);
+  return { x: scoreLerp(a.x, endX, g), y: a.y, n: n, v: n, state: 'line-end glide' };
 }
+/** Lead slider value: 0-3 s in 0.25 steps, default 1.0 (atc-ore.4 R1). */
+function scoreClampLead(v) {
+  if (v === null || v === undefined || v === '') return SCORE_LEAD_DEFAULT;
+  v = Number(v);
+  return isFinite(v) ? scoreClamp(Math.round(v * 4) / 4, 0, 3) : SCORE_LEAD_DEFAULT;
+}
+/** Seek-bar position of a mark (0-1). The bar runs in clock time over the effective duration, so track time t maps to t / speed. */
+function scoreSeekFrac(t, speed, total) {
+  total = Number(total);
+  if (!(total > 0)) return 0;
+  return scoreClamp(scoreClockTime(t, Number(speed) > 0 ? Number(speed) : 1) / total, 0, 1);
+}
+/** Previous / next mark ids with Edit off: relative to the current mark (last mark at or before t). null at an end. */
+function scoreViewStep(marks, t) {
+  var list = scoreSorted(marks), n = scoreIndexAt(list, t);
+  return { prev: n > 0 ? list[n - 1].id : null, next: n + 1 < list.length ? list[n + 1].id : null };
+}
+/** A vertical-only pan: |dy| more than twice |dx| (atc-ore.4 R6). */
+function scoreIsVerticalPan(dx, dy) { return Math.abs(dy) > 2 * Math.abs(dx); }
+/** Follow's target with the user's vertical offset added, kept inside the scroll range. */
+function scoreApplyOffset(view, offY, geo) { return { x: view.x, y: scoreClamp(view.y + (Number(offY) || 0), 0, geo.maxY) }; }
+/** The offset that puts the view at scrollY when Follow's own target is targetY. */
+function scoreOffsetFor(scrollY, targetY) { return scrollY - targetY; }
 /** A seek is a jump of the audio clock that the elapsed frame time does not explain. prev/cur = {clock, ts (ms), playing}. */
 function scoreDetectSeek(prev, cur) {
   var delta = cur.clock - prev.clock;
@@ -8039,19 +8100,20 @@ function scoreDetectSeek(prev, cur) {
 /** A tap lifts within 300 ms and moves under 10 px; one pointer only. */
 function scoreIsTap(g) { return g.pointers === 1 && g.dtMs <= 300 && g.movedPx < 10; }
 
-/** Lines derived from marks in time order: a mark joins the previous mark's line when it is on the same page, within 72 pt
- *  of the line's first mark vertically and right of the previous mark; otherwise it starts a new line. */
+/** Lines are the marks on one page sharing the same y (time order plays no part); the leftmost mark of a line is its line start.
+ *  Returns {lineOf: line index per mark, lines: [{first: mark index of the line start, members: mark indexes left to right}]}. */
 function scoreDeriveLines(marks) {
-  var lineOf = [], lines = [];
-  for (var i = 0; i < marks.length; i++) {
-    var k = marks[i], join = false;
-    if (i > 0) {
-      var prev = marks[i - 1], first = marks[lines[lineOf[i - 1]].first];
-      join = k.page === prev.page && k.page === first.page && Math.abs(k.y - first.y) <= SCORE_SAME_LINE_PT && k.x > prev.x;
-    }
-    if (join) { lineOf.push(lineOf[i - 1]); lines[lineOf[i]].members.push(i); }
-    else { lineOf.push(lines.length); lines.push({ first: i, members: [i] }); }
-  }
+  var lineOf = [], lines = [], byKey = {};
+  marks.forEach(function (k, i) {
+    var key = k.page + '|' + scoreRound2(k.y), ln = byKey[key];
+    if (!ln) { ln = { first: i, members: [] }; byKey[key] = ln; lines.push(ln); }
+    ln.members.push(i);
+    lineOf.push(lines.indexOf(ln));
+  });
+  lines.forEach(function (ln) {
+    ln.members.sort(function (p, q) { return marks[p].x - marks[q].x || p - q; });
+    ln.first = ln.members[0];
+  });
   return { lineOf: lineOf, lines: lines };
 }
 /** Tap with Edit off: the mark at or before the tap point on that page (the line at or above, then the last mark left of it). */
@@ -8101,24 +8163,23 @@ function scoreFitHeight(viewH, transportH, gap) {
   var h = Number(viewH) - (Number(transportH) || 0) - (Number(gap) || 0);
   return isFinite(h) ? Math.max(260, Math.round(h)) : 260;
 }
-/** The transport row label for the current mark index n (0-based, -1 before the first mark). */
-function scoreMarkNowText(n) { return n < 0 ? 'Mark -' : 'Mark ' + (n + 1); }
 function scoreClampReaction(v) {
   if (v === null || v === undefined || v === '') return 0.25;
   v = Number(v);
   return isFinite(v) ? scoreClamp(scoreRound2(v), 0, 0.5) : 0.25;
 }
-/** New mark in time order; joins the previous mark's line (takes the line's y) when the line rule allows it. */
+/** New mark in time order. It joins an existing line (takes that line's y) when it is on the same page, within 72 pt of the
+ *  line start vertically and right of the line start; the nearest line vertically wins. Time order plays no part. */
 function scoreAddMark(marks, spec) {
-  var list = scoreSorted(marks), prevIdx = -1, i;
-  for (i = 0; i < list.length; i++) { if (list[i].t <= spec.t) prevIdx = i; else break; }
-  var y = spec.y;
-  if (prevIdx >= 0) {
-    var d = scoreDeriveLines(list), prev = list[prevIdx], first = list[d.lines[d.lineOf[prevIdx]].first];
-    if (prev.page === spec.page && first.page === spec.page && Math.abs(spec.y - first.y) <= SCORE_SAME_LINE_PT && spec.x > prev.x) y = first.y;
-  }
+  var list = scoreSorted(marks), at = 0, i;
+  for (i = 0; i < list.length; i++) { if (list[i].t <= spec.t) at = i + 1; else break; }
+  var y = spec.y, best = Infinity;
+  scoreDeriveLines(list).lines.forEach(function (ln) {
+    var f = list[ln.first], dy = Math.abs(spec.y - f.y);
+    if (f.page === spec.page && dy <= SCORE_SAME_LINE_PT && spec.x > f.x && dy < best) { best = dy; y = f.y; }
+  });
   var mark = { id: scoreNextId_++, t: scoreRound2(spec.t), page: spec.page, x: spec.x, y: y };
-  list.splice(prevIdx + 1, 0, mark);
+  list.splice(at, 0, mark);
   return { marks: list, mark: mark };
 }
 function scoreSetMarkTime(marks, id, t) {
@@ -8135,15 +8196,19 @@ function scoreNudgeMark(marks, id, dt) {
   return r;
 }
 function scoreDeleteMark(marks, id) { return scoreCopyMarks(marks).filter(function (k) { return k.id !== id; }); }
-/** Paused drag: a line's first mark moves its whole line vertically (the first mark also takes the new x); any other mark moves horizontally only. */
+/** Drag: a line start moves its whole line vertically (and takes the new x); any other mark moves horizontally only and stays right of its line start. */
 function scoreMoveMark(marks, id, x, y, ptW, ptH) {
   var list = scoreCopyMarks(marks), d = scoreDeriveLines(list), idx = -1;
   list.forEach(function (k, i) { if (k.id === id) idx = i; });
   if (idx < 0) return list;
   var nx = scoreRound2(scoreClamp(x, 0, ptW)), ny = scoreRound2(scoreClamp(y, 0, ptH));
   var ln = d.lines[d.lineOf[idx]];
-  list[idx].x = nx;
-  if (ln.first === idx) ln.members.forEach(function (i) { list[i].y = ny; });
+  if (ln.first === idx) {
+    list[idx].x = nx;
+    ln.members.forEach(function (i) { list[i].y = ny; });
+  } else {
+    list[idx].x = Math.min(ptW, Math.max(nx, scoreRound2(list[ln.first].x + 0.01)));
+  }
   return list;
 }
 
@@ -8208,7 +8273,7 @@ function initScorePanel_() {
   var progress = $('score-progress');
   var progressText = $('score-progress-text');
   var titleEl = $('score-title');
-  var markNowEl = $('score-mark-now'), toolRows = $('score-toolrows'), transportEl = document.querySelector('.transport-section');
+  var toolRows = $('score-toolrows'), transportEl = document.querySelector('.transport-section');
   var zoomLabel = $('score-zoom-label');
   var pageLabel = $('score-page-label');
   var zoomIn = $('score-zoom-in');
@@ -8222,8 +8287,9 @@ function initScorePanel_() {
     pdfs: [], opener: null, pinch: null, raf: 0,
     fileId: '', marks: [], undo: [], selId: null, edit: false, followOn: true, reaction: 0.25,
     snapPending: true, easeFrom: null, easeStart: -1, lastN: null, last: null, loop: 0, touching: false, gesture: null,
-    ptrs: 0, curN: -1, playing: false, readOnly: false
+    ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, pan: null, seekDim: ''
   };
+  var LEAD_KEY = 'pmix.' + pmixTarget() + '.v1.scoreLead';
   var REACT_KEY = 'pmix.' + pmixTarget() + '.v1.scoreReaction';
   var toolsEl = $('score-tools'), selbar = $('score-selbar');
 
@@ -8289,6 +8355,15 @@ function initScorePanel_() {
 
   // ---- layout and rendering ----
   function stripWidth() { return Math.max(160, scroller.clientWidth - 16); }
+  /** Fit page zoom: the tallest page (height against width) fits the panel (atc-ore.4 R3). */
+  function fitZoom() {
+    var f;
+    S.pages.forEach(function (p) {
+      var z = scoreFitZoom(scroller.clientWidth, scroller.clientHeight, p.w, p.h);
+      if (f === undefined || z < f) f = z;
+    });
+    return f;
+  }
   function layout() {
     var W = stripWidth();
     S.pages.forEach(function (p) {
@@ -8300,7 +8375,7 @@ function initScorePanel_() {
     zoomLabel.textContent = Math.round(S.zoom * 100) + '%';
     panel.setAttribute('data-zoom', num(S.zoom));
     zoomIn.disabled = S.zoom >= 4 - 1e-6;
-    zoomOut.disabled = S.zoom <= 1 + 1e-6;
+    zoomOut.disabled = S.zoom <= scoreZoomFloor(fitZoom()) + 1e-6;
   }
   function geometry() {
     return { tops: S.pages.map(function (p) { return p.el.offsetTop; }), heights: S.pages.map(function (p) { return p.cssH; }) };
@@ -8424,7 +8499,7 @@ function initScorePanel_() {
     pump();
   }
   function setZoom(z, anchor) {
-    z = scoreClampZoom(z);
+    z = scoreClampZoom(z, fitZoom());
     var old = S.zoom;
     if (Math.abs(z - old) < 1e-6) return;
     var vw = scroller.clientWidth, vh = scroller.clientHeight;
@@ -8486,7 +8561,7 @@ function initScorePanel_() {
     chooseBtn.hidden = S.pdfs.length < 2;
     if (S.pdf && S.fileKey === fileKey(file)) { // already open: no fetch, no parse
       setState('ready'); showProgress(false); scroller.hidden = false;
-      S.zoom = scoreParseZoom(recall(ZOOM_KEY)); layout(); refresh(); updatePageLabel();
+      S.zoom = scoreParseZoom(recall(ZOOM_KEY), fitZoom()); layout(); refresh(); updatePageLabel();
       loadMarks(file.id);
       return;
     }
@@ -8515,7 +8590,7 @@ function initScorePanel_() {
     showProgress(false);
     scroller.hidden = false;
     setState('ready');
-    S.zoom = scoreParseZoom(recall(ZOOM_KEY));
+    S.zoom = scoreParseZoom(recall(ZOOM_KEY), fitZoom());
     layout();
     scroller.scrollTop = 0; scroller.scrollLeft = 0;
     refresh();
@@ -8587,6 +8662,7 @@ function initScorePanel_() {
   function close() {
     if (!isOpen()) return;
     S.loadGen++; // a load in flight is abandoned
+    S.offY = 0; S.pan = null;
     resetPointers();
     panel.classList.add('hidden');
     page_.classList.remove('score-open');
@@ -8629,7 +8705,7 @@ function initScorePanel_() {
     if (S.readOnly) {
       try { getClientTelemetry_().captureError('scoreMarks', new Error('unknown stored marks version; left untouched'), { fileId: fileId }); } catch (e) { /* best effort */ }
     }
-    S.undo = []; S.selId = null; S.edit = false; S.followOn = true; S.snapPending = true; S.easeStart = -1; S.lastN = null; S.curN = -1;
+    S.undo = []; S.selId = null; S.edit = false; S.followOn = true; S.snapPending = true; S.easeStart = -1; S.lastN = null; S.curN = -1; S.offY = 0; S.pan = null;
     renderMarks(); syncUi();
   }
   function saveMarks() { if (S.readOnly) return; store(scoreMarksKey(S.fileId), scoreSerializeMarks(S.marks)); }
@@ -8693,16 +8769,37 @@ function initScorePanel_() {
     $('score-undo').hidden = !S.edit; $('score-undo').disabled = !S.undo.length;
     $('score-clear').hidden = !S.edit; $('score-clear').disabled = !has;
     $('score-react').hidden = !S.edit;
-    var stepT = scoreStepTargets(S.marks, S.selId, trackNow());
-    $('score-mark-prev').hidden = !S.edit; $('score-mark-prev').disabled = stepT.prev === null;
-    $('score-mark-next').hidden = !S.edit; $('score-mark-next').disabled = stepT.next === null;
-    markNowEl.hidden = !(isOpen() && has);
-    if (!markNowEl.hidden) markNowEl.textContent = scoreMarkNowText(S.curN);
+    var stepT = S.edit ? scoreStepTargets(S.marks, S.selId, trackNow()) : scoreViewStep(S.marks, trackNow());
+    $('score-mark-prev').hidden = !has; $('score-mark-prev').disabled = stepT.prev === null;
+    $('score-mark-next').hidden = !has; $('score-mark-next').disabled = stepT.next === null;
+    $('score-leadlbl').hidden = !S.edit; $('score-sliders').hidden = !S.edit || toolsEl.hidden;
+    panel.setAttribute('data-offset-y', String(Math.round(S.offY)));
+    renderSeekMarks();
     $('score-resume-follow').hidden = S.followOn || !has;
     var m = selMark();
     selbar.hidden = !(S.edit && m && !toolsEl.hidden);
     if (m) $('score-sel-label').textContent = 'Mark ' + (S.marks.indexOf(m) + 1) + ' at ' + fmtT(m.t);
     paintMarks();
+  }
+  /** Mark numbers along the transport seek bar, at their time positions (atc-ore.4 R2). */
+  function renderSeekMarks() {
+    var box = $('score-seek-marks'), ts = document.querySelector('.time-section'), bar = $('seek-bar');
+    if (!box || !bar) return;
+    var show = isOpen() && S.marks.length > 0;
+    box.hidden = !show;
+    if (ts) ts.classList.toggle('score-marks-on', show);
+    if (!show) { box.textContent = ''; return; }
+    var total = parseFloat(bar.max), sp = rate();
+    S.seekDim = bar.max + '|' + sp;
+    box.textContent = '';
+    S.marks.forEach(function (k, i) {
+      var sp_ = document.createElement('span');
+      sp_.setAttribute('data-n', String(i + 1));
+      sp_.setAttribute('data-current', String(i === S.curN));
+      sp_.textContent = String(i + 1);
+      sp_.style.left = 'calc(7px + (100% - 14px) * ' + scoreSeekFrac(k.t, sp, total) + ')'; // the thumb travel of the range input
+      box.appendChild(sp_);
+    });
   }
   function pauseFollow() {
     if (!S.followOn) return;
@@ -8711,6 +8808,7 @@ function initScorePanel_() {
   }
   function resumeFollow() {
     S.followOn = true;
+    S.offY = 0; S.pan = null;
     S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop };
     S.easeStart = performance.now();
     syncUi();
@@ -8738,20 +8836,40 @@ function initScorePanel_() {
     if (playing !== S.playing) { S.playing = playing; paintMarks(); }
     if (!S.marks.length) { if (S.curN !== -1) { S.curN = -1; syncUi(); } return; }
     var geo = pageGeo(), t = scoreTrackTime(cur.clock, rate());
-    var tv = scoreTargetView(S.marks, t, geo, { x: scroller.scrollLeft, y: scroller.scrollTop });
+    var tv = scoreTargetView(S.marks, t, geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() });
     if (tv.n !== S.curN) { S.curN = tv.n; syncUi(); }
-    if (!S.followOn) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.n; return; } // a seek while paused must not make Resume snap
+    if (S.seekDim !== document.getElementById('seek-bar').max + '|' + rate()) renderSeekMarks();
+    if (!S.followOn) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.v; return; } // a seek while paused must not make Resume snap
     if (S.touching) return;
-    if (S.snapPending) { setView(tv.x, tv.y); S.easeStart = -1; }
+    if (S.pan) { // a vertical pan is settling (touch fling): the offset follows the scroll position (atc-ore.4 R6)
+      var sy = scroller.scrollTop;
+      if (Math.abs(sy - S.pan.last) > 0.5) { S.pan.last = sy; S.pan.idle = now; S.offY = scoreOffsetFor(sy, tv.y); syncUi(); }
+      if (now - S.pan.idle < 150) { S.lastN = tv.v; return; }
+      S.pan = null;
+    }
+    var vw = scoreApplyOffset(tv, S.offY, geo);
+    if (S.snapPending) { setView(vw.x, vw.y); S.easeStart = -1; }
     else {
-      if (S.lastN !== null && tv.n !== S.lastN && playing) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = now; }
+      if (S.lastN !== null && tv.v !== S.lastN && playing) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = now; }
       if (S.easeStart >= 0) {
         var k = scoreEase(now - S.easeStart);
-        setView(scoreLerp(S.easeFrom.x, tv.x, k), scoreLerp(S.easeFrom.y, tv.y, k));
+        setView(scoreLerp(S.easeFrom.x, vw.x, k), scoreLerp(S.easeFrom.y, vw.y, k));
         if (now - S.easeStart >= SCORE_EASE_MS) S.easeStart = -1;
-      } else setView(tv.x, tv.y);
+      } else setView(vw.x, vw.y);
     }
-    S.lastN = tv.n; S.snapPending = false;
+    S.lastN = tv.v; S.snapPending = false;
+  }
+  /** Follow's own target now (before the user's vertical offset). */
+  function followTarget() {
+    var geo = pageGeo();
+    return { tv: scoreTargetView(S.marks, scoreTrackTime(clockNow(), rate()), geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() }), geo: geo };
+  }
+  /** A vertical-only pan while playing: keep Follow, remember how far from the anchor the user wants the playing line. */
+  function nudgeOffset(dy) {
+    var f = followTarget();
+    var y = Math.max(0, Math.min(f.geo.maxY, f.tv.y + S.offY + dy));
+    S.offY = scoreOffsetFor(y, f.tv.y);
+    syncUi();
   }
   function startLoop() { if (!S.loop) S.loop = requestAnimationFrame(tick); }
   function stopLoop() { if (S.loop) cancelAnimationFrame(S.loop); S.loop = 0; }
@@ -8787,7 +8905,7 @@ function initScorePanel_() {
     S.ptrs++;
     S.touching = true;
     if (S.ptrs > 1) { S.gesture = null; return; }
-    var g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0, drag: null };
+    var g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, t0: performance.now(), moved: 0, drag: null };
     if (S.edit) { // AC 20: any mark within 0.5 inch, playing or paused, no prior tap needed
       var hit = pageAtPoint(e.clientX, e.clientY), k = hit && scoreHitMark(S.marks, hit.page, hit.x, hit.y);
       if (k) g.drag = { id: k.id, offX: k.x - hit.x, offY: k.y - hit.y, started: false, page: k.page };
@@ -8798,6 +8916,7 @@ function initScorePanel_() {
     var g = S.gesture;
     if (!g || g.id !== e.pointerId) return;
     g.moved = Math.max(g.moved, Math.hypot(e.clientX - g.x0, e.clientY - g.y0));
+    g.dx = e.clientX - g.x0; g.dy = e.clientY - g.y0;
     if (!g.drag || g.moved < 10) return;
     var hit = pageAtPoint(e.clientX, e.clientY);
     var pg = pageIndexOf(g.drag.page), r = pg.el.getBoundingClientRect();
@@ -8819,7 +8938,12 @@ function initScorePanel_() {
     var g = S.gesture;
     if (!g || g.id !== e.pointerId) return;
     S.gesture = null;
-    if (cancelled) { if (g.drag && g.drag.started) { saveMarks(); renderMarks(); syncUi(); } else pauseFollow(); return; } // the browser took the gesture as a pan
+    if (cancelled) { // the browser took the gesture as a pan
+      if (g.drag && g.drag.started) { saveMarks(); renderMarks(); syncUi(); }
+      else if (S.followOn && isPlayingNow() && S.marks.length && scoreIsVerticalPan(g.dx, g.dy)) S.pan = { last: scroller.scrollTop, idle: performance.now() }; // R6: keep Follow, take the offset
+      else pauseFollow();
+      return;
+    }
     if (g.drag && g.drag.started) { saveMarks(); renderMarks(); syncUi(); return; }
     if (scoreIsTap({ dtMs: performance.now() - g.t0, movedPx: g.moved, pointers: 1 })) handleTap(e.clientX, e.clientY);
   }
@@ -8829,7 +8953,10 @@ function initScorePanel_() {
   function outsideEnd(e) { if (S.ptrs && !scroller.contains(e.target)) resetPointers(); }
   document.addEventListener('pointerup', outsideEnd);
   document.addEventListener('pointercancel', outsideEnd);
-  scroller.addEventListener('wheel', function () { pauseFollow(); }, { passive: true });
+  scroller.addEventListener('wheel', function (e) {
+    if (S.followOn && isPlayingNow() && S.marks.length && scoreIsVerticalPan(e.deltaX, e.deltaY)) { nudgeOffset(e.deltaY * (e.deltaMode === 1 ? 16 : 1)); return; } // R6
+    pauseFollow();
+  }, { passive: true });
 
   // Edit chrome.
   $('score-edit-toggle').addEventListener('click', function () {
@@ -8839,6 +8966,12 @@ function initScorePanel_() {
   });
   /** AC 19: select the neighbouring mark as a tap on it would (jump to 1 s before) and bring it into view. */
   function stepMark(dir) {
+    if (!S.edit) { // R4: jump the playhead to the previous / next mark's time
+      var vt = scoreViewStep(S.marks, trackNow()), vid = dir < 0 ? vt.prev : vt.next, vm = null;
+      S.marks.forEach(function (k) { if (k.id === vid) vm = k; });
+      if (vm) jumpTo(vm.t);
+      return;
+    }
     var tg = scoreStepTargets(S.marks, S.selId, trackNow()), id = dir < 0 ? tg.prev : tg.next;
     if (id === null) return;
     S.selId = id;
@@ -8903,9 +9036,19 @@ function initScorePanel_() {
     store(REACT_KEY, String(S.reaction));
   });
 
+  var leadEl = $('score-lead');
+  S.lead = scoreClampLead(recall(LEAD_KEY));
+  leadEl.value = String(S.lead);
+  $('score-lead-out').textContent = S.lead.toFixed(2) + ' s';
+  leadEl.addEventListener('input', function () {
+    S.lead = scoreClampLead(leadEl.value);
+    $('score-lead-out').textContent = S.lead.toFixed(2) + ' s';
+    store(LEAD_KEY, String(S.lead));
+  });
+
   // ---- controls ----
-  zoomIn.addEventListener('click', function () { setZoom(scoreZoomStep(S.zoom, 1)); });
-  zoomOut.addEventListener('click', function () { setZoom(scoreZoomStep(S.zoom, -1)); });
+  zoomIn.addEventListener('click', function () { setZoom(scoreZoomStep(S.zoom, 1, fitZoom())); });
+  zoomOut.addEventListener('click', function () { setZoom(scoreZoomStep(S.zoom, -1, fitZoom())); });
   function pageBy(dir) {
     if (!S.pages.length) return;
     pauseFollow();
@@ -8956,7 +9099,7 @@ function initScorePanel_() {
   scroller.addEventListener('touchmove', function (e) {
     if (!S.pinch || e.touches.length < 2) return;
     e.preventDefault();
-    S.pinch.z = scoreClampZoom(S.pinch.z0 * dist2(e.touches) / S.pinch.d0);
+    S.pinch.z = scoreClampZoom(S.pinch.z0 * dist2(e.touches) / S.pinch.d0, fitZoom());
     strip.style.transform = 'scale(' + (S.pinch.z / S.pinch.z0) + ')';
   }, { passive: false });
   function endPinch(e) {
@@ -8976,7 +9119,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreMarkNowText, scoreClampReaction, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
+  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scoreApplyOffset, scoreOffsetFor, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
   scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt };
 </script>
 
