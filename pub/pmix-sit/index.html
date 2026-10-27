@@ -442,7 +442,17 @@ body {
 .score-bar .score-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13px; }
 .score-bar .score-btn { min-width: 34px; height: 34px; padding: 0 6px; font-size: 15px; }
 .score-label { font-size: 12px; color: var(--text-2); min-width: 38px; text-align: center; white-space: nowrap; }
-.score-drive { color: var(--text-2); text-decoration: none; font-size: 12px; white-space: nowrap; }
+.score-bar a.score-title { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+.score-bar a.score-title:not([href]) { text-decoration: none; }
+.score-mark-now { font-size: 12px; font-weight: 600; color: var(--text-2); white-space: nowrap; align-self: center; }
+.score-toolrows { display: block; }
+@media (min-width: 900px) {
+  /* atc-ore.5 AC 18: the selected-mark controls share the Edit tools row */
+  .score-toolrows { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); }
+  .score-toolrows > .score-tools { padding: 0; border: 0; background: none; }
+  .score-toolrows > .score-selbar { flex: 1 1 auto; }
+  .score-toolrows .score-sel-label { flex: 0 1 auto; }
+}
 .score-panel [hidden] { display: none; }
 .score-scroller { flex: 1; min-height: 0; overflow: auto; background: #3a3a3a; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .score-strip { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 8px; width: max-content; min-width: 100%; box-sizing: border-box; }
@@ -466,7 +476,8 @@ body {
 .score-panel[data-edit="on"] .score-mark .dot { width: 20px; height: 20px; font-size: 11px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; }
 .score-panel[data-edit="on"] .score-mark .mt { display: block; }
 .score-mark[data-selected="true"] .dot { outline: 3px solid #f59e0b; }
-.score-mark.draggable { pointer-events: auto; touch-action: none; }
+/* Edit mode: every mark carries a 0.5 inch hit area (sized by script) so a press on it drags instead of panning (atc-ore.5 AC 20). */
+.score-panel[data-edit="on"] .score-mark { pointer-events: auto; touch-action: none; }
 /* The panel takes the top of the page: level/pan controls fold away while it is open. */
 #playback-page.score-open .master-section, #playback-page.score-open .tracks-section, #playback-page.score-open .export-section { display: none; }
 
@@ -1317,21 +1328,23 @@ li > .schedule-cal-wrap { margin-left: 8px; }
       <section id="score-panel" data-testid="score-panel" class="score-panel hidden" aria-label="Score" data-state="closed" data-zoom="1" data-pinching="false">
         <div class="score-bar">
           <button id="score-choose" data-testid="score-choose" class="btn score-btn" aria-label="Choose another PDF" title="Choose another PDF" hidden>&#9776;</button>
-          <span id="score-title" data-testid="score-title" class="score-title"></span>
+          <a id="score-title" data-testid="score-title" class="score-title" target="_blank" rel="noopener" title="Open in Google Drive"></a>
           <button id="score-page-up" data-testid="score-page-up" class="btn score-btn" aria-label="Previous page" title="Previous page">&#9650;</button>
           <span id="score-page-label" data-testid="score-page-label" class="score-label"></span>
           <button id="score-page-down" data-testid="score-page-down" class="btn score-btn" aria-label="Next page" title="Next page">&#9660;</button>
           <button id="score-zoom-out" data-testid="score-zoom-out" class="btn score-btn" aria-label="Zoom out" title="Zoom out">&minus;</button>
           <span id="score-zoom-label" data-testid="score-zoom-label" class="score-label">100%</span>
           <button id="score-zoom-in" data-testid="score-zoom-in" class="btn score-btn" aria-label="Zoom in" title="Zoom in">+</button>
-          <a id="score-open-drive" data-testid="score-open-drive" class="score-drive" target="_blank" rel="noopener" title="Open in Google Drive" hidden>Drive &#8599;</a>
           <button id="score-close" data-testid="score-close" class="btn btn-close score-btn" aria-label="Close the score" title="Close the score">&#10005;</button>
         </div>
-        <div id="score-tools" data-testid="score-tools" class="score-tools" hidden>
+        <div id="score-toolrows" class="score-toolrows" hidden>
+        <div id="score-tools" data-testid="score-tools" class="score-tools">
           <button id="score-edit-toggle" data-testid="score-edit-toggle" class="btn score-tbtn" aria-pressed="false" title="Edit the marks that make the score follow the music">Edit</button>
           <span id="score-edit-chip" data-testid="score-edit-chip" class="score-chip" hidden>Editing</span>
           <button id="score-undo" data-testid="score-undo" class="btn score-tbtn" title="Undo the last change" hidden disabled>Undo</button>
           <button id="score-clear" data-testid="score-clear" class="btn score-tbtn" title="Delete every mark on this score" hidden>Clear all</button>
+          <button id="score-mark-prev" data-testid="score-mark-prev" class="btn score-tbtn" title="Select the previous mark" hidden>&#9664; Mark</button>
+          <button id="score-mark-next" data-testid="score-mark-next" class="btn score-tbtn" title="Select the next mark" hidden>Mark &#9654;</button>
           <label id="score-react" class="score-react" title="How far before the tap a new mark is placed while playing" hidden>Reaction
             <input id="score-reaction" data-testid="score-reaction" type="range" min="0" max="0.5" step="0.05" value="0.25">
             <output id="score-reaction-out" data-testid="score-reaction-out">0.25 s</output></label>
@@ -1343,6 +1356,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="score-nudge-plus" data-testid="score-nudge-plus" class="btn score-tbtn" title="Mark 0.1 s later">+0.1 s</button>
           <button id="score-set-now" data-testid="score-set-now" class="btn score-tbtn" title="Move the mark to the playhead">Set to now</button>
           <button id="score-delete" data-testid="score-delete" class="btn score-tbtn" title="Delete this mark">Delete</button>
+        </div>
         </div>
         <div id="score-choices" data-testid="score-choices" class="media-choices" hidden></div>
         <div id="score-progress" data-testid="score-progress" class="score-progress" role="status" hidden>
@@ -1380,6 +1394,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
         <!-- Time and Seek Controls -->
         <div class="time-section">
           <span id="current-time" data-testid="time-display" class="time-display">0:00</span>
+          <span id="score-mark-now" data-testid="score-mark-now" class="score-mark-now" hidden></span>
           <div class="seek-stack">
             <input
               type="range"
@@ -1958,10 +1973,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.5";
+var STATIC_BUILD_VERSION_ = "1.7.1.6";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-27T17:47:13.978Z";
+var STATIC_BUILD_DATE_ = "2026-10-27T19:38:23.764Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8067,7 +8082,27 @@ function scoreHitMark(marks, page, x, y) {
   });
   return best;
 }
-function scoreAddTime(t, playing, reaction) { return playing ? Math.max(0, scoreRound2(t - reaction)) : scoreRound2(t); }
+/** Adding while playing: the reaction allowance is wall-clock, so at speed s it is reaction x s of track time (atc-ore.5 AC 21). */
+function scoreAddTime(t, playing, reaction, speed) {
+  var s = Number(speed) > 0 ? Number(speed) : 1;
+  return playing ? Math.max(0, scoreRound2(t - reaction * s)) : scoreRound2(t);
+}
+/** Previous / next mark ids for the Edit buttons (atc-ore.5 AC 19). Selected: the neighbours in time order. None selected:
+ *  Next = first mark after the playhead t, Previous = last mark at or before it. null at an end. */
+function scoreStepTargets(marks, selId, t) {
+  var list = scoreSorted(marks), idx = -1, i;
+  for (i = 0; i < list.length; i++) if (list[i].id === selId) idx = i;
+  if (idx >= 0) return { prev: idx > 0 ? list[idx - 1].id : null, next: idx < list.length - 1 ? list[idx + 1].id : null };
+  var n = scoreIndexAt(list, t);
+  return { prev: n >= 0 ? list[n].id : null, next: n + 1 < list.length ? list[n + 1].id : null };
+}
+/** Score panel height: the window height less the transport controls and gap, never under 260 px (atc-ore.4 AC 16). */
+function scoreFitHeight(viewH, transportH, gap) {
+  var h = Number(viewH) - (Number(transportH) || 0) - (Number(gap) || 0);
+  return isFinite(h) ? Math.max(260, Math.round(h)) : 260;
+}
+/** The transport row label for the current mark index n (0-based, -1 before the first mark). */
+function scoreMarkNowText(n) { return n < 0 ? 'Mark -' : 'Mark ' + (n + 1); }
 function scoreClampReaction(v) {
   if (v === null || v === undefined || v === '') return 0.25;
   v = Number(v);
@@ -8173,7 +8208,7 @@ function initScorePanel_() {
   var progress = $('score-progress');
   var progressText = $('score-progress-text');
   var titleEl = $('score-title');
-  var driveLink = $('score-open-drive');
+  var markNowEl = $('score-mark-now'), toolRows = $('score-toolrows'), transportEl = document.querySelector('.transport-section');
   var zoomLabel = $('score-zoom-label');
   var pageLabel = $('score-page-label');
   var zoomIn = $('score-zoom-in');
@@ -8195,7 +8230,7 @@ function initScorePanel_() {
   function store(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function recall(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function isOpen() { return !panel.classList.contains('hidden'); }
-  function setState(s) { panel.setAttribute('data-state', s); toolsEl.hidden = s !== 'ready'; if (s !== 'ready') selbar.hidden = true; }
+  function setState(s) { panel.setAttribute('data-state', s); toolsEl.hidden = s !== 'ready'; toolRows.hidden = toolsEl.hidden; if (s !== 'ready') selbar.hidden = true; }
   function num(x) { return String(+Number(x).toFixed(2)); }
 
   // ---- PDF.js loader: lazy, modern/legacy build, worker with a main-thread fallback (AC 2, 13) ----
@@ -8414,7 +8449,7 @@ function initScorePanel_() {
   function showChooser() {
     setState('chooser');
     titleEl.textContent = 'Score';
-    driveLink.hidden = true;
+    titleEl.removeAttribute('href');
     showProgress(false);
     scroller.hidden = true;
     choicesEl.hidden = false;
@@ -8446,8 +8481,7 @@ function initScorePanel_() {
   async function load(file) {
     var gen = ++S.loadGen;
     titleEl.textContent = file.name;
-    driveLink.href = DRIVE_FILE_URL_ + encodeURIComponent(file.id) + '/view';
-    driveLink.hidden = false;
+    titleEl.href = DRIVE_FILE_URL_ + encodeURIComponent(file.id) + '/view';
     choicesEl.hidden = true;
     chooseBtn.hidden = S.pdfs.length < 2;
     if (S.pdf && S.fileKey === fileKey(file)) { // already open: no fetch, no parse
@@ -8513,6 +8547,19 @@ function initScorePanel_() {
     publish();
   }
 
+  /** atc-ore.4 AC 16: the panel fills the visible window less the transport controls below it (min 260 px). */
+  function fitHeight() {
+    if (!isOpen()) return false;
+    var vv = window.visualViewport, viewH = vv && vv.height ? vv.height : window.innerHeight;
+    var gap = 0;
+    try { gap = parseFloat(window.getComputedStyle(panel).marginBottom) || 0; } catch (e) { /* ignore */ }
+    var th = transportEl ? transportEl.offsetHeight : 0;
+    var h = scoreFitHeight(viewH, th + 8, gap);
+    var changed = panel.style.height !== h + 'px';
+    panel.style.height = h + 'px';
+    panel.style.minHeight = '0';
+    return changed;
+  }
   function open(pdfs, btn) {
     S.pdfs = pdfs || [];
     S.opener = btn || null;
@@ -8522,7 +8569,11 @@ function initScorePanel_() {
     resetPointers();
     panel.classList.remove('hidden');
     page_.classList.add('score-open');
+    fitHeight();
+    try { panel.scrollIntoView({ block: 'start' }); } catch (e) { /* ignore */ }
+    S.lastW = window.innerWidth;
     startLoop();
+    syncUi();
     buildChoices();
     loadLib().catch(function (e) { console.warn('[score] pdf.js load failed: ' + (e && e.message ? e.message : e)); });
     if (S.pdfs.length === 1) {
@@ -8540,6 +8591,7 @@ function initScorePanel_() {
     panel.classList.add('hidden');
     page_.classList.remove('score-open');
     stopLoop();
+    syncUi();
     S.pages.forEach(release); // free the canvases; the parsed document stays for a quick reopen
     publish();
     if (S.opener && typeof S.opener.focus === 'function') S.opener.focus();
@@ -8612,11 +8664,10 @@ function initScorePanel_() {
       if (!pg) return;
       el.style.left = (k.x / pg.w * 100) + '%';
       el.style.top = (k.y / pg.h * 100) + '%';
-      if (el.classList.contains('draggable')) { el.style.width = (72 / pg.w * 100) + '%'; el.style.height = (72 / pg.h * 100) + '%'; }
+      if (S.edit) { el.style.width = (72 / pg.w * 100) + '%'; el.style.height = (72 / pg.h * 100) + '%'; } // 0.5 inch each way (AC 20)
     });
   }
   function paintMarks() {
-    var canDrag = S.edit && !S.playing;
     Array.prototype.forEach.call(strip.querySelectorAll('.score-mark'), function (el) {
       var id = Number(el.getAttribute('data-mark-id'));
       var idx = -1;
@@ -8624,9 +8675,7 @@ function initScorePanel_() {
       el.setAttribute('data-n', String(idx + 1));
       el.setAttribute('data-current', String(idx === S.curN));
       el.setAttribute('data-selected', String(S.edit && id === S.selId));
-      var drag = canDrag && id === S.selId;
-      el.classList.toggle('draggable', drag);
-      if (!drag) { el.style.width = ''; el.style.height = ''; }
+      if (!S.edit) { el.style.width = ''; el.style.height = ''; }
       var dot = el.firstChild; if (dot) dot.textContent = String(idx + 1);
       if (el.lastChild) el.lastChild.textContent = idx >= 0 ? fmtT(S.marks[idx].t) : '';
     });
@@ -8644,6 +8693,11 @@ function initScorePanel_() {
     $('score-undo').hidden = !S.edit; $('score-undo').disabled = !S.undo.length;
     $('score-clear').hidden = !S.edit; $('score-clear').disabled = !has;
     $('score-react').hidden = !S.edit;
+    var stepT = scoreStepTargets(S.marks, S.selId, trackNow());
+    $('score-mark-prev').hidden = !S.edit; $('score-mark-prev').disabled = stepT.prev === null;
+    $('score-mark-next').hidden = !S.edit; $('score-mark-next').disabled = stepT.next === null;
+    markNowEl.hidden = !(isOpen() && has);
+    if (!markNowEl.hidden) markNowEl.textContent = scoreMarkNowText(S.curN);
     $('score-resume-follow').hidden = S.followOn || !has;
     var m = selMark();
     selbar.hidden = !(S.edit && m && !toolsEl.hidden);
@@ -8723,7 +8777,7 @@ function initScorePanel_() {
     }
     var onMark = scoreHitMark(S.marks, hit.page, hit.x, hit.y);
     if (onMark) { S.selId = onMark.id; syncUi(); jumpTo(scoreJumpBefore(onMark.t)); return; }
-    var add = scoreAddMark(S.marks, { t: scoreAddTime(trackNow(), isPlayingNow(), S.reaction), page: hit.page, x: scoreRound2(hit.x), y: scoreRound2(hit.y) });
+    var add = scoreAddMark(S.marks, { t: scoreAddTime(trackNow(), isPlayingNow(), S.reaction, rate()), page: hit.page, x: scoreRound2(hit.x), y: scoreRound2(hit.y) });
     S.selId = add.mark.id;
     commit(add.marks, true);
   }
@@ -8734,10 +8788,9 @@ function initScorePanel_() {
     S.touching = true;
     if (S.ptrs > 1) { S.gesture = null; return; }
     var g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0, drag: null };
-    var dotEl = e.target.closest ? e.target.closest('.score-mark.draggable') : null;
-    if (dotEl) {
-      var k = selMark(), hit = pageAtPoint(e.clientX, e.clientY);
-      if (k && hit && hit.page === k.page) g.drag = { offX: k.x - hit.x, offY: k.y - hit.y, started: false, page: k.page };
+    if (S.edit) { // AC 20: any mark within 0.5 inch, playing or paused, no prior tap needed
+      var hit = pageAtPoint(e.clientX, e.clientY), k = hit && scoreHitMark(S.marks, hit.page, hit.x, hit.y);
+      if (k) g.drag = { id: k.id, offX: k.x - hit.x, offY: k.y - hit.y, started: false, page: k.page };
     }
     S.gesture = g;
   });
@@ -8752,10 +8805,12 @@ function initScorePanel_() {
     void hit;
     if (!g.drag.started) {
       g.drag.started = true;
+      S.selId = g.drag.id;
       S.undo = scoreUndoPush(S.undo, S.marks);
+      syncUi();
       try { scroller.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
     }
-    S.marks = scoreMoveMark(S.marks, S.selId, px + g.drag.offX, py + g.drag.offY, pg.w, pg.h);
+    S.marks = scoreMoveMark(S.marks, g.drag.id, px + g.drag.offX, py + g.drag.offY, pg.w, pg.h);
     positionMarks();
   });
   function endPointer(e, cancelled) {
@@ -8782,6 +8837,28 @@ function initScorePanel_() {
     if (!S.edit) S.selId = null;
     syncUi();
   });
+  /** AC 19: select the neighbouring mark as a tap on it would (jump to 1 s before) and bring it into view. */
+  function stepMark(dir) {
+    var tg = scoreStepTargets(S.marks, S.selId, trackNow()), id = dir < 0 ? tg.prev : tg.next;
+    if (id === null) return;
+    S.selId = id;
+    var m = selMark();
+    if (!m) return;
+    syncUi();
+    jumpTo(scoreJumpBefore(m.t));
+    if (!S.followOn || !markVisibleAtJump(m)) {
+      pauseFollow(); // the glide at that time would leave the mark off screen: show the mark itself
+      var geo = pageGeo(), a = scoreAnchorView(m, geo);
+      setView(a.x, a.y);
+    }
+  }
+  function markVisibleAtJump(m) {
+    var geo = pageGeo(), tv = scoreTargetView(S.marks, scoreJumpBefore(m.t), geo, { x: scroller.scrollLeft, y: scroller.scrollTop });
+    var p = scoreMarkPoint(m, geo);
+    return p.x >= tv.x && p.x <= tv.x + geo.W && p.y >= tv.y && p.y <= tv.y + geo.H;
+  }
+  $('score-mark-prev').addEventListener('click', function () { stepMark(-1); });
+  $('score-mark-next').addEventListener('click', function () { stepMark(1); });
   $('score-undo').addEventListener('click', function () {
     var r = scoreUndoPop(S.undo);
     if (!r) return;
@@ -8846,7 +8923,22 @@ function initScorePanel_() {
     if (S.raf || S.pinch) return;
     S.raf = requestAnimationFrame(function () { S.raf = 0; updatePageLabel(); pump(); });
   }, { passive: true });
-  window.addEventListener('resize', function () { if (isOpen() && S.pages.length) { layout(); refresh(); } });
+  // Resize: the height follows the window at once; the pages are laid out and drawn again only when the width changed.
+  function onResize() {
+    S.resizeTimer = 0;
+    if (!isOpen()) return;
+    var hChanged = fitHeight();
+    if (hChanged) { try { panel.scrollIntoView({ block: 'start' }); } catch (e) { /* ignore */ } }
+    var w = window.innerWidth, wChanged = w !== S.lastW; // window width: a scrollbar appearing with a height change is not a width change
+    S.lastW = w;
+    if (!S.pages.length) return;
+    if (wChanged) { layout(); refresh(); }
+    else if (hChanged) { S.snapPending = true; pump(); }
+  }
+  function scheduleResize() { if (S.resizeTimer) clearTimeout(S.resizeTimer); S.resizeTimer = setTimeout(onResize, 120); }
+  window.addEventListener('resize', scheduleResize);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleResize);
+  if (typeof ResizeObserver === 'function' && transportEl) new ResizeObserver(scheduleResize).observe(transportEl); // the transport grows as the waveform row appears
 
   // Pinch: CSS scale while the fingers move, one re-render when they lift (AC 4, 12).
   function dist2(t) { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY); }
@@ -8884,7 +8976,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreClampReaction, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
+  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreMarkNowText, scoreClampReaction, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
   scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt };
 </script>
 
