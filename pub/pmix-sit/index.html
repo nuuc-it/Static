@@ -1991,10 +1991,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.9";
+var STATIC_BUILD_VERSION_ = "1.7.1.10";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-27T21:10:56.683Z";
+var STATIC_BUILD_DATE_ = "2026-10-27T21:20:24.317Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8311,6 +8311,21 @@ function scoreQueueParse(raw) {
   try { var q = JSON.parse(raw); return Array.isArray(q) ? q.filter(function (e) { return e && typeof e.folderId === 'string' && e.score; }) : []; } catch (e) { return []; }
 }
 function scoreQueueAdd(queue, entry) { return queue.filter(function (e) { return e.folderId !== entry.folderId; }).concat([entry]); }
+/** AC 18: a queued save leaves the queue only on ok, stale or a permanent refusal; offline, unavailable and sign_in_required keep it. */
+function scoreQueueShouldRemove(out) {
+  if (!out) return false;
+  if (out.kind === 'ok') return true;
+  if (out.kind !== 'error') return false;
+  return ['stale', 'not_editor', 'invalid_score', 'too_many_marks', 'too_large', 'bad_request'].indexOf(out.code) >= 0;
+}
+/** AC 18: confirm text when the open PDF is not the shared map's PDF ('' = no confirm needed). */
+function scoreSaveConfirmText(shared, pdfId, pdfs) {
+  if (!shared || !shared.pdfId || shared.pdfId === pdfId) return '';
+  function nameOf(id) { for (var i = 0; i < (pdfs || []).length; i++) if (pdfs[i].id === id) return pdfs[i].name || id; return id; }
+  return 'The saved score is for "' + nameOf(shared.pdfId) + '". Replace it with the marks for "' + nameOf(pdfId) + '"?';
+}
+/** AC 18: a stale/Keep mine state set for this folder (by a flush at open) is not reset by loading a PDF. */
+function scoreKeepStale(stale, staleFolder, folder) { return !!stale && staleFolder === folder; }
 function scoreQueueRemove(queue, folderId) { return queue.filter(function (e) { return e.folderId !== folderId; }); }
 function scoreQueueRead_() { try { return scoreQueueParse(window.localStorage.getItem(SCORE_QUEUE_KEY)); } catch (e) { return []; } }
 function scoreQueueWrite_(q) { try { if (q.length) window.localStorage.setItem(SCORE_QUEUE_KEY, JSON.stringify(q)); else window.localStorage.removeItem(SCORE_QUEUE_KEY); } catch (e) { /* ignore */ } }
@@ -8813,7 +8828,8 @@ function initScorePanel_() {
     var sh = S.shared;
     if (!S.marks.length && !S.readOnly && sh && sh.pdfId === fileId && sh.marks.length) S.marks = scoreParseMarks(JSON.stringify({ v: 1, marks: sh.marks }));
     S.undo = []; S.selId = null; S.edit = false; S.followOn = true; S.snapPending = true; S.easeStart = -1; S.lastN = null; S.curN = -1; S.offY = 0; S.pan = null;
-    S.stale = false; S.saveMsg = ''; S.savedAt = '';
+    if (!scoreKeepStale(S.stale, S.staleFolder, S.folder)) { S.stale = false; S.saveMsg = ''; }
+    S.savedAt = '';
     renderMarks(); syncUi();
   }
   function saveMarks() { if (S.readOnly) return; store(scoreMarksKey(S.fileId), scoreSerializeMarks(S.marks)); }
@@ -8936,7 +8952,7 @@ function initScorePanel_() {
       if (here) S.saveMsg = 'You are offline. Your save is queued and will be sent when the connection returns.';
     } else {
       var cur = out.code === 'stale' ? scoreSharedParse(out.current) : null;
-      if (cur) { adoptShared(fid, cur); if (here) S.stale = true; }
+      if (cur) { adoptShared(fid, cur); if (here) { S.stale = true; S.staleFolder = fid; } }
       if (here) S.saveMsg = scoreSaveMessage(out.code, out.current);
     }
     if (here) syncUi();
@@ -8944,6 +8960,8 @@ function initScorePanel_() {
   async function saveToDrive() {
     if (S.saving || !isSignedIn_() || !S.marks.length || !S.folder || S.readOnly) return;
     var fid = S.folder;
+    var ask = scoreSaveConfirmText(S.shared, S.fileId, S.pdfs);
+    if (ask && !window.confirm(ask)) return;
     var score = scoreSavePayload(S.shared, S.fileId, pdfModifiedOf(S.fileId), S.marks);
     var basedOn = S.shared ? S.shared.updatedAt : null;
     S.saving = true; S.stale = false; S.saveMsg = 'Saving...'; syncUi();
@@ -8961,7 +8979,7 @@ function initScorePanel_() {
       for (var i = 0; i < q.length; i++) {
         var out = await sendSave(q[i].folderId, q[i].score, q[i].basedOn);
         if (out.kind === 'offline') break;
-        scoreQueueWrite_(scoreQueueRemove(scoreQueueRead_(), q[i].folderId));
+        if (scoreQueueShouldRemove(out)) scoreQueueWrite_(scoreQueueRemove(scoreQueueRead_(), q[i].folderId));
         handleSaveOutcome(q[i].folderId, out, q[i].score, q[i].basedOn);
       }
     } finally { flushing = false; renderConnectionBanner_(connectionShown_); if (S.fileId) syncUi(); }
@@ -9318,7 +9336,7 @@ if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParse
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreApplyOffset, scoreOffsetFor, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
   scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
-  scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSavedLabel, scoreQueueParse, scoreQueueAdd, scoreQueueRemove };
+  scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSavedLabel, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreKeepStale };
 </script>
 
 <script>
