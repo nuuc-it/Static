@@ -459,6 +459,8 @@ body {
   .score-toolrows .score-sel-label { flex: 0 1 auto; }
 }
 .score-panel [hidden] { display: none; }
+/* atc-ore.17: play mode (playing, Edit off) keeps only the previous / next mark buttons in the header */
+.score-panel[data-play="on"] .score-bar, .score-panel[data-play="on"] #score-edit-toggle { display: none; }
 .score-scroller { flex: 1; min-height: 0; overflow: auto; background: #3a3a3a; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .score-strip { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px; width: max-content; min-width: 100%; box-sizing: border-box; }
 .score-page { position: relative; background: #fff; flex: none; box-shadow: 0 1px 6px rgba(0,0,0,.5); }
@@ -1991,10 +1993,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.10";
+var STATIC_BUILD_VERSION_ = "1.7.1.11";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-27T21:20:24.317Z";
+var STATIC_BUILD_DATE_ = "2026-10-27T23:20:00.698Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -6759,8 +6761,32 @@ const UI = (() => {
   // TRANSPORT CONTROLS
   // ================================================================
 
+  // Screen wake lock while audio plays (atc-ore.17 AC 1). Unsupported, refused or released by the browser: playback carries on, nothing is shown.
+  let wakeLock_ = null, wakeBusy_ = false;
+  function syncWakeLock() {
+    try {
+      if (!navigator.wakeLock) return;
+      if (state.isPlaying && document.visibilityState !== 'hidden') {
+        if (wakeLock_ || wakeBusy_) return;
+        wakeBusy_ = true;
+        navigator.wakeLock.request('screen').then((sentinel) => {
+          wakeBusy_ = false;
+          if (!state.isPlaying) { try { sentinel.release(); } catch (e) { /* ignore */ } return; }
+          wakeLock_ = sentinel;
+          sentinel.addEventListener('release', () => { if (wakeLock_ === sentinel) wakeLock_ = null; });
+        }, () => { wakeBusy_ = false; });
+      } else if (wakeLock_) {
+        const held = wakeLock_;
+        wakeLock_ = null;
+        Promise.resolve(held.release()).catch(() => {});
+      }
+    } catch (e) { /* ignore */ }
+  }
+  document.addEventListener('visibilitychange', syncWakeLock);
+
   function setPlayingState(playing) {
     state.isPlaying = playing;
+    syncWakeLock();
     el.playBtn.setAttribute('data-playing', playing ? 'true' : 'false');
     el.playBtn.textContent = playing ? '⏸' : '▶';
     el.playBtn.title = playing ? 'Pause' : 'Play';
@@ -8102,6 +8128,10 @@ function scorePanDecision(dxScroll, dyScroll) {
   if (ax > 10 && ax > ay / 2) return 'horizontal';
   return ay > 0.5 ? 'vertical' : 'wait';
 }
+/** Play mode: audio playing with Edit off (atc-ore.17 AC 2). */
+function scoreIsPlayMode(playing, edit) { return !!playing && !edit; }
+/** Resume follow button: only in Edit mode, with Follow paused and marks present (atc-ore.17 AC 6). */
+function scoreShowResume(followOn, hasMarks, edit) { return !!edit && !followOn && !!hasMarks; }
 /** Follow's target with the user's vertical offset added, kept inside the scroll range. */
 function scoreApplyOffset(view, offY, geo) { return { x: view.x, y: scoreClamp(view.y + (Number(offY) || 0), 0, geo.maxY) }; }
 /** The offset that puts the view at scrollY when Follow's own target is targetY. */
@@ -8881,10 +8911,21 @@ function initScorePanel_() {
     });
     positionMarks();
   }
+  function playMode() { return scoreIsPlayMode(isPlayingNow(), S.edit); }
+  /** Compact header while in play mode. The scroller changes height with the header: refit the panel and ease the view so the score does not jump (atc-ore.17 AC 3, 7). */
+  function setPlayHeader(on) {
+    var v = on ? 'on' : 'off';
+    if (panel.getAttribute('data-play') === v) return;
+    panel.setAttribute('data-play', v);
+    if (!isOpen()) return;
+    fitHeight();
+    if (S.pages.length && S.marks.length) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = performance.now(); }
+  }
   function syncUi() {
     var has = S.marks.length > 0;
     panel.setAttribute('data-mark-count', String(S.marks.length));
     panel.setAttribute('data-edit', S.edit ? 'on' : 'off');
+    setPlayHeader(playMode() && has); // a PDF without marks has nothing to follow: it keeps its full header
     panel.setAttribute('data-follow', has ? (S.followOn ? 'on' : 'paused') : 'off');
     panel.setAttribute('data-current-mark', String(S.curN + 1));
     $('score-edit-toggle').setAttribute('aria-pressed', String(S.edit));
@@ -8899,7 +8940,7 @@ function initScorePanel_() {
     $('score-leadlbl').hidden = !S.edit; $('score-sliders').hidden = !S.edit || toolsEl.hidden;
     panel.setAttribute('data-offset-y', String(Math.round(S.offY)));
     renderSeekMarks();
-    $('score-resume-follow').hidden = S.followOn || !has;
+    $('score-resume-follow').hidden = !scoreShowResume(S.followOn, has, S.edit);
     var m = selMark();
     selbar.hidden = !(S.edit && m && !toolsEl.hidden);
     if (m) $('score-sel-label').textContent = 'Mark ' + (S.marks.indexOf(m) + 1) + ' at ' + fmtT(m.t);
@@ -9006,7 +9047,7 @@ function initScorePanel_() {
     });
   }
   function pauseFollow() {
-    if (!S.followOn) return;
+    if (!S.followOn || playMode()) return; // play mode: Follow never pauses (atc-ore.17 AC 2)
     S.followOn = false; S.easeStart = -1;
     syncUi();
   }
@@ -9037,19 +9078,29 @@ function initScorePanel_() {
     var playing = isPlayingNow(), cur = { clock: clockNow(), ts: now, playing: playing };
     if (S.last && scoreDetectSeek(S.last, cur)) S.snapPending = true;
     S.last = cur;
-    if (playing !== S.playing) { S.playing = playing; paintMarks(); }
+    if (playing !== S.playing) {
+      S.playing = playing; paintMarks();
+      if (playMode() && !S.followOn) resumeFollow(); // starting to play puts Follow back (atc-ore.17 AC 2)
+      syncUi();
+    }
     if (!S.marks.length) { if (S.curN !== -1) { S.curN = -1; syncUi(); } return; }
     var geo = pageGeo(), t = scoreTrackTime(cur.clock, rate());
     var tv = scoreTargetView(S.marks, t, geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() });
     if (tv.n !== S.curN) { S.curN = tv.n; syncUi(); }
     if (S.seekDim !== document.getElementById('seek-bar').max + '|' + rate()) renderSeekMarks();
+    if (!S.followOn && !S.edit && S.snapPending) { S.followOn = true; S.offY = 0; S.pan = null; syncUi(); } // a seek outside Edit mode puts Follow back: there is no Resume button
     if (!S.followOn) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.v; return; } // a seek while paused must not make Resume snap
     if (S.touching) return;
     if (S.pan) { // a vertical pan is settling (touch fling): the offset follows the scroll position (atc-ore.4 R6)
-      var sy = scroller.scrollTop;
-      if (S.pan.sl0 !== undefined && scorePanDecision(scroller.scrollLeft - S.pan.sl0, sy - S.pan.st0) === 'horizontal') { S.pan = null; pauseFollow(); return; }
+      var sy = scroller.scrollTop, sx = scroller.scrollLeft;
+      if (S.pan.sl0 !== undefined && scorePanDecision(sx - S.pan.sl0, sy - S.pan.st0) === 'horizontal') {
+        if (!playMode()) { S.pan = null; pauseFollow(); return; }
+        S.pan.h = true; // play mode: the view eases back once the touch ends (atc-ore.17 AC 2)
+      }
+      if (S.pan.h && Math.abs(sx - S.pan.lastX) > 0.5) { S.pan.lastX = sx; S.pan.idle = now; }
       if (Math.abs(sy - S.pan.last) > 0.5) { S.pan.last = sy; S.pan.idle = now; S.offY = scoreOffsetFor(sy, tv.y); syncUi(); }
       if (now - S.pan.idle < 150) { S.lastN = tv.v; return; }
+      if (S.pan.h) { S.easeFrom = { x: sx, y: sy }; S.easeStart = now; }
       S.pan = null;
     }
     var vw = scoreApplyOffset(tv, S.offY, geo);
@@ -9145,7 +9196,7 @@ function initScorePanel_() {
     S.gesture = null;
     if (cancelled) { // the browser took the gesture as a pan
       if (g.drag && g.drag.started) { saveMarks(); renderMarks(); syncUi(); }
-      else if (S.followOn && isPlayingNow() && S.marks.length) S.pan = { last: g.st0, idle: performance.now(), sl0: g.sl0, st0: g.st0 }; // R6: keep Follow; the tick decides from the scroll movement (Chrome cancels before any pointermove)
+      else if (S.followOn && isPlayingNow() && S.marks.length) S.pan = { last: g.st0, lastX: g.sl0, idle: performance.now(), sl0: g.sl0, st0: g.st0 }; // R6: keep Follow; the tick decides from the scroll movement (Chrome cancels before any pointermove)
       else pauseFollow();
       return;
     }
@@ -9160,6 +9211,10 @@ function initScorePanel_() {
   document.addEventListener('pointercancel', outsideEnd);
   scroller.addEventListener('wheel', function (e) {
     if (S.followOn && isPlayingNow() && S.marks.length && scoreIsVerticalPan(e.deltaX, e.deltaY)) { nudgeOffset(e.deltaY * (e.deltaMode === 1 ? 16 : 1)); return; } // R6
+    if (playMode() && S.followOn && S.marks.length) { // a sideways wheel: Follow stays and the view eases back when the wheel stops (atc-ore.17 AC 2)
+      S.pan = { last: scroller.scrollTop, lastX: scroller.scrollLeft, idle: performance.now(), h: true };
+      return;
+    }
     pauseFollow();
   }, { passive: true });
 
@@ -9177,7 +9232,8 @@ function initScorePanel_() {
   $('score-edit-toggle').addEventListener('click', function () {
     S.edit = !S.edit;
     if (!S.edit) S.selId = null;
-    syncUi();
+    if (playMode() && !S.followOn) resumeFollow(); // leaving Edit while playing is play mode: Follow is always on
+    else syncUi();
   });
   /** AC 19: select the neighbouring mark as a tap on it would (jump to 1 s before) and bring it into view. */
   function stepMark(dir) {
@@ -9324,6 +9380,7 @@ function initScorePanel_() {
     strip.style.transform = ''; strip.style.transformOrigin = '';
     panel.setAttribute('data-pinching', 'false');
     setZoom(p.z, { x: p.mx, y: p.my });
+    if (playMode() && S.followOn) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = performance.now(); } // play mode: back to the Follow target
   }
   scroller.addEventListener('touchend', endPinch);
   scroller.addEventListener('touchcancel', endPinch);
@@ -9334,7 +9391,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreApplyOffset, scoreOffsetFor, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
+  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
   scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSavedLabel, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreKeepStale };
 </script>
