@@ -452,6 +452,21 @@ body {
 .score-progress { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 16px; color: var(--text-2); font-size: 13px; text-align: center; }
 .score-progress progress { width: 60%; max-width: 280px; }
 .score-panel .media-choices { overflow: auto; }
+.score-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); }
+.score-tbtn { min-width: 34px; height: 30px; padding: 0 8px; font-size: 13px; }
+.score-tbtn[aria-pressed="true"] { background: #b45309; color: #fff; }
+.score-chip { background: #b45309; color: #fff; font-weight: 700; font-size: 12px; padding: 3px 8px; border-radius: 10px; }
+.score-react { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); }
+.score-react input { width: 70px; }
+.score-sel-label { flex: 1 0 100%; font-size: 12px; font-weight: 600; }
+.score-mark { position: absolute; transform: translate(-50%, -50%); pointer-events: none; display: flex; align-items: center; justify-content: center; }
+.score-mark .dot { width: 10px; height: 10px; border-radius: 50%; background: #0e7c86; border: 1px solid #fff; box-sizing: border-box; font-size: 0; }
+.score-mark[data-current="true"] .dot { background: #e11d48; width: 14px; height: 14px; }
+.score-mark .mt { display: none; position: absolute; left: 50%; top: 100%; margin-top: 1px; transform: translateX(-50%); font-size: 10px; line-height: 1; padding: 1px 3px; border-radius: 3px; background: rgba(0,0,0,.7); color: #fff; white-space: nowrap; }
+.score-panel[data-edit="on"] .score-mark .dot { width: 20px; height: 20px; font-size: 11px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; }
+.score-panel[data-edit="on"] .score-mark .mt { display: block; }
+.score-mark[data-selected="true"] .dot { outline: 3px solid #f59e0b; }
+.score-mark.draggable { pointer-events: auto; touch-action: none; }
 /* The panel takes the top of the page: level/pan controls fold away while it is open. */
 #playback-page.score-open .master-section, #playback-page.score-open .tracks-section, #playback-page.score-open .export-section { display: none; }
 
@@ -1312,6 +1327,23 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <a id="score-open-drive" data-testid="score-open-drive" class="score-drive" target="_blank" rel="noopener" title="Open in Google Drive" hidden>Drive &#8599;</a>
           <button id="score-close" data-testid="score-close" class="btn btn-close score-btn" aria-label="Close the score" title="Close the score">&#10005;</button>
         </div>
+        <div id="score-tools" data-testid="score-tools" class="score-tools" hidden>
+          <button id="score-edit-toggle" data-testid="score-edit-toggle" class="btn score-tbtn" aria-pressed="false" title="Edit the marks that make the score follow the music">Edit</button>
+          <span id="score-edit-chip" data-testid="score-edit-chip" class="score-chip" hidden>Editing</span>
+          <button id="score-undo" data-testid="score-undo" class="btn score-tbtn" title="Undo the last change" hidden disabled>Undo</button>
+          <button id="score-clear" data-testid="score-clear" class="btn score-tbtn" title="Delete every mark on this score" hidden>Clear all</button>
+          <label id="score-react" class="score-react" title="How far before the tap a new mark is placed while playing" hidden>Reaction
+            <input id="score-reaction" data-testid="score-reaction" type="range" min="0" max="0.5" step="0.05" value="0.25">
+            <output id="score-reaction-out" data-testid="score-reaction-out">0.25 s</output></label>
+          <button id="score-resume-follow" data-testid="score-resume-follow" class="btn score-tbtn score-resume" hidden>Resume follow</button>
+        </div>
+        <div id="score-selbar" data-testid="score-selbar" class="score-tools score-selbar" hidden>
+          <span id="score-sel-label" data-testid="score-sel-label" class="score-sel-label"></span>
+          <button id="score-nudge-minus" data-testid="score-nudge-minus" class="btn score-tbtn" title="Mark 0.1 s earlier">-0.1 s</button>
+          <button id="score-nudge-plus" data-testid="score-nudge-plus" class="btn score-tbtn" title="Mark 0.1 s later">+0.1 s</button>
+          <button id="score-set-now" data-testid="score-set-now" class="btn score-tbtn" title="Move the mark to the playhead">Set to now</button>
+          <button id="score-delete" data-testid="score-delete" class="btn score-tbtn" title="Delete this mark">Delete</button>
+        </div>
         <div id="score-choices" data-testid="score-choices" class="media-choices" hidden></div>
         <div id="score-progress" data-testid="score-progress" class="score-progress" role="status" hidden>
           <progress aria-label="Loading the PDF"></progress>
@@ -1926,10 +1958,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.3";
+var STATIC_BUILD_VERSION_ = "1.7.1.4";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-27T16:11:16.904Z";
+var STATIC_BUILD_DATE_ = "2026-10-27T17:35:36.201Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -4887,6 +4919,7 @@ const AudioEngine = (() => {
     dbToGain,
     gainToDb,
     setPlaybackRate,
+    getPlaybackRate: () => playbackRate,
     getUnstretchedTrackIds,
     ensureStretched,
     getStretchedChannels,
@@ -7907,6 +7940,191 @@ function scoreTrimToBudget(live, visible, budgetPx) {
   return out;
 }
 
+// ---- Follow + edit pure logic (bd atc-ore.4 AC rev 2, atc-ore.5 AC rev 3). ASCII only. ----
+// A mark is {t (s at 1.0x), page (1-based), x, y (PDF pt from the page top-left)}; the runtime adds an id that is never stored.
+var SCORE_SAME_LINE_PT = 72;
+var SCORE_HIT_PT = 36;
+var SCORE_EASE_MS = 200;
+var SCORE_UNDO_MAX = 50;
+var SCORE_ANCHOR_X = 0.10;
+var SCORE_ANCHOR_Y = 0.40;
+var scoreNextId_ = 1;
+
+function scoreRound2(v) { return Math.round(v * 100) / 100; }
+function scoreLerp(a, b, u) { return a + (b - a) * u; }
+function scoreClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function scoreCopyMarks(marks) { return marks.map(function (k) { return { id: k.id, t: k.t, page: k.page, x: k.x, y: k.y }; }); }
+/** Copies of the marks, each carrying a runtime id (kept when present). */
+function scoreWithIds(marks) {
+  return marks.map(function (k) { return { id: k.id !== undefined ? k.id : scoreNextId_++, t: k.t, page: k.page, x: k.x, y: k.y }; });
+}
+function scoreSorted(marks) {
+  return scoreCopyMarks(marks).sort(function (a, b) { return a.t - b.t; }); // stable: equal times keep their order
+}
+/** track time t = clock x speed; the clock is what the audio engine reports. */
+function scoreTrackTime(clock, speed) { return clock * speed; }
+function scoreClockTime(t, speed) { return t / speed; }
+function scoreJumpBefore(t) { return Math.max(0, scoreRound2(t - 1)); }
+function scoreEase(ms) { var k = scoreClamp(ms / SCORE_EASE_MS, 0, 1); return k * k * (3 - 2 * k); }
+
+/** Index of the last mark with time <= t (marks sorted by time), -1 before the first. */
+function scoreIndexAt(marks, t) {
+  var n = -1;
+  for (var i = 0; i < marks.length; i++) { if (marks[i].t <= t) n = i; else break; }
+  return n;
+}
+function scorePagePx(geo, page) { return geo.pages[Math.max(0, Math.min(geo.pages.length - 1, page - 1))]; }
+function scoreMarkPoint(mark, geo) {
+  var pg = scorePagePx(geo, mark.page), s = pg.w / pg.ptW;
+  return { x: pg.left + mark.x * s, y: pg.top + mark.y * s };
+}
+/** Scroll position that puts the mark at the anchor (10% from left, 40% down), kept inside the scroll range. */
+function scoreAnchorView(mark, geo) {
+  var p = scoreMarkPoint(mark, geo);
+  return {
+    x: scoreClamp(p.x - (geo.ax === undefined ? SCORE_ANCHOR_X : geo.ax) * geo.W, 0, geo.maxX),
+    y: scoreClamp(p.y - (geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay) * geo.H, 0, geo.maxY)
+  };
+}
+/** Where the view should be at track time t. geo = {W, H, maxX, maxY, pages:[{left, top, w, h, ptW, ptH}]} in px. */
+function scoreTargetView(marks, t, geo, cur) {
+  if (!marks.length) return { x: cur ? cur.x : 0, y: cur ? cur.y : 0, n: -1, state: 'no marks' };
+  var n = scoreIndexAt(marks, t), a, v;
+  if (n < 0) { a = scoreAnchorView(marks[0], geo); return { x: a.x, y: a.y, n: n, state: 'before first mark' }; }
+  if (n === marks.length - 1) { a = scoreAnchorView(marks[n], geo); return { x: a.x, y: a.y, n: n, state: 'hold' }; }
+  var mn = marks[n], mm = marks[n + 1];
+  var same = mm.page === mn.page && Math.abs(mm.y - mn.y) <= SCORE_SAME_LINE_PT && mm.x > mn.x;
+  var u = mm.t === mn.t ? 1 : scoreClamp((t - mn.t) / (mm.t - mn.t), 0, 1);
+  a = scoreAnchorView(mn, geo);
+  if (same) {
+    v = scoreAnchorView(mm, geo);
+    return { x: scoreLerp(a.x, v.x, u), y: scoreLerp(a.y, v.y, u), n: n, state: 'same-line glide' };
+  }
+  var pg = scorePagePx(geo, mn.page);
+  var endX = Math.max(a.x, scoreClamp(pg.left + pg.w - geo.W, 0, geo.maxX)); // never backwards, never past the page edge
+  return { x: scoreLerp(a.x, endX, u), y: a.y, n: n, state: 'line-end glide' };
+}
+/** A seek is a jump of the audio clock that the elapsed frame time does not explain. prev/cur = {clock, ts (ms), playing}. */
+function scoreDetectSeek(prev, cur) {
+  var delta = cur.clock - prev.clock;
+  if (prev.playing && cur.playing) return Math.abs(delta - (cur.ts - prev.ts) / 1000) > 0.35;
+  if (!prev.playing && !cur.playing) return Math.abs(delta) > 0.001;
+  return Math.abs(delta) > 0.35;
+}
+/** A tap lifts within 300 ms and moves under 10 px; one pointer only. */
+function scoreIsTap(g) { return g.pointers === 1 && g.dtMs <= 300 && g.movedPx < 10; }
+
+/** Lines derived from marks in time order: a mark joins the previous mark's line when it is on the same page, within 72 pt
+ *  of the line's first mark vertically and right of the previous mark; otherwise it starts a new line. */
+function scoreDeriveLines(marks) {
+  var lineOf = [], lines = [];
+  for (var i = 0; i < marks.length; i++) {
+    var k = marks[i], join = false;
+    if (i > 0) {
+      var prev = marks[i - 1], first = marks[lines[lineOf[i - 1]].first];
+      join = k.page === prev.page && k.page === first.page && Math.abs(k.y - first.y) <= SCORE_SAME_LINE_PT && k.x > prev.x;
+    }
+    if (join) { lineOf.push(lineOf[i - 1]); lines[lineOf[i]].members.push(i); }
+    else { lineOf.push(lines.length); lines.push({ first: i, members: [i] }); }
+  }
+  return { lineOf: lineOf, lines: lines };
+}
+/** Tap with Edit off: the mark at or before the tap point on that page (the line at or above, then the last mark left of it). */
+function scoreNearestPreceding(marks, page, x, y) {
+  var d = scoreDeriveLines(marks), cands = [];
+  d.lines.forEach(function (ln) {
+    var f = marks[ln.first];
+    if (f.page === page && f.y <= y) cands.push({ y: f.y, members: ln.members });
+  });
+  if (!cands.length) return null;
+  cands.sort(function (a, b) { return a.y - b.y; });
+  var lastLeft = function (members, limit) {
+    var best = null;
+    members.forEach(function (i) { var k = marks[i]; if (k.x <= limit && (!best || k.x >= best.x)) best = k; });
+    return best;
+  };
+  var hit = lastLeft(cands[cands.length - 1].members, x);
+  if (hit) return hit;
+  return cands.length > 1 ? lastLeft(cands[cands.length - 2].members, Infinity) : null;
+}
+/** Nearest mark within 0.5 inch (36 pt) of the point on that page, or null. */
+function scoreHitMark(marks, page, x, y) {
+  var best = null, bd = Infinity;
+  marks.forEach(function (k) {
+    if (k.page !== page) return;
+    var d = Math.hypot(k.x - x, k.y - y);
+    if (d <= SCORE_HIT_PT && d < bd) { bd = d; best = k; }
+  });
+  return best;
+}
+function scoreAddTime(t, playing, reaction) { return playing ? Math.max(0, scoreRound2(t - reaction)) : scoreRound2(t); }
+function scoreClampReaction(v) {
+  if (v === null || v === undefined || v === '') return 0.25;
+  v = Number(v);
+  return isFinite(v) ? scoreClamp(scoreRound2(v), 0, 0.5) : 0.25;
+}
+/** New mark in time order; joins the previous mark's line (takes the line's y) when the line rule allows it. */
+function scoreAddMark(marks, spec) {
+  var list = scoreSorted(marks), prevIdx = -1, i;
+  for (i = 0; i < list.length; i++) { if (list[i].t <= spec.t) prevIdx = i; else break; }
+  var y = spec.y;
+  if (prevIdx >= 0) {
+    var d = scoreDeriveLines(list), prev = list[prevIdx], first = list[d.lines[d.lineOf[prevIdx]].first];
+    if (prev.page === spec.page && first.page === spec.page && Math.abs(spec.y - first.y) <= SCORE_SAME_LINE_PT && spec.x > prev.x) y = first.y;
+  }
+  var mark = { id: scoreNextId_++, t: scoreRound2(spec.t), page: spec.page, x: spec.x, y: y };
+  list.splice(prevIdx + 1, 0, mark);
+  return { marks: list, mark: mark };
+}
+function scoreSetMarkTime(marks, id, t) {
+  var list = scoreCopyMarks(marks);
+  list.forEach(function (k) { if (k.id === id) k.t = Math.max(0, scoreRound2(t)); });
+  return { marks: scoreSorted(list) };
+}
+function scoreNudgeMark(marks, id, dt) {
+  var k = null;
+  marks.forEach(function (q) { if (q.id === id) k = q; });
+  return k ? scoreSetMarkTime(marks, id, k.t + dt) : { marks: scoreSorted(marks) };
+}
+function scoreDeleteMark(marks, id) { return scoreCopyMarks(marks).filter(function (k) { return k.id !== id; }); }
+/** Paused drag: a line's first mark moves its whole line vertically (the first mark also takes the new x); any other mark moves horizontally only. */
+function scoreMoveMark(marks, id, x, y, ptW, ptH) {
+  var list = scoreCopyMarks(marks), d = scoreDeriveLines(list), idx = -1;
+  list.forEach(function (k, i) { if (k.id === id) idx = i; });
+  if (idx < 0) return list;
+  var nx = scoreRound2(scoreClamp(x, 0, ptW)), ny = scoreRound2(scoreClamp(y, 0, ptH));
+  var ln = d.lines[d.lineOf[idx]];
+  list[idx].x = nx;
+  if (ln.first === idx) ln.members.forEach(function (i) { list[i].y = ny; });
+  return list;
+}
+
+var SCORE_MARKS_PREFIX = 'pmix-score-marks-v1:';
+function scoreMarksKey(fileId) { return SCORE_MARKS_PREFIX + fileId; }
+function scoreSerializeMarks(marks) {
+  return JSON.stringify({
+    v: 1,
+    marks: scoreSorted(marks).map(function (k) { return { t: scoreRound2(k.t), page: k.page, x: scoreRound2(k.x), y: scoreRound2(k.y) }; })
+  });
+}
+/** Stored value -> sorted marks with runtime ids; anything unreadable is an empty list. */
+function scoreParseMarks(s) {
+  var o;
+  try { o = JSON.parse(s); } catch (e) { return []; }
+  if (!o || o.v !== 1 || !Array.isArray(o.marks)) return [];
+  var ok = o.marks.filter(function (k) {
+    return k && typeof k.t === 'number' && isFinite(k.t) && k.t >= 0 && typeof k.page === 'number' && k.page >= 1 && k.page % 1 === 0 &&
+      typeof k.x === 'number' && isFinite(k.x) && typeof k.y === 'number' && isFinite(k.y);
+  });
+  return scoreSorted(scoreWithIds(ok));
+}
+function scoreUndoPush(stack, marks) { return stack.concat([scoreCopyMarks(marks)]).slice(-SCORE_UNDO_MAX); }
+function scoreUndoPop(stack) {
+  if (!stack.length) return null;
+  return { marks: scoreCopyMarks(stack[stack.length - 1]), stack: stack.slice(0, -1) };
+}
+function scoreClearPrompt(n) { return 'Clear all ' + n + (n === 1 ? ' mark' : ' marks') + '? You can undo this.'; }
+
 /** Cache-first text asset (PDF.js is cached beside the audio so the score opens offline). Returns a URL to import. */
 async function scoreAssetUrl_(url) {
   try {
@@ -7947,13 +8165,18 @@ function initScorePanel_() {
   var S = {
     lib: null, libPromise: null, wsrc: null, build: '', workerBroken: false, workerNote: '',
     pdf: null, fileKey: '', pages: [], zoom: 1, renderGen: 0, loadGen: 0, pumping: false,
-    pdfs: [], opener: null, pinch: null, raf: 0
+    pdfs: [], opener: null, pinch: null, raf: 0,
+    fileId: '', marks: [], undo: [], selId: null, edit: false, followOn: true, reaction: 0.25,
+    snapPending: true, easeFrom: null, easeStart: -1, lastN: null, last: null, loop: 0, touching: false, gesture: null,
+    ptrs: 0, curN: -1, playing: false, written: null
   };
+  var REACT_KEY = 'pmix.' + pmixTarget() + '.v1.scoreReaction';
+  var toolsEl = $('score-tools'), selbar = $('score-selbar');
 
   function store(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function recall(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function isOpen() { return !panel.classList.contains('hidden'); }
-  function setState(s) { panel.setAttribute('data-state', s); }
+  function setState(s) { panel.setAttribute('data-state', s); toolsEl.hidden = s !== 'ready'; if (s !== 'ready') selbar.hidden = true; }
   function num(x) { return String(+Number(x).toFixed(2)); }
 
   // ---- PDF.js loader: lazy, modern/legacy build, worker with a main-thread fallback (AC 2, 13) ----
@@ -8143,6 +8366,7 @@ function initScorePanel_() {
     S.pages.forEach(function (p) { p.el.classList.remove('score-fail'); release(p); });
     layout();
     publish();
+    S.snapPending = true; // the geometry changed: the view re-snaps to the mark
     pump();
   }
   function setZoom(z, anchor) {
@@ -8210,6 +8434,7 @@ function initScorePanel_() {
     if (S.pdf && S.fileKey === fileKey(file)) { // already open: no fetch, no parse
       setState('ready'); showProgress(false); scroller.hidden = false;
       S.zoom = scoreParseZoom(recall(ZOOM_KEY)); layout(); refresh(); updatePageLabel();
+      loadMarks(file.id);
       return;
     }
     setState('loading');
@@ -8242,6 +8467,7 @@ function initScorePanel_() {
     scroller.scrollTop = 0; scroller.scrollLeft = 0;
     refresh();
     updatePageLabel();
+    loadMarks(file.id);
   }
   async function adopt(pdf, file) {
     await dropDoc();
@@ -8276,6 +8502,7 @@ function initScorePanel_() {
     if (!sameSet) { S.loadGen++; dropDoc(); }
     panel.classList.remove('hidden');
     page_.classList.add('score-open');
+    startLoop();
     buildChoices();
     loadLib().catch(function (e) { console.warn('[score] pdf.js load failed: ' + (e && e.message ? e.message : e)); });
     if (S.pdfs.length === 1) {
@@ -8291,6 +8518,7 @@ function initScorePanel_() {
     S.loadGen++; // a load in flight is abandoned
     panel.classList.add('hidden');
     page_.classList.remove('score-open');
+    stopLoop();
     S.pages.forEach(release); // free the canvases; the parsed document stays for a quick reopen
     publish();
     if (S.opener && typeof S.opener.focus === 'function') S.opener.focus();
@@ -8305,11 +8533,274 @@ function initScorePanel_() {
     dropDoc();
   }
 
+
+  // ---- Follow (bd atc-ore.4) and Edit (bd atc-ore.5): DOM glue over the pure helpers ----
+  function rate() { try { return AudioEngine.getPlaybackRate(); } catch (e) { return 1; } }
+  function clockNow() { try { return AudioEngine.getCurrentTime(); } catch (e) { return 0; } }
+  function isPlayingNow() { try { return AudioEngine.getPlaybackState().isPlaying; } catch (e) { return false; } }
+  function trackNow() { return scoreRound2(scoreTrackTime(clockNow(), rate())); }
+  /** Move the playhead to track time t (kept playing or paused as it was) and snap the view. */
+  function jumpTo(t) {
+    try { AudioEngine.seek(scoreClockTime(Math.max(0, t), rate())); } catch (e) { /* no audio loaded */ }
+    S.snapPending = true; S.easeStart = -1;
+  }
+  function selMark() { for (var i = 0; i < S.marks.length; i++) if (S.marks[i].id === S.selId) return S.marks[i]; return null; }
+  function fmtT(t) { var m = Math.floor(t / 60), sec = t - m * 60; return m + ':' + (sec < 10 ? '0' : '') + sec.toFixed(1); }
+  function pageIndexOf(page) { return S.pages[page - 1]; }
+
+  function loadMarks(fileId) {
+    S.fileId = fileId;
+    S.marks = scoreParseMarks(recall(scoreMarksKey(fileId)));
+    S.undo = []; S.selId = null; S.edit = false; S.followOn = true; S.snapPending = true; S.easeStart = -1; S.lastN = null; S.curN = -1;
+    renderMarks(); syncUi();
+  }
+  function saveMarks() { store(scoreMarksKey(S.fileId), scoreSerializeMarks(S.marks)); }
+  /** Replace the mark list as one undoable step (the previous list goes on the undo stack). */
+  function commit(next, keepSel) {
+    S.undo = scoreUndoPush(S.undo, S.marks);
+    S.marks = next;
+    if (!keepSel && !selMark()) S.selId = null;
+    if (!selMark()) S.selId = null;
+    saveMarks(); renderMarks(); syncUi();
+  }
+  function renderMarks() {
+    Array.prototype.forEach.call(strip.querySelectorAll('.score-mark'), function (e) { e.remove(); });
+    S.marks.forEach(function (k, i) {
+      var pg = pageIndexOf(k.page);
+      if (!pg) return;
+      var el = document.createElement('div');
+      el.className = 'score-mark';
+      el.setAttribute('data-testid', 'score-mark');
+      el.setAttribute('data-mark-id', String(k.id));
+      var dot = document.createElement('span'); dot.className = 'dot'; dot.textContent = String(i + 1);
+      var mt = document.createElement('span'); mt.className = 'mt'; mt.textContent = fmtT(k.t);
+      el.append(dot, mt);
+      pg.el.appendChild(el);
+    });
+    positionMarks(); paintMarks();
+  }
+  function positionMarks() {
+    Array.prototype.forEach.call(strip.querySelectorAll('.score-mark'), function (el) {
+      var id = Number(el.getAttribute('data-mark-id')), k = null;
+      S.marks.forEach(function (q) { if (q.id === id) k = q; });
+      var pg = k && pageIndexOf(k.page);
+      if (!pg) return;
+      el.style.left = (k.x / pg.w * 100) + '%';
+      el.style.top = (k.y / pg.h * 100) + '%';
+      if (el.classList.contains('draggable')) { el.style.width = (72 / pg.w * 100) + '%'; el.style.height = (72 / pg.h * 100) + '%'; }
+    });
+  }
+  function paintMarks() {
+    var canDrag = S.edit && !S.playing;
+    Array.prototype.forEach.call(strip.querySelectorAll('.score-mark'), function (el) {
+      var id = Number(el.getAttribute('data-mark-id'));
+      var idx = -1;
+      S.marks.forEach(function (q, i) { if (q.id === id) idx = i; });
+      el.setAttribute('data-n', String(idx + 1));
+      el.setAttribute('data-current', String(idx === S.curN));
+      el.setAttribute('data-selected', String(S.edit && id === S.selId));
+      var drag = canDrag && id === S.selId;
+      el.classList.toggle('draggable', drag);
+      if (!drag) { el.style.width = ''; el.style.height = ''; }
+      var dot = el.firstChild; if (dot) dot.textContent = String(idx + 1);
+      if (el.lastChild) el.lastChild.textContent = idx >= 0 ? fmtT(S.marks[idx].t) : '';
+    });
+    positionMarks();
+  }
+  function syncUi() {
+    var has = S.marks.length > 0;
+    panel.setAttribute('data-mark-count', String(S.marks.length));
+    panel.setAttribute('data-edit', S.edit ? 'on' : 'off');
+    panel.setAttribute('data-follow', has ? (S.followOn ? 'on' : 'paused') : 'off');
+    panel.setAttribute('data-current-mark', String(S.curN + 1));
+    $('score-edit-toggle').setAttribute('aria-pressed', String(S.edit));
+    $('score-edit-toggle').textContent = S.edit ? 'Done' : 'Edit';
+    $('score-edit-chip').hidden = !S.edit;
+    $('score-undo').hidden = !S.edit; $('score-undo').disabled = !S.undo.length;
+    $('score-clear').hidden = !S.edit; $('score-clear').disabled = !has;
+    $('score-react').hidden = !S.edit;
+    $('score-resume-follow').hidden = S.followOn || !has;
+    var m = selMark();
+    selbar.hidden = !(S.edit && m && !toolsEl.hidden);
+    if (m) $('score-sel-label').textContent = 'Mark ' + (S.marks.indexOf(m) + 1) + ' at ' + fmtT(m.t);
+    paintMarks();
+  }
+  function pauseFollow() {
+    if (!S.followOn) return;
+    S.followOn = false; S.easeStart = -1;
+    syncUi();
+  }
+  function resumeFollow() {
+    S.followOn = true;
+    S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop };
+    S.easeStart = performance.now();
+    syncUi();
+  }
+  $('score-resume-follow').addEventListener('click', resumeFollow);
+
+  // Frame loop: audio clock -> target view -> scroll position of the already-drawn pages (AC 10).
+  function pageGeo() {
+    return {
+      W: scroller.clientWidth, H: scroller.clientHeight,
+      maxX: Math.max(0, scroller.scrollWidth - scroller.clientWidth), maxY: Math.max(0, scroller.scrollHeight - scroller.clientHeight),
+      pages: S.pages.map(function (p) { return { left: p.el.offsetLeft, top: p.el.offsetTop, w: p.cssW, h: p.cssH, ptW: p.w, ptH: p.h }; })
+    };
+  }
+  function setView(x, y) {
+    if (!S.written || Math.abs(S.written.x - x) > 0.01) scroller.scrollLeft = x;
+    if (!S.written || Math.abs(S.written.y - y) > 0.01) scroller.scrollTop = y;
+    S.written = { x: x, y: y };
+  }
+  function tick(now) {
+    S.loop = requestAnimationFrame(tick);
+    if (!isOpen() || !S.pages.length || scroller.hidden) return;
+    var playing = isPlayingNow(), cur = { clock: clockNow(), ts: now, playing: playing };
+    if (S.last && scoreDetectSeek(S.last, cur)) S.snapPending = true;
+    S.last = cur;
+    if (playing !== S.playing) { S.playing = playing; paintMarks(); }
+    if (!S.marks.length) { if (S.curN !== -1) { S.curN = -1; syncUi(); } return; }
+    var geo = pageGeo(), t = scoreTrackTime(cur.clock, rate());
+    var tv = scoreTargetView(S.marks, t, geo, { x: scroller.scrollLeft, y: scroller.scrollTop });
+    if (tv.n !== S.curN) { S.curN = tv.n; syncUi(); }
+    if (!S.followOn || S.touching) return;
+    if (S.snapPending) { setView(tv.x, tv.y); S.easeStart = -1; }
+    else {
+      if (S.lastN !== null && tv.n !== S.lastN && playing) { S.easeFrom = S.written || { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = now; }
+      if (S.easeStart >= 0) {
+        var k = scoreEase(now - S.easeStart);
+        setView(scoreLerp(S.easeFrom.x, tv.x, k), scoreLerp(S.easeFrom.y, tv.y, k));
+        if (now - S.easeStart >= SCORE_EASE_MS) S.easeStart = -1;
+      } else setView(tv.x, tv.y);
+    }
+    S.lastN = tv.n; S.snapPending = false;
+  }
+  function startLoop() { if (!S.loop) S.loop = requestAnimationFrame(tick); }
+  function stopLoop() { if (S.loop) cancelAnimationFrame(S.loop); S.loop = 0; }
+
+  // Taps, drags (one pointer; two pointers are a pinch and never a tap).
+  function pageAtPoint(cx, cy) {
+    for (var i = 0; i < S.pages.length; i++) {
+      var p = S.pages[i], r = p.el.getBoundingClientRect();
+      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+        return { page: i + 1, x: (cx - r.left) / r.width * p.w, y: (cy - r.top) / r.height * p.h, ptW: p.w, ptH: p.h };
+      }
+    }
+    return null;
+  }
+  function handleTap(cx, cy) {
+    if (!S.marks.length && !S.edit) return;
+    var hit = pageAtPoint(cx, cy);
+    if (!hit) return;
+    if (!S.edit) {
+      var mk = scoreNearestPreceding(S.marks, hit.page, hit.x, hit.y);
+      if (mk) jumpTo(mk.t);
+      return;
+    }
+    var onMark = scoreHitMark(S.marks, hit.page, hit.x, hit.y);
+    if (onMark) { S.selId = onMark.id; syncUi(); jumpTo(scoreJumpBefore(onMark.t)); return; }
+    var add = scoreAddMark(S.marks, { t: scoreAddTime(trackNow(), isPlayingNow(), S.reaction), page: hit.page, x: scoreRound2(hit.x), y: scoreRound2(hit.y) });
+    S.selId = add.mark.id;
+    commit(add.marks, true);
+  }
+  scroller.addEventListener('pointerdown', function (e) {
+    S.ptrs++;
+    S.touching = true;
+    if (S.ptrs > 1) { S.gesture = null; return; }
+    var g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0, drag: null };
+    var dotEl = e.target.closest ? e.target.closest('.score-mark.draggable') : null;
+    if (dotEl) {
+      var k = selMark(), hit = pageAtPoint(e.clientX, e.clientY);
+      if (k && hit && hit.page === k.page) g.drag = { offX: k.x - hit.x, offY: k.y - hit.y, started: false, page: k.page };
+    }
+    S.gesture = g;
+  });
+  scroller.addEventListener('pointermove', function (e) {
+    var g = S.gesture;
+    if (!g || g.id !== e.pointerId) return;
+    g.moved = Math.max(g.moved, Math.hypot(e.clientX - g.x0, e.clientY - g.y0));
+    if (!g.drag || g.moved < 10) return;
+    var hit = pageAtPoint(e.clientX, e.clientY);
+    var pg = pageIndexOf(g.drag.page), r = pg.el.getBoundingClientRect();
+    var px = (e.clientX - r.left) / r.width * pg.w, py = (e.clientY - r.top) / r.height * pg.h;
+    void hit;
+    if (!g.drag.started) {
+      g.drag.started = true;
+      S.undo = scoreUndoPush(S.undo, S.marks);
+      try { scroller.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
+    }
+    S.marks = scoreMoveMark(S.marks, S.selId, px + g.drag.offX, py + g.drag.offY, pg.w, pg.h);
+    positionMarks();
+  });
+  function endPointer(e, cancelled) {
+    S.ptrs = Math.max(0, S.ptrs - 1);
+    if (!S.ptrs) S.touching = false;
+    var g = S.gesture;
+    if (!g || g.id !== e.pointerId) return;
+    S.gesture = null;
+    if (cancelled) { if (g.drag && g.drag.started) { saveMarks(); renderMarks(); syncUi(); } else pauseFollow(); return; } // the browser took the gesture as a pan
+    if (g.drag && g.drag.started) { saveMarks(); renderMarks(); syncUi(); return; }
+    if (scoreIsTap({ dtMs: performance.now() - g.t0, movedPx: g.moved, pointers: 1 })) handleTap(e.clientX, e.clientY);
+  }
+  scroller.addEventListener('pointerup', function (e) { endPointer(e, false); });
+  scroller.addEventListener('pointercancel', function (e) { endPointer(e, true); });
+  scroller.addEventListener('wheel', function () { pauseFollow(); }, { passive: true });
+
+  // Edit chrome.
+  $('score-edit-toggle').addEventListener('click', function () {
+    S.edit = !S.edit;
+    if (!S.edit) S.selId = null;
+    syncUi();
+  });
+  $('score-undo').addEventListener('click', function () {
+    var r = scoreUndoPop(S.undo);
+    if (!r) return;
+    S.undo = r.stack; S.marks = r.marks;
+    if (!selMark()) S.selId = null;
+    saveMarks(); renderMarks(); syncUi();
+  });
+  $('score-clear').addEventListener('click', function () {
+    if (!S.marks.length) return;
+    if (!window.confirm(scoreClearPrompt(S.marks.length))) return;
+    S.selId = null;
+    commit([], true);
+  });
+  function adjust(dt) {
+    var m = selMark();
+    if (!m) return;
+    var next = scoreNudgeMark(S.marks, m.id, dt).marks, nm = null;
+    next.forEach(function (k) { if (k.id === m.id) nm = k; });
+    commit(next, true);
+    if (nm) jumpTo(scoreJumpBefore(nm.t));
+  }
+  $('score-nudge-minus').addEventListener('click', function () { adjust(-0.1); });
+  $('score-nudge-plus').addEventListener('click', function () { adjust(0.1); });
+  $('score-set-now').addEventListener('click', function () {
+    var m = selMark();
+    if (m) commit(scoreSetMarkTime(S.marks, m.id, trackNow()).marks, true);
+  });
+  $('score-delete').addEventListener('click', function () {
+    var m = selMark();
+    if (!m) return;
+    var id = m.id;
+    S.selId = null;
+    commit(scoreDeleteMark(S.marks, id), true);
+  });
+  var reactEl = $('score-reaction');
+  S.reaction = scoreClampReaction(recall(REACT_KEY));
+  reactEl.value = String(S.reaction);
+  $('score-reaction-out').textContent = S.reaction.toFixed(2) + ' s';
+  reactEl.addEventListener('input', function () {
+    S.reaction = scoreClampReaction(reactEl.value);
+    $('score-reaction-out').textContent = S.reaction.toFixed(2) + ' s';
+    store(REACT_KEY, String(S.reaction));
+  });
+
   // ---- controls ----
   zoomIn.addEventListener('click', function () { setZoom(scoreZoomStep(S.zoom, 1)); });
   zoomOut.addEventListener('click', function () { setZoom(scoreZoomStep(S.zoom, -1)); });
   function pageBy(dir) {
     if (!S.pages.length) return;
+    pauseFollow();
     var g = geometry();
     scroller.scrollTo({ top: scorePageTarget(g.tops, g.heights, scroller.scrollTop, dir), behavior: 'auto' });
   }
@@ -8334,6 +8825,7 @@ function initScorePanel_() {
     var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left;
     var my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top;
     S.pinch = { d0: dist2(e.touches), z0: S.zoom, z: S.zoom, mx: mx, my: my };
+    pauseFollow();
     strip.style.transformOrigin = (scroller.scrollLeft + mx) + 'px ' + (scroller.scrollTop + my) + 'px';
     panel.setAttribute('data-pinching', 'true');
     e.preventDefault();
@@ -8359,7 +8851,10 @@ function initScorePanel_() {
   scorePanel_ = { open: open, close: close, setFolderPdfs: setFolderPdfs, isOpen: isOpen };
 }
 
-if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget };
+if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget,
+  scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
+  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreClampReaction, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
+  scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreUndoPush, scoreUndoPop, scoreClearPrompt };
 </script>
 
 <script>
