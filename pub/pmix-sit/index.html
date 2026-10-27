@@ -1926,10 +1926,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.1";
+var STATIC_BUILD_VERSION_ = "1.7.1.2";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-27T14:34:42.794Z";
+var STATIC_BUILD_DATE_ = "2026-10-27T15:59:37.542Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8047,17 +8047,40 @@ function initScorePanel_() {
     panel.setAttribute('data-current-page', String(cur));
     pageLabel.textContent = (cur + 1) + ' / ' + S.pages.length;
   }
+  /** AC 15: one scoreRender error per page per open (p.reported lives on the page object, rebuilt by adopt). */
+  function reportFail(p, stage, msg, plan, scaleTry) {
+    if (p.reported) return;
+    p.reported = true;
+    try {
+      var tel = getClientTelemetry_();
+      tel.captureError('scoreRender', new Error(String(msg)), {
+        stage: stage, page: p.n, pageW: Math.round(p.w), pageH: Math.round(p.h),
+        canvasW: plan ? plan.w : 0, canvasH: plan ? plan.h : 0, scaleTry: scaleTry,
+        dpr: window.devicePixelRatio || 1, zoom: S.zoom, worker: panel.getAttribute('data-worker') || '',
+        pdfjs: PDFJS_VER_ + ' ' + S.build, ua: String(navigator.userAgent || '').slice(0, 200)
+      });
+      // The error channel's own timer is 30 s+ and a flush already in flight skips a second one: send soon, batched.
+      if (!S.flushTimer) S.flushTimer = setTimeout(function () { S.flushTimer = 0; try { tel.flush(); } catch (e2) { /* ignore */ } }, 400);
+    } catch (e) { /* telemetry never breaks the viewer */ }
+  }
   async function renderPage(p, gen) {
     var tries = [1, 0.7, 0.5];
+    var probeMsg = '', lastPlan = null;
     for (var t = 0; t < tries.length; t++) {
       var plan = scorePlanCanvas(p.w, p.h, p.cssW * tries[t], window.devicePixelRatio || 1);
+      lastPlan = plan;
       var c = document.createElement('canvas');
       c.width = plan.w; c.height = plan.h;
       var ctx = c.getContext('2d');
       var ok = !!ctx;
+      probeMsg = 'ctx null';
       if (ok) {
         ctx.fillStyle = '#ff0000'; ctx.fillRect(plan.w - 1, plan.h - 1, 1, 1);
-        try { var d = ctx.getImageData(plan.w - 1, plan.h - 1, 1, 1).data; ok = d[0] === 255 && d[3] === 255; } catch (e) { ok = false; }
+        try {
+          var d = ctx.getImageData(plan.w - 1, plan.h - 1, 1, 1).data;
+          ok = d[0] === 255 && d[3] === 255;
+          if (!ok) probeMsg = 'pixel read back as ' + d[0] + ',' + d[1] + ',' + d[2] + ',' + d[3];
+        } catch (e) { ok = false; probeMsg = 'getImageData threw ' + (e && e.message ? e.message : e); }
       }
       if (!ok) { c.width = 0; c.height = 0; continue; }
       ctx.clearRect(0, 0, plan.w, plan.h);
@@ -8073,12 +8096,14 @@ function initScorePanel_() {
       } catch (e) {
         if (e && e.name === 'RenderingCancelledException') return;
         console.warn('[score] page ' + p.n + ' render failed: ' + (e && e.message ? e.message : e));
+        reportFail(p, 'render', e && e.message ? e.message : e, plan, tries[t]);
         release(p); p.el.classList.add('score-fail'); publish();
         return;
       }
       p.done = true;
       return;
     }
+    reportFail(p, 'probe', probeMsg, lastPlan, tries[tries.length - 1]);
     p.el.classList.add('score-fail');
   }
   async function pump() {
