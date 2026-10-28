@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- Copyright (c) 2026 Stuart Donaldson. Licensed under MIT License. -->
+<!-- Copyright (c) 2026 Stuart Donaldson. All rights reserved.
+     Proprietary and confidential; see LICENSE. -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -1991,8 +1992,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
   <!-- ============================================================ -->
 <script>
 /**
- * Copyright (c) 2026 Stuart Donaldson. Licensed under the MIT License.
- * See LICENSE file for details.
+ * Copyright (c) 2026 Stuart Donaldson. All rights reserved.
+ * Proprietary and confidential; see LICENSE.
  */
 
 /**
@@ -2001,10 +2002,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.18";
+var STATIC_BUILD_VERSION_ = "1.7.1.19";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-28T15:48:05.957Z";
+var STATIC_BUILD_DATE_ = "2026-10-28T16:02:39.108Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -3316,7 +3317,8 @@ document.addEventListener('DOMContentLoaded', function () {
  *
  * Parameters tuned to SoundTouch defaults (82 / 28 / 12 ms).
  *
- * Copyright (c) 2026 Stuart Donaldson. Licensed under MIT License.
+ * Copyright (c) 2026 Stuart Donaldson. All rights reserved.
+ * Proprietary and confidential; see LICENSE.
  */
 
 /**
@@ -3551,7 +3553,8 @@ if (typeof module !== 'undefined') {
 /**
  * Audio Engine - Web Audio API Mixer
  *
- * Copyright (c) 2026 Stuart Donaldson. Licensed under MIT License.
+ * Copyright (c) 2026 Stuart Donaldson. All rights reserved.
+ * Proprietary and confidential; see LICENSE.
  *
  * This module handles all audio processing including:
  * - Loading and decoding audio files
@@ -5012,8 +5015,8 @@ const AudioEngine = (() => {
 </script>
 <script>
 /**
- * Copyright (c) 2026 Stuart Donaldson. Licensed under the MIT License.
- * See LICENSE file for details.
+ * Copyright (c) 2026 Stuart Donaldson. All rights reserved.
+ * Proprietary and confidential; see LICENSE.
  */
 
 /**
@@ -5211,8 +5214,8 @@ const WavEncoder = (() => {
 </script>
 <script>
 /**
- * Copyright (c) 2026 Stuart Donaldson. Licensed under the MIT License.
- * See LICENSE file for details.
+ * Copyright (c) 2026 Stuart Donaldson. All rights reserved.
+ * Proprietary and confidential; see LICENSE.
  */
 
 /**
@@ -5610,7 +5613,8 @@ if (typeof module !== 'undefined') {
  * UI Logic - v2.0 Navigation-First Redesign
  * Selection page → Playback page with responsive layout
  *
- * Copyright (c) 2026 Stuart Donaldson. Licensed under MIT License.
+ * Copyright (c) 2026 Stuart Donaldson. All rights reserved.
+ * Proprietary and confidential; see LICENSE.
  */
 
 const UI = (() => {
@@ -7344,6 +7348,25 @@ const UI = (() => {
     </div>
   </div>
 
+ <div id="score-intro" data-testid="score-intro" class="folder-picker hidden" role="dialog" aria-modal="true" aria-labelledby="score-intro-title">
+    <div class="picker-overlay" id="score-intro-overlay"></div>
+    <div class="picker-dialog">
+      <div class="picker-header"><h3 id="score-intro-title">Sheet music for this song</h3></div>
+      <div class="picker-body">
+        <p>This folder has a score that moves with the music. To use it:</p>
+        <ul>
+          <li>Tap the music-note button at the top to open the score.</li>
+          <li>Press Play and the score follows the music.</li>
+          <li>Swipe up or down to adjust where it sits.</li>
+          <li>Use the previous and next mark buttons to move.</li>
+          <li>Pause to see all the controls.</li>
+          <li>Pinch, or use the zoom buttons, to resize.</li>
+        </ul>
+        <button type="button" class="btn btn-primary" id="score-intro-ok" data-testid="score-intro-ok">Got it</button>
+      </div>
+    </div>
+  </div>
+
   <div id="media-modal" data-testid="media-modal" class="help-modal hidden" role="dialog" aria-modal="true" aria-labelledby="media-title">
     <div class="media-dialog">
       <div class="media-bar">
@@ -8407,6 +8430,14 @@ function scoreMatchPdf(allPdfs, shared) {
   if (pdfs.length === 1) return { pdf: pdfs[0], rule: 'only' };
   return { pdf: null, rule: 'none' };
 }
+/** atc-ore.22 AC 1: a score is available when the shared map has at least one mark and matches a visible folder PDF (atc-ore.8 rules). */
+function scoreAvailable(pdfs, shared) {
+  return !!(shared && Array.isArray(shared.marks) && shared.marks.length > 0 && scoreMatchPdf(pdfs, shared).pdf);
+}
+/** atc-ore.22 AC 4, 5: is the first-time how-to due? Needs a score, not yet seen on this device or shown this page load, and the score panel closed. */
+function scoreIntroDue(c) {
+  return !!(c && c.available && !c.seen && !c.shown && !c.panelOpen);
+}
 /** AC 7, 9: the folder PDF the shared map opens, or null (the caller shows the chooser). */
 function scorePickPdf(pdfs, shared) { return scoreMatchPdf(pdfs, shared).pdf; }
 /** AC 9-11: do the shared marks apply to the open PDF? rule = how they matched; ask = (d) with no answer yet (an editor is asked).
@@ -8554,6 +8585,7 @@ function initScorePanel_() {
   };
   var LEAD_KEY = 'pmix.' + pmixTarget() + '.v1.scoreLead';
   var REACT_KEY = 'pmix.' + pmixTarget() + '.v1.scoreReaction';
+  var INTRO_KEY = 'pmix.' + pmixTarget() + '.v1.scoreIntroSeen';
   var toolsEl = $('score-tools'), selbar = $('score-selbar');
 
   function store(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
@@ -8922,7 +8954,70 @@ function initScorePanel_() {
     panel.style.minHeight = '0';
     return changed;
   }
+  // ---- Discoverability (bd atc-ore.22): music-note PDF button and the first-time how-to ----
+  var NOTE_ICON = '<svg viewBox="0 0 24 24" width="1.15em" height="1.15em" fill="currentColor" aria-hidden="true" focusable="false"><path d="M6 2h8l5 5v6.6a3.2 3.2 0 0 0-1.5-.4c-1.4 0-2.5.9-2.5 2.1s1.1 2.1 2.5 2.1c.5 0 1-.1 1.4-.4V22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5L13 3.5zM15 11v6.1a3.2 3.2 0 0 0-1.5-.4c-1.4 0-2.5.9-2.5 2.1s1.1 2.1 2.5 2.1 2.5-.9 2.5-2.1V13h2v-2h-3z" fill-rule="evenodd"/></svg>';
+  var introEl = $('score-intro'), introOk = $('score-intro-ok');
+  var introReturn = null;
+  var avail = { folder: '', fetched: '', ok: false };
+  function playbackShown() { return !page_.classList.contains('hidden'); }
+  function markIntroSeen() { S.introShown = true; store(INTRO_KEY, '1'); }
+  function hideIntro() {
+    if (!introEl || introEl.classList.contains('hidden')) return;
+    introEl.classList.add('hidden');
+    markIntroSeen();
+    if (introReturn && typeof introReturn.focus === 'function') { try { introReturn.focus(); } catch (e) { /* ignore */ } }
+    introReturn = null;
+  }
+  function maybeShowIntro() {
+    if (!introEl || !playbackShown() || !introEl.classList.contains('hidden')) return;
+    if (!scoreIntroDue({ available: avail.ok, seen: recall(INTRO_KEY) === '1', shown: !!S.introShown, panelOpen: isOpen() })) return;
+    S.introShown = true; // at most once per page load even when storage is unavailable
+    introReturn = document.activeElement;
+    introEl.classList.remove('hidden');
+    if (introOk) introOk.focus();
+  }
+  function paintScoreButton() {
+    var b = document.querySelector('[data-testid="pdf-btn-playback"]');
+    if (!b) return;
+    if (avail.ok) {
+      if (b.getAttribute('data-score') !== 'true') { b.setAttribute('data-score', 'true'); b.innerHTML = NOTE_ICON; }
+      b.title = 'Open the score (follows playback)';
+      b.setAttribute('aria-label', 'Open the score (follows playback)');
+    } else if (b.getAttribute('data-score') === 'true') {
+      b.removeAttribute('data-score'); b.textContent = b.getAttribute('data-plain') || '';
+    }
+  }
+  /** atc-ore.22 AC 1: learn whether this folder has a score (device copy first, then getScore in the background). Called after every media render. */
+  function checkScore(pdfs, folderId) {
+    var fid = folderId || '';
+    var btn = document.querySelector('[data-testid="pdf-btn-playback"]');
+    if (btn && btn.getAttribute('data-score') !== 'true' && !btn.getAttribute('data-plain')) btn.setAttribute('data-plain', btn.textContent);
+    var list = scoreVisiblePdfs(pdfs);
+    if (avail.folder !== fid) { avail.folder = fid; avail.ok = false; }
+    var sc = fid ? scoreSharedParse(recall(scoreSharedKey(fid))) : null;
+    avail.ok = scoreAvailable(list, sc);
+    paintScoreButton(); maybeShowIntro();
+    if (!fid || !list.length || avail.fetched === fid || !isAllowedFolder_(fid)) return;
+    avail.fetched = fid;
+    callWithTimeout_(function () { return callApi('getScore', { folderId: fid }); }, 8000, function () { return new Error('getScore timed out'); }).then(function (r) {
+      var sc2 = r === null ? null : scoreSharedParse(r);
+      if (r === null) { try { window.localStorage.removeItem(scoreSharedKey(fid)); } catch (e) { /* ignore */ } }
+      else if (sc2) store(scoreSharedKey(fid), JSON.stringify(sc2));
+      else sc2 = sc;
+      if (avail.folder !== fid) return;
+      avail.ok = scoreAvailable(list, sc2);
+      paintScoreButton(); maybeShowIntro();
+    }, function () { /* failure: the device copy decided above; nothing more is shown */ });
+  }
+  if (introOk) introOk.addEventListener('click', hideIntro);
+  if (introEl) {
+    $('score-intro-overlay').addEventListener('click', hideIntro);
+    introEl.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideIntro(); else if (e.key === 'Tab') { e.preventDefault(); if (introOk) introOk.focus(); } });
+  }
+  try { new MutationObserver(maybeShowIntro).observe(page_, { attributes: true, attributeFilter: ['class'] }); } catch (e) { /* no observer: the pop-up waits for the next check */ }
+
   function open(pdfs, btn) {
+    markIntroSeen(); // the score panel has been opened: the how-to is not needed (atc-ore.22 AC 4)
     S.pdfs = scoreVisiblePdfs(pdfs);
     S.opener = btn || null;
     var sameSet = S.fileKeys === S.pdfs.map(fileKey).join(',');
@@ -9260,6 +9355,7 @@ function initScorePanel_() {
     S.last = cur;
     if (playing !== S.playing) {
       S.playing = playing; paintMarks();
+      if (playing) S.offsetMode = false; // atc-ore.16 AC 17: starting playback turns offset mode off
       if (playMode() && !S.followOn) resumeFollow(); // starting to play puts Follow back (atc-ore.17 AC 2)
       syncUi();
     }
@@ -9601,14 +9697,14 @@ function initScorePanel_() {
   scroller.addEventListener('touchcancel', endPinch);
   panel.setAttribute('data-pinching', 'false');
 
-  scorePanel_ = { open: open, close: close, setFolderPdfs: setFolderPdfs, isOpen: isOpen };
+  scorePanel_ = { open: open, close: close, setFolderPdfs: setFolderPdfs, isOpen: isOpen, checkScore: checkScore };
 }
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
   scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
-  isHiddenName, scoreVisiblePdfs, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreParseOffsets, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreKeepStale };
+  isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreParseOffsets, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreKeepStale };
 </script>
 
 <script>
@@ -10186,6 +10282,7 @@ function renderFolderMedia(videos, pdfsIn, folderId) {
       else mediaViewer_.openChooser(pdfs, b);
     };
   });
+  if (scorePanel_) scorePanel_.checkScore(pdfs, folderId); // atc-ore.22: the playback button's music-note look and the first-time how-to
 }
 
 function initMediaViewer() {
