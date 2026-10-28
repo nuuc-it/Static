@@ -477,6 +477,8 @@ body {
 .score-react input { width: 70px; }
 .score-sliders { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 3px 6px; background: var(--surface-2); }
 .score-sel-label { flex: 1 0 100%; font-size: 12px; font-weight: 600; }
+.score-misplaced { padding: 4px 8px; font-size: 12px; font-weight: 600; background: #fef3c7; color: #78350f; border-bottom: 1px solid #b45309; }
+.score-offsetbar select { max-width: 160px; height: 30px; font-size: 13px; }
 .score-mark { position: absolute; transform: translate(-50%, -50%); pointer-events: none; display: flex; align-items: center; justify-content: center; }
 .score-mark .dot { width: 16px; height: 16px; border-radius: 50%; background: #0e7c86; border: 1px solid #fff; box-sizing: border-box; font-size: 9px; line-height: 1; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; }
 .score-mark[data-current="true"] .dot { background: #e11d48; width: 18px; height: 18px; font-size: 10px; }
@@ -1354,6 +1356,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="score-mark-prev" data-testid="score-mark-prev" class="btn score-tbtn" title="Previous mark" hidden>&#9664; Mark</button>
           <button id="score-mark-next" data-testid="score-mark-next" class="btn score-tbtn" title="Next mark" hidden>Mark &#9654;</button>
           <button id="score-resume-follow" data-testid="score-resume-follow" class="btn score-tbtn score-resume" hidden>Resume follow</button>
+          <button id="score-offset-tool" data-testid="score-offset-tool" class="btn score-tbtn" aria-pressed="false" title="Set where a voice's staff sits below the marks" hidden>Set track offset</button>
         </div>
         <div id="score-selbar" data-testid="score-selbar" class="score-tools score-selbar" hidden>
           <span id="score-sel-label" data-testid="score-sel-label" class="score-sel-label"></span>
@@ -1361,6 +1364,10 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="score-nudge-plus" data-testid="score-nudge-plus" class="btn score-tbtn" title="Mark 0.1 s later">+0.1 s</button>
           <button id="score-set-now" data-testid="score-set-now" class="btn score-tbtn" title="Move the mark to the playhead">Set to now</button>
           <button id="score-delete" data-testid="score-delete" class="btn score-tbtn" title="Delete this mark">Delete</button>
+        </div>
+        <div id="score-offsetbar" data-testid="score-offsetbar" class="score-tools score-selbar score-offsetbar" hidden>
+          <select id="score-offset-track" data-testid="score-offset-track" aria-label="Track whose staff you tap"></select>
+          <span id="score-offset-msg" data-testid="score-offset-msg" class="score-sel-label" style="flex:1 1 auto">Tap where this voice's staff is under a line.</span>
         </div>
         <div id="score-savebar" data-testid="score-savebar" class="score-tools score-selbar" hidden>
           <button id="score-save" data-testid="score-save" class="btn score-tbtn" title="Save these marks to Drive for every singer">Save to Drive</button>
@@ -1378,6 +1385,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
             <output id="score-lead-out" data-testid="score-lead-out">1.00 s</output></label>
         </div>
         </div>
+        <div id="score-misplaced" data-testid="score-misplaced" class="score-misplaced" role="status" hidden></div>
         <div id="score-choices" data-testid="score-choices" class="media-choices" hidden></div>
         <div id="score-progress" data-testid="score-progress" class="score-progress" role="status" hidden>
           <progress aria-label="Loading the PDF"></progress>
@@ -1993,10 +2001,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.13";
+var STATIC_BUILD_VERSION_ = "1.7.1.14";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-28T08:08:19.841Z";
+var STATIC_BUILD_DATE_ = "2026-10-28T14:50:43.560Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -6474,6 +6482,11 @@ const UI = (() => {
   });
 
   /** Score panel PDF bytes (bd atc-ore.3, AC 10): the same persistent cache as the audio, so a PDF opened once opens offline. Fetched only when the panel asks. */
+  /** Score track offsets (bd atc-ore.8): the folder's tracks and the selected ids in order (the first is the focus track). */
+  window.pmixScoreTracks_ = () => ({
+    tracks: state.folderFiles.map((f) => ({ id: f.id, name: trackLabelOf_(f.id) || f.name })),
+    selected: [...state.selectedFileIds]
+  });
   window.pmixFetchPdf_ = (f) => audioCache.fetchTrackBytes({ id: f.id, name: f.name, mimeType: f.mimeType || 'application/pdf', modified: f.modified });
 
   function updatePlaySelectedButton() {
@@ -8136,6 +8149,44 @@ function scoreShowResume(followOn, hasMarks, edit) { return !!edit && !followOn 
 function scoreApplyOffset(view, offY, geo) { return { x: view.x, y: scoreClamp(view.y + (Number(offY) || 0), 0, geo.maxY) }; }
 /** The offset that puts the view at scrollY when Follow's own target is targetY. */
 function scoreOffsetFor(scrollY, targetY) { return scrollY - targetY; }
+// ---- Track offsets (bd atc-ore.8): offsets[trackFileId] = { name, from: [{ t, dy }] }, dy a fraction of the page height ----
+/** AC 2: the track's dy in force at track time t (the last entry at or before t), 0 when none. */
+function scoreOffsetDyAt(offsets, trackId, t) {
+  var o = offsets && trackId ? offsets[trackId] : null, dy = 0, at = -Infinity;
+  if (!o || !Array.isArray(o.from)) return 0;
+  o.from.forEach(function (f) { if (f.t <= t + 0.0005 && f.t >= at) { at = f.t; dy = Number(f.dy) || 0; } });
+  return dy;
+}
+/** AC 1, 4: a new offsets map with the track's entry set at time t (same time replaces); other tracks, known or not, untouched. */
+function scoreSetTrackOffset(offsets, trackId, name, t, dy) {
+  var next = {};
+  Object.keys(offsets || {}).forEach(function (id) { next[id] = offsets[id]; });
+  var from = ((next[trackId] && next[trackId].from) || []).filter(function (f) { return Math.abs(f.t - t) >= 0.005; });
+  from.push({ t: t, dy: dy });
+  from.sort(function (a, b) { return a.t - b.t; });
+  next[trackId] = { name: name, from: from };
+  return next;
+}
+/** AC 1: a tap in Set track offset mode -> { t, dy } or null. The line is the one at or above the tap; t is its line start's
+ *  time and dy the tap's distance below that line start as a page fraction. hit = { page, x, y, ptH }. */
+function scoreOffsetFromTap(marks, hit) {
+  var mk = marks.length ? scoreNearestPreceding(marks, hit.page, hit.x, hit.y) : null;
+  if (!mk) return null;
+  var d = scoreDeriveLines(marks), start = marks[d.lines[d.lineOf[marks.indexOf(mk)]].first];
+  return { t: start.t, dy: Math.round((hit.y - start.y) / hit.ptH * 10000) / 10000 };
+}
+/** AC 3: the Follow view moved down by dy of the page the view is built on (clamped to the scroll range); dy 0 returns tv itself. */
+function scoreShiftView(tv, dy, marks, geo) {
+  if (!dy || tv.v < 0 || !marks[tv.v]) return tv;
+  var pg = scorePagePx(geo, marks[tv.v].page);
+  return { x: tv.x, y: scoreClamp(tv.y + dy * pg.h, 0, geo.maxY), n: tv.n, v: tv.v, state: tv.state };
+}
+/** Follow's target plus the focus track's dy, read at the time of the mark the view is built on. */
+function scoreFollowView(marks, t, geo, cur, opt, offsets, trackId) {
+  var tv = scoreTargetView(marks, t, geo, cur, opt);
+  if (!marks.length || tv.v < 0) return tv;
+  return scoreShiftView(tv, scoreOffsetDyAt(offsets, trackId, marks[tv.v].t), marks, geo);
+}
 /** A seek is a jump of the audio clock that the elapsed frame time does not explain. prev/cur = {clock, ts (ms), playing}. */
 function scoreDetectSeek(prev, cur) {
   var delta = cur.clock - prev.clock;
@@ -8307,21 +8358,73 @@ function scoreSharedParse(raw) {
   if (!o || typeof o !== 'object' || typeof o.pdfId !== 'string' || !Array.isArray(o.marks)) return null;
   return o;
 }
-/** AC 7: the folder PDF the shared map names, or null (the caller shows the chooser). */
-function scorePickPdf(pdfs, shared) {
-  if (!shared || !pdfs) return null;
-  for (var i = 0; i < pdfs.length; i++) if (pdfs[i].id === shared.pdfId) return pdfs[i];
-  return null;
+/** atc-ore.8 AC 9: the folder PDF the shared map belongs to, in order: its id, its name, the only PDF, none. */
+function scoreMatchPdf(pdfs, shared) {
+  if (!shared || !pdfs) return { pdf: null, rule: 'none' };
+  var i;
+  for (i = 0; i < pdfs.length; i++) if (pdfs[i].id === shared.pdfId) return { pdf: pdfs[i], rule: 'id' };
+  if (typeof shared.pdfName === 'string' && shared.pdfName) {
+    for (i = 0; i < pdfs.length; i++) if (pdfs[i].name === shared.pdfName) return { pdf: pdfs[i], rule: 'name' };
+  }
+  if (pdfs.length === 1) return { pdf: pdfs[0], rule: 'only' };
+  return { pdf: null, rule: 'none' };
 }
+/** AC 7, 9: the folder PDF the shared map opens, or null (the caller shows the chooser). */
+function scorePickPdf(pdfs, shared) { return scoreMatchPdf(pdfs, shared).pdf; }
+/** AC 9-11: do the shared marks apply to the open PDF? rule = how they matched; ask = (d) with no answer yet (an editor is asked).
+ *  answer = the editor's reply for this open (true / false / undefined). */
+function scoreSharedFor(pdfs, shared, fileId, answer) {
+  if (!shared || !pdfs) return { applies: false, rule: 'none', ask: false };
+  var m = scoreMatchPdf(pdfs, shared);
+  if (m.pdf) return { applies: m.pdf.id === fileId, rule: m.rule, ask: false };
+  if (answer === true) return { applies: true, rule: 'asked', ask: false };
+  return { applies: false, rule: 'none', ask: answer === undefined };
+}
+/** AC 11: what an editor is asked when no folder PDF matches the shared map. */
+function scoreOrphanPrompt(shared) {
+  return 'Saved marks belong to "' + ((shared && shared.pdfName) || 'an unknown PDF') + '", which is no longer here. Use them for this PDF?';
+}
+/** AC 5, 10: the one 'possibly misplaced' message ('' = no flag), shared by the id-but-changed and the matched-another-PDF cases. */
+function scoreMisplacedText(shared, use, fileModified) {
+  if (!shared || !use || !use.applies) return '';
+  if (use.rule === 'id') {
+    return (Number(shared.pdfModified) || 0) !== (Number(fileModified) || 0) ? 'Marks possibly misplaced: this PDF has changed since they were saved.' : '';
+  }
+  return 'Marks possibly misplaced: they were saved for "' + (shared.pdfName || 'another PDF') + '".';
+}
+/** AC 13: the device-marks key of the PDF the shared map was saved for, when its marks are carried to the open PDF ('' = none). */
+function scoreCarryKey(shared, use, fileId) {
+  if (!shared || !use || !use.applies || use.rule === 'id' || shared.pdfId === fileId) return '';
+  return scoreMarksKey(shared.pdfId);
+}
+/** AC 13: after a save re-binds the map to another PDF, the old PDF's device marks go - unless that PDF is still in the folder. */
+function scoreDropKey(prevShared, saved, pdfs) {
+  if (!prevShared || !prevShared.pdfId || !saved || prevShared.pdfId === saved.pdfId) return '';
+  for (var i = 0; i < (pdfs || []).length; i++) if (pdfs[i].id === prevShared.pdfId) return '';
+  return scoreMarksKey(prevShared.pdfId);
+}
+function scoreCanonOffsets(o) {
+  var out = {};
+  Object.keys(o || {}).sort().forEach(function (id) {
+    var e = o[id] || {};
+    out[id] = { name: e.name, from: (e.from || []).map(function (f) { return { t: f.t, dy: f.dy }; }).sort(function (a, b) { return a.t - b.t; }) };
+  });
+  return JSON.stringify(out);
+}
+function scoreSameOffsets(a, b) { return scoreCanonOffsets(a) === scoreCanonOffsets(b); }
 /** 'none' | 'saved' | 'unsaved': how the open marks stand against the shared map (AC 13, 14). */
-function scoreSaveState(marks, shared, pdfId) {
+function scoreSaveState(marks, shared, pdfId, offsets) {
   var forThis = !!shared && shared.pdfId === pdfId;
   if (!marks.length && !(forThis && shared.marks.length)) return 'none';
+  if (forThis && offsets !== undefined && !scoreSameOffsets(offsets, shared.offsets)) return 'unsaved'; // atc-ore.8: unsaved offsets
   return forThis && scoreSameMarks(marks, shared.marks) ? 'saved' : 'unsaved';
 }
-/** The saveScore score argument: the open PDF's marks; offsets are carried over from the shared map. */
-function scoreSavePayload(shared, pdfId, pdfModified, marks) {
-  return { version: 1, pdfId: pdfId, pdfModified: pdfModified || 0, marks: scorePlainMarks(marks), offsets: (shared && shared.offsets) || {} };
+/** The saveScore score argument: the open PDF's marks, name and modified time (atc-ore.8 AC 12 re-binds the map to it);
+ *  offsets are the working ones, else carried over from the shared map. */
+function scoreSavePayload(shared, pdfId, pdfModified, marks, pdfName, offsets) {
+  var p = { version: 1, pdfId: pdfId, pdfModified: pdfModified || 0, marks: scorePlainMarks(marks), offsets: offsets || (shared && shared.offsets) || {} };
+  if (typeof pdfName === 'string' && pdfName) p.pdfName = pdfName;
+  return p;
 }
 function scoreSaveMessage(code, current) {
   if (code === 'not_editor') return 'Only score editors can save to Drive. Your marks stay on this device.';
@@ -8351,7 +8454,7 @@ function scoreQueueShouldRemove(out) {
 /** AC 18: confirm text when the open PDF is not the shared map's PDF ('' = no confirm needed). */
 function scoreSaveConfirmText(shared, pdfId, pdfs) {
   if (!shared || !shared.pdfId || shared.pdfId === pdfId) return '';
-  function nameOf(id) { for (var i = 0; i < (pdfs || []).length; i++) if (pdfs[i].id === id) return pdfs[i].name || id; return id; }
+  function nameOf(id) { for (var i = 0; i < (pdfs || []).length; i++) if (pdfs[i].id === id) return pdfs[i].name || id; return id === shared.pdfId && shared.pdfName ? shared.pdfName : id; }
   return 'The saved score is for "' + nameOf(shared.pdfId) + '". Replace it with the marks for "' + nameOf(pdfId) + '"?';
 }
 /** AC 18: a stale/Keep mine state set for this folder (by a flush at open) is not reset by loading a PDF. */
@@ -8404,7 +8507,8 @@ function initScorePanel_() {
     fileId: '', marks: [], undo: [], selId: null, edit: false, followOn: true, reaction: 0.25,
     snapPending: true, easeFrom: null, easeStart: -1, lastN: null, last: null, loop: 0, touching: false, gesture: null,
     ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, pan: null, seekDim: '',
-    folder: '', shared: null, sharedP: null, stale: false, saving: false, savedAt: '', saveMsg: ''
+    folder: '', shared: null, sharedP: null, stale: false, saving: false, savedAt: '', saveMsg: '',
+    offsets: {}, offsetMode: false, offsetTrack: '', orphan: {}
   };
   var LEAD_KEY = 'pmix.' + pmixTarget() + '.v1.scoreLead';
   var REACT_KEY = 'pmix.' + pmixTarget() + '.v1.scoreReaction';
@@ -8792,6 +8896,7 @@ function initScorePanel_() {
     syncUi();
     buildChoices();
     loadLib().catch(function (e) { console.warn('[score] pdf.js load failed: ' + (e && e.message ? e.message : e)); });
+    S.orphan = {}; // the editor's answer to 'use these marks for this PDF?' lasts for this open only (atc-ore.8 AC 11)
     var sharedP = startShared();
     flushQueue();
     if (S.pdfs.length === 1) {
@@ -8836,6 +8941,13 @@ function initScorePanel_() {
   function rate() { try { return AudioEngine.getPlaybackRate(); } catch (e) { return 1; } }
   function clockNow() { try { return AudioEngine.getPlayhead(); } catch (e) { return 0; } }
   function isPlayingNow() { try { return AudioEngine.getPlaybackState().isPlaying; } catch (e) { return false; } }
+  /** The folder's tracks and selection from the page (atc-ore.8): the first selected track is the focus track. */
+  function trackInfo() {
+    try { if (window.pmixScoreTracks_) return window.pmixScoreTracks_(); } catch (e) { /* fall through */ }
+    return { tracks: [], selected: [] };
+  }
+  function focusTrackId() { return trackInfo().selected[0] || ''; }
+  function trackName(id) { var t = trackInfo().tracks; for (var i = 0; i < t.length; i++) if (t[i].id === id) return t[i].name; return ''; }
   function trackNow() { return scoreRound2(scoreTrackTime(clockNow(), rate())); }
   /** Move the playhead to track time t (kept playing or paused as it was) and snap the view. */
   function jumpTo(t) {
@@ -8846,17 +8958,31 @@ function initScorePanel_() {
   function fmtT(t) { var m = Math.floor(t / 60), sec = t - m * 60; return m + ':' + (sec < 10 ? '0' : '') + sec.toFixed(1); }
   function pageIndexOf(page) { return S.pages[page - 1]; }
 
+  function sharedUse() { return scoreSharedFor(S.pdfs, S.shared, S.fileId, S.orphan[S.fileId]); }
   function loadMarks(fileId) {
     S.fileId = fileId;
+    var use = sharedUse();
+    if (use.ask && isSignedIn_()) { // AC 11: no PDF here matches the shared map; an editor chooses (no write: opening never saves)
+      S.orphan[fileId] = window.confirm(scoreOrphanPrompt(S.shared));
+      use = sharedUse();
+    }
     var raw = recall(scoreMarksKey(fileId));
     S.marks = scoreParseMarks(raw);
     S.readOnly = scoreMarksUnknownVersion(raw); // a newer build wrote it: leave the key untouched
     if (S.readOnly) {
       try { getClientTelemetry_().captureError('scoreMarks', new Error('unknown stored marks version; left untouched'), { fileId: fileId }); } catch (e) { /* best effort */ }
     }
+    // atc-ore.8 AC 13: device marks kept for the PDF the map was saved for come along; its key stays until a save succeeds.
+    var ck = scoreCarryKey(S.shared, use, fileId);
+    if (ck && !S.marks.length && !S.readOnly) {
+      var carried = scoreParseMarks(recall(ck));
+      if (carried.length) { S.marks = carried; saveMarks(); }
+    }
     // AC 14: the shared map only fills an empty device list; device marks are never replaced by loading it.
     var sh = S.shared;
-    if (!S.marks.length && !S.readOnly && sh && sh.pdfId === fileId && sh.marks.length) S.marks = scoreParseMarks(JSON.stringify({ v: 1, marks: sh.marks }));
+    S.offsets = sh && sh.offsets ? JSON.parse(JSON.stringify(sh.offsets)) : {}; // atc-ore.8: the working offsets start from the shared ones
+    S.offsetMode = false;
+    if (!S.marks.length && !S.readOnly && use.applies && sh.marks.length) S.marks = scoreParseMarks(JSON.stringify({ v: 1, marks: sh.marks }));
     S.undo = []; S.selId = null; S.edit = false; S.followOn = true; S.snapPending = true; S.easeStart = -1; S.lastN = null; S.curN = -1; S.offY = 0; S.pan = null;
     if (!scoreKeepStale(S.stale, S.staleFolder, S.folder)) { S.stale = false; S.saveMsg = ''; }
     S.savedAt = '';
@@ -8941,6 +9067,11 @@ function initScorePanel_() {
     panel.setAttribute('data-offset-y', String(Math.round(S.offY)));
     renderSeekMarks();
     $('score-resume-follow').hidden = !scoreShowResume(S.followOn, has, S.edit);
+    $('score-offset-tool').hidden = !S.edit; $('score-offset-tool').setAttribute('aria-pressed', String(S.offsetMode));
+    $('score-offsetbar').hidden = !(S.edit && S.offsetMode && !toolsEl.hidden);
+    var flagText = has && S.fileId ? scoreMisplacedText(S.shared, sharedUse(), pdfModifiedOf(S.fileId)) : ''; // AC 5, 10, 11: the one flag
+    $('score-misplaced').hidden = !flagText; $('score-misplaced').textContent = flagText;
+    panel.setAttribute('data-misplaced', flagText ? 'true' : 'false');
     var m = selMark();
     selbar.hidden = !(S.edit && m && !toolsEl.hidden);
     if (m) $('score-sel-label').textContent = 'Mark ' + (S.marks.indexOf(m) + 1) + ' at ' + fmtT(m.t);
@@ -8950,7 +9081,7 @@ function initScorePanel_() {
   // ---- Save to Drive (bd atc-ore.7 AC 9, 10, 13, 14) ----
   function pdfModifiedOf(id) { for (var i = 0; i < S.pdfs.length; i++) if (S.pdfs[i].id === id) return S.pdfs[i].modified || 0; return 0; }
   function saveStateNow() {
-    var st = scoreSaveState(S.marks, S.shared, S.fileId);
+    var st = scoreSaveState(S.marks, S.shared, S.fileId, S.offsets);
     var q = scoreQueueRead_().filter(function (e) { return e.folderId === S.folder; })[0];
     if (q && q.score.pdfId === S.fileId && scoreSameMarks(q.score.marks, S.marks)) return 'queued';
     return st;
@@ -8966,7 +9097,7 @@ function initScorePanel_() {
     $('score-save-state').textContent = st === 'unsaved' ? 'Unsaved changes' : st === 'queued' ? 'Save waiting (offline)' :
       st === 'saved' ? scoreSavedLabel(S.savedAt || (S.shared && S.shared.updatedAt)) : '';
     var sh = S.shared;
-    $('score-use-saved').hidden = !(sh && sh.pdfId === S.fileId && sh.marks.length && st !== 'saved' && !S.readOnly);
+    $('score-use-saved').hidden = !(sh && sharedUse().applies && sh.marks.length && st !== 'saved' && !S.readOnly);
     $('score-keep-mine').hidden = !S.stale;
     $('score-save-msg').textContent = S.saveMsg;
   }
@@ -8978,6 +9109,7 @@ function initScorePanel_() {
     }
   }
   /** A save result for folder fid: the server's map becomes the shared base and the device copy of it. */
+  function pdfNameOf(id) { for (var i = 0; i < S.pdfs.length; i++) if (S.pdfs[i].id === id) return S.pdfs[i].name || ''; return ''; }
   function adoptShared(fid, sc) {
     store(scoreSharedKey(fid), JSON.stringify(sc));
     if (S.folder === fid) S.shared = sc;
@@ -8985,7 +9117,9 @@ function initScorePanel_() {
   function handleSaveOutcome(fid, out, score, basedOn) {
     var here = S.folder === fid;
     if (out.kind === 'ok') {
+      var drop = here ? scoreDropKey(S.shared, out.result, S.pdfs) : ''; // AC 13: only a successful save releases the old PDF's device marks
       adoptShared(fid, out.result);
+      if (drop) { try { window.localStorage.removeItem(drop); } catch (e) { /* ignore */ } }
       if (here) { S.savedAt = new Date().toISOString(); S.stale = false; S.saveMsg = 'Saved ' + scoreCount(out.result.marks.length); }
     } else if (out.kind === 'offline') {
       scoreQueueWrite_(scoreQueueAdd(scoreQueueRead_(), { folderId: fid, score: score, basedOn: basedOn, queuedAt: new Date().toISOString() }));
@@ -9001,9 +9135,9 @@ function initScorePanel_() {
   async function saveToDrive() {
     if (S.saving || !isSignedIn_() || !S.marks.length || !S.folder || S.readOnly) return;
     var fid = S.folder;
-    var ask = scoreSaveConfirmText(S.shared, S.fileId, S.pdfs);
+    var ask = sharedUse().applies ? '' : scoreSaveConfirmText(S.shared, S.fileId, S.pdfs); // a matched map is re-bound without asking (AC 12)
     if (ask && !window.confirm(ask)) return;
-    var score = scoreSavePayload(S.shared, S.fileId, pdfModifiedOf(S.fileId), S.marks);
+    var score = scoreSavePayload(S.shared, S.fileId, pdfModifiedOf(S.fileId), S.marks, pdfNameOf(S.fileId), S.offsets);
     var basedOn = S.shared ? S.shared.updatedAt : null;
     S.saving = true; S.stale = false; S.saveMsg = 'Saving...'; syncUi();
     var out = await sendSave(fid, score, basedOn);
@@ -9085,7 +9219,7 @@ function initScorePanel_() {
     }
     if (!S.marks.length) { if (S.curN !== -1) { S.curN = -1; syncUi(); } return; }
     var geo = pageGeo(), t = scoreTrackTime(cur.clock, rate());
-    var tv = scoreTargetView(S.marks, t, geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() });
+    var tv = followView(geo, t);
     if (tv.n !== S.curN) { S.curN = tv.n; syncUi(); }
     if (S.seekDim !== document.getElementById('seek-bar').max + '|' + rate()) renderSeekMarks();
     if (!S.followOn && !S.edit && S.snapPending) { S.followOn = true; S.offY = 0; S.pan = null; syncUi(); } // a seek outside Edit mode puts Follow back: there is no Resume button
@@ -9115,10 +9249,13 @@ function initScorePanel_() {
     }
     S.lastN = tv.v; S.snapPending = false;
   }
-  /** Follow's own target now (before the user's vertical offset). */
+  /** Follow's target at track time t: the shared marks plus the focus track's offset (atc-ore.8 AC 3), before the user's own vertical offset. */
+  function followView(geo, t) {
+    return scoreFollowView(S.marks, t, geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() }, S.offsets, focusTrackId());
+  }
   function followTarget() {
     var geo = pageGeo();
-    return { tv: scoreTargetView(S.marks, scoreTrackTime(clockNow(), rate()), geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() }), geo: geo };
+    return { tv: followView(geo, scoreTrackTime(clockNow(), rate())), geo: geo };
   }
   /** A vertical-only pan while playing: keep Follow, remember how far from the anchor the user wants the playing line. */
   function nudgeOffset(dy) {
@@ -9140,6 +9277,18 @@ function initScorePanel_() {
     }
     return null;
   }
+  /** AC 1: a tap in Set track offset mode stores dy for the chosen track from the tapped line's start. Nothing is saved until Save to Drive. */
+  function setOffsetAt(hit) {
+    var id = S.offsetTrack, msg = $('score-offset-msg');
+    if (!id) { msg.textContent = 'Choose a track first.'; return; }
+    var r = scoreOffsetFromTap(S.marks, hit);
+    if (!r) { msg.textContent = 'Tap below the start of a line.'; return; }
+    var name = trackName(id) || (S.offsets[id] && S.offsets[id].name) || id;
+    S.offsets = scoreSetTrackOffset(S.offsets, id, name, r.t, r.dy);
+    msg.textContent = name + ': ' + (Math.round(r.dy * 1000) / 10) + '% of the page from ' + fmtT(r.t) + '.';
+    S.snapPending = true; S.easeStart = -1;
+    syncUi();
+  }
   function handleTap(cx, cy) {
     if (!S.marks.length && !S.edit) return;
     var hit = pageAtPoint(cx, cy);
@@ -9149,6 +9298,7 @@ function initScorePanel_() {
       if (mk) jumpTo(mk.t);
       return;
     }
+    if (S.offsetMode) { setOffsetAt(hit); return; }
     var onMark = scoreHitMark(S.marks, hit.page, hit.x, hit.y);
     if (onMark) { S.selId = onMark.id; syncUi(); jumpTo(scoreJumpBefore(onMark.t)); return; }
     var add = scoreAddMark(S.marks, { t: scoreAddTime(trackNow(), isPlayingNow(), S.reaction, rate()), page: hit.page, x: scoreRound2(hit.x), y: scoreRound2(hit.y) });
@@ -9223,15 +9373,28 @@ function initScorePanel_() {
   $('score-keep-mine').addEventListener('click', function () { S.stale = false; S.saveMsg = ''; syncUi(); });
   $('score-use-saved').addEventListener('click', function () {
     var sh = S.shared;
-    if (!sh || sh.pdfId !== S.fileId || S.readOnly) return;
+    if (!sh || !sharedUse().applies || S.readOnly) return;
     // AC 14: the only way the shared map replaces device marks, and only after a confirm naming both counts.
     if (!window.confirm('Replace the ' + scoreCount(S.marks.length) + ' on this device with the ' + scoreCount(sh.marks.length) + ' saved on Drive?')) return;
     S.stale = false; S.saveMsg = ''; S.savedAt = '';
+    S.offsets = sh.offsets ? JSON.parse(JSON.stringify(sh.offsets)) : {};
     commit(scoreParseMarks(JSON.stringify({ v: 1, marks: sh.marks })), false);
   });
+  $('score-offset-tool').addEventListener('click', function () {
+    S.offsetMode = !S.offsetMode;
+    if (S.offsetMode) {
+      var info = trackInfo(), sel = $('score-offset-track'), keep = S.offsetTrack || info.selected[0] || '';
+      sel.innerHTML = '';
+      info.tracks.forEach(function (tr) { var o = document.createElement('option'); o.value = tr.id; o.textContent = tr.name; sel.appendChild(o); });
+      sel.value = info.tracks.some(function (tr) { return tr.id === keep; }) ? keep : (info.tracks[0] ? info.tracks[0].id : '');
+      S.offsetTrack = sel.value;
+    }
+    syncUi();
+  });
+  $('score-offset-track').addEventListener('change', function () { S.offsetTrack = this.value; });
   $('score-edit-toggle').addEventListener('click', function () {
     S.edit = !S.edit;
-    if (!S.edit) S.selId = null;
+    if (!S.edit) { S.selId = null; S.offsetMode = false; }
     if (playMode() && !S.followOn) resumeFollow(); // leaving Edit while playing is play mode: Follow is always on
     else syncUi();
   });
@@ -9257,7 +9420,7 @@ function initScorePanel_() {
     }
   }
   function markVisibleAtJump(m) {
-    var geo = pageGeo(), tv = scoreTargetView(S.marks, scoreJumpBefore(m.t), geo, { x: scroller.scrollLeft, y: scroller.scrollTop });
+    var geo = pageGeo(), tv = scoreFollowView(S.marks, scoreJumpBefore(m.t), geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, undefined, S.offsets, focusTrackId());
     var p = scoreMarkPoint(m, geo);
     return p.x >= tv.x && p.x <= tv.x + geo.W && p.y >= tv.y && p.y <= tv.y + geo.H;
   }
@@ -9391,9 +9554,9 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
+  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
   scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
-  scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSavedLabel, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreKeepStale };
+  scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSavedLabel, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreKeepStale };
 </script>
 
 <script>
