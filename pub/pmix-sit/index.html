@@ -465,6 +465,7 @@ body {
 .score-scroller { flex: 1; min-height: 0; overflow: auto; background: #3a3a3a; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .score-strip { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px; width: max-content; min-width: 100%; box-sizing: border-box; }
 .score-ribbon-anchor { position: sticky; top: 0; left: 0; width: 0; height: 0; z-index: 3; }
+.score-perf { position: absolute; top: 2px; left: 2px; max-width: 96vw; padding: 1px 5px; font: 10px/1.3 monospace; color: #fff; background: rgba(0,0,0,.7); border-radius: 3px; pointer-events: none; white-space: nowrap; overflow: hidden; }
 .score-ribbon { position: absolute; top: 0; left: 0; display: block; }
 .score-panel[data-ribbon="on"] .score-scroller { overflow: hidden; }
 .score-page { position: relative; background: #fff; flex: none; box-shadow: 0 1px 6px rgba(0,0,0,.5); }
@@ -1397,7 +1398,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <span id="score-progress-text"></span>
         </div>
         <div id="score-scroller" data-testid="score-scroller" class="score-scroller" hidden>
-          <div class="score-ribbon-anchor"><canvas id="score-ribbon" data-testid="score-ribbon" class="score-ribbon" hidden></canvas></div>
+          <div class="score-ribbon-anchor"><canvas id="score-ribbon" data-testid="score-ribbon" class="score-ribbon" hidden></canvas><div id="score-perf" data-testid="score-perf" class="score-perf" hidden></div></div>
           <div id="score-strip" data-testid="score-strip" class="score-strip"></div>
         </div>
       </section>
@@ -2007,10 +2008,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.20";
+var STATIC_BUILD_VERSION_ = "1.7.1.21";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-29T00:32:02.752Z";
+var STATIC_BUILD_DATE_ = "2026-10-29T00:52:53.289Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8219,8 +8220,7 @@ function scoreFollowView(marks, t, geo, cur, opt, offsets, trackId) {
   return scoreShiftView(tv, scoreOffsetDyAt(offsets, trackId, marks[tv.v].t), marks, geo);
 }
 // ---- Ribbon follow (branch continuous-scroll): in play mode the score only scrolls horizontally ----
-var SCORE_RIBBON_MARGIN = 0.02;
-/** Each derived line becomes a horizontal slice of its page (line start minus a 2% margin to the page right edge) and the slices lie
+/** Each derived line becomes a full-width slice of its page (brace, clef and key signature included) and the slices lie
  *  end to end in page, then y, order. The slice's window is the view height with the line's y (plus the vertical pan and the focus
  *  track's offset at the line start time) at the anchor y, so every line sits at the same screen height. srcY is not clamped to the
  *  page: the renderer clips. geo = {W, H, ay?, pages:[{w, h, ptW}]}; opt = {panY, offsets, trackId}.
@@ -8230,9 +8230,8 @@ function scoreRibbonLayout(marks, geo, opt) {
   var ay = geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay;
   var segs = d.lines.map(function (ln, li) {
     var f = marks[ln.first], pg = scorePagePx(geo, f.page), s = pg.w / pg.ptW;
-    var srcX = Math.max(0, f.x * s - SCORE_RIBBON_MARGIN * pg.w);
     var dy = opt ? scoreOffsetDyAt(opt.offsets, opt.trackId, f.t) : 0;
-    return { line: li, page: f.page, y: f.y, srcX: srcX, srcY: f.y * s + dy * pg.h + panY - ay * geo.H, srcW: pg.w - srcX, srcH: geo.H, ribbonX: 0 };
+    return { line: li, page: f.page, y: f.y, srcX: 0, srcY: f.y * s + dy * pg.h + panY - ay * geo.H, srcW: pg.w, srcH: geo.H, ribbonX: 0 };
   });
   segs.sort(function (a, b) { return a.page - b.page || a.y - b.y || a.line - b.line; });
   var x = 0, segOf = {};
@@ -8267,6 +8266,57 @@ function scoreRibbonHit(layout, rx, ry, geo) {
     }
   }
   return null;
+}
+// ---- Performance stats (branch continuous-scroll): per play stretch, fixed-size buffers, one flat scorePerf activity record ----
+var SCORE_PERF_CAP = 4096, SCORE_PERF_MAX_MS = 30000, SCORE_PERF_MIN_MS = 3000;
+function scorePerfBuf(cap) { return { a: new Float32Array(cap), n: 0, max: 0 }; }
+function scorePerfPush(b, v) { b.a[b.n % b.a.length] = v; b.n++; if (v > b.max) b.max = v; }
+/** Nearest-rank percentile over the retained samples (the last `cap` when more were pushed); null when empty. */
+function scorePerfPct(b, p) {
+  var k = Math.min(b.n, b.a.length);
+  if (!k) return null;
+  var c = Array.prototype.slice.call(b.a, 0, k).sort(function (x, y) { return x - y; });
+  return c[Math.max(0, Math.min(k - 1, Math.ceil(p / 100 * k) - 1))];
+}
+/** A play stretch. lt0 = the long-task counter {n, ms} at its start, or null where unsupported. */
+function scorePerfStretch(mode, t0, lt0) {
+  return { mode: mode, t0: t0, lt0: lt0, frame: scorePerfBuf(SCORE_PERF_CAP), tick: scorePerfBuf(SCORE_PERF_CAP), draw: scorePerfBuf(SCORE_PERF_CAP), j33: 0, j50: 0 };
+}
+/** One rAF tick: dt = ms since the previous tick of this stretch (null for the first), work = ms spent in the tick body. */
+function scorePerfFrame(st, dt, work) {
+  scorePerfPush(st.tick, work);
+  if (dt === null) return;
+  scorePerfPush(st.frame, dt);
+  if (dt > 33) st.j33++;
+  if (dt > 50) st.j50++;
+}
+function scorePerfDraw(st, ms) { scorePerfPush(st.draw, ms); }
+/** The stretch ends on pause, a mode change, or 30 s. */
+function scorePerfDue(st, nowMs, mode, playing) { return !playing || mode !== st.mode || nowMs - st.t0 >= SCORE_PERF_MAX_MS; }
+function scorePerfR2(v) { return v === null || v === undefined ? v : Math.round(v * 100) / 100; }
+/** The flat activity record for a stretch, or null when it lasted under 3 s. env = {zoom, dpr, pages, vw, vh, heapMB, heapLimitMB, canvasMB, ribbonMB, lt, ua, platform, reason}. */
+function scorePerfRecord(st, nowMs, env) {
+  var dur = nowMs - st.t0;
+  if (dur < SCORE_PERF_MIN_MS) return null;
+  var r = {
+    mode: st.mode, stretchSec: scorePerfR2(dur / 1000), reason: env.reason || '', zoom: scorePerfR2(env.zoom), dpr: env.dpr, pages: env.pages, vw: env.vw, vh: env.vh,
+    frames: st.tick.n, fp50: scorePerfR2(scorePerfPct(st.frame, 50)), fp95: scorePerfR2(scorePerfPct(st.frame, 95)), fmax: scorePerfR2(st.frame.max),
+    jank33: st.j33, jank50: st.j50,
+    tp50: scorePerfR2(scorePerfPct(st.tick, 50)), tp95: scorePerfR2(scorePerfPct(st.tick, 95)), tmax: scorePerfR2(st.tick.max),
+    canvasMB: scorePerfR2(env.canvasMB), ribbonMB: scorePerfR2(env.ribbonMB), ua: String(env.ua || '').slice(0, 160), platform: String(env.platform || '').slice(0, 40)
+  };
+  if (st.draw.n) { r.rp50 = scorePerfR2(scorePerfPct(st.draw, 50)); r.rp95 = scorePerfR2(scorePerfPct(st.draw, 95)); r.rmax = scorePerfR2(st.draw.max); }
+  if (env.lt && st.lt0) { r.ltCount = env.lt.n - st.lt0.n; r.ltMs = scorePerfR2(env.lt.ms - st.lt0.ms); }
+  if (env.heapMB !== null && env.heapMB !== undefined) { r.heapMB = scorePerfR2(env.heapMB); r.heapLimitMB = scorePerfR2(env.heapLimitMB); }
+  return r;
+}
+/** The overlay's one-line readout of the running stretch. */
+function scorePerfOverlayText(st, nowMs, env) {
+  var sec = Math.max(0.001, (nowMs - st.t0) / 1000), f = scorePerfR2;
+  var t = st.mode + ' ' + Math.round(st.tick.n / sec) + ' fps | frame p95 ' + f(scorePerfPct(st.frame, 95)) + ' ms | tick p95 ' + f(scorePerfPct(st.tick, 95)) + ' ms';
+  if (st.draw.n) t += ' | draw p95 ' + f(scorePerfPct(st.draw, 95));
+  t += ' | ' + (env.heapMB !== null && env.heapMB !== undefined ? 'heap ' + Math.round(env.heapMB) + ' MB | ' : '') + 'canvas ' + f(env.canvasMB) + (env.ribbonMB ? '+' + f(env.ribbonMB) : '') + ' MB';
+  return t;
 }
 /** A seek is a jump of the audio clock that the elapsed frame time does not explain. prev/cur = {clock, ts (ms), playing}. */
 function scoreDetectSeek(prev, cur) {
@@ -9115,6 +9165,7 @@ function initScorePanel_() {
     panel.classList.add('hidden');
     page_.classList.remove('score-open');
     if (S.ribbonShown) setRibbonShown(false);
+    perfEnd('close');
     stopLoop();
     syncUi();
     S.pages.forEach(release); // free the canvases; the parsed document stays for a quick reopen
@@ -9464,7 +9515,55 @@ function initScorePanel_() {
     var r = ribbonCv.getBoundingClientRect();
     return scoreRibbonHit(L, S.ribbonSx + cx - r.left, cy - r.top, pageGeo());
   }
+  // ---- Performance stats: one stretch per play run (max 30 s), sent as a flat scorePerf activity record; overlay only when asked ----
+  var PERF_KEY = 'pmix.' + pmixTarget() + '.v1.scorePerfOverlay';
+  var perfEl = $('score-perf'), perfOverlay = false, perfLt = null, perfSt = null, perfLast = null, perfOvAt = 0;
+  try { perfOverlay = /[?&]perf=1(&|$)/.test(window.location.search) || recall(PERF_KEY) === '1'; } catch (e) { perfOverlay = false; }
+  try {
+    if (typeof PerformanceObserver === 'function' && PerformanceObserver.supportedEntryTypes && PerformanceObserver.supportedEntryTypes.indexOf('longtask') >= 0) {
+      perfLt = { n: 0, ms: 0 };
+      new PerformanceObserver(function (l) { var e = l.getEntries(); for (var i = 0; i < e.length; i++) { perfLt.n++; perfLt.ms += e[i].duration; } }).observe({ entryTypes: ['longtask'] });
+    }
+  } catch (e) { perfLt = null; }
+  function perfEnv(reason) {
+    var mem = null;
+    try { mem = window.performance && window.performance.memory; } catch (e) { mem = null; }
+    var rb = S.ribbonShown ? ribbonCv.width * ribbonCv.height * 4 / 1048576 : 0;
+    return {
+      reason: reason, zoom: S.zoom, dpr: window.devicePixelRatio || 1, pages: S.pages.length, vw: scroller.clientWidth, vh: scroller.clientHeight,
+      heapMB: mem && mem.usedJSHeapSize ? mem.usedJSHeapSize / 1048576 : null, heapLimitMB: mem && mem.jsHeapSizeLimit ? mem.jsHeapSizeLimit / 1048576 : null,
+      canvasMB: livePx() * 4 / 1048576, ribbonMB: rb, lt: perfLt ? { n: perfLt.n, ms: perfLt.ms } : null,
+      ua: String(navigator.userAgent || ''), platform: String(navigator.platform || '')
+    };
+  }
+  function perfEnd(reason) {
+    if (!perfSt) return;
+    var st = perfSt, rec = null;
+    perfSt = null; perfLast = null;
+    try { rec = scorePerfRecord(st, performance.now(), perfEnv(reason)); } catch (e) { rec = null; }
+    if (rec) logActivity_('scorePerf', rec);
+  }
+  function perfFrame(now, work) {
+    var playing = S.playing && isOpen(), mode = S.ribbonShown ? 'ribbon' : 'page';
+    if (perfSt && scorePerfDue(perfSt, now, mode, playing)) perfEnd(!playing ? 'pause' : (mode !== perfSt.mode ? 'mode' : 'max'));
+    if (!playing) { if (perfEl && !perfEl.hidden) perfEl.hidden = true; return; }
+    if (!perfSt) { perfSt = scorePerfStretch(mode, now, perfLt ? { n: perfLt.n, ms: perfLt.ms } : null); perfLast = null; }
+    scorePerfFrame(perfSt, perfLast === null ? null : now - perfLast, work);
+    perfLast = now;
+    if (perfOverlay && perfEl && now - perfOvAt >= 500) {
+      perfOvAt = now;
+      var env = perfEnv('');
+      perfEl.textContent = scorePerfOverlayText(perfSt, now, env);
+      perfEl.hidden = false;
+    }
+  }
+  document.addEventListener('visibilitychange', function () { if (document.hidden) perfEnd('hide'); });
   function tick(now) {
+    var w0 = performance.now();
+    tickBody(now);
+    perfFrame(now, performance.now() - w0);
+  }
+  function tickBody(now) {
     S.loop = requestAnimationFrame(tick);
     if (!isOpen() || !S.pages.length || scroller.hidden) return;
     var playing = isPlayingNow(), cur = { clock: clockNow(), ts: now, playing: playing };
@@ -9489,7 +9588,9 @@ function initScorePanel_() {
     if (!S.followOn) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.v; return; } // a seek while paused must not make Resume snap
     if (rb) { // ribbon: the playhead's ribbon x is continuous, so there is no ease and no lead jump
       if (!S.ribbonShown) setRibbonShown(true);
+      var d0 = performance.now();
       drawRibbon(geo, t);
+      if (perfSt) scorePerfDraw(perfSt, performance.now() - d0);
       S.lastN = tv.v; S.snapPending = false;
       return;
     }
@@ -9827,7 +9928,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonHit, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
+  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonHit, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
   scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreParseOffsets, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreKeepStale };
 </script>
