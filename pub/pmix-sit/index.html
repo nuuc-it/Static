@@ -464,6 +464,9 @@ body {
 .score-panel[data-play="on"] .score-bar, .score-panel[data-play="on"] #score-edit-toggle { display: none; }
 .score-scroller { flex: 1; min-height: 0; overflow: auto; background: #3a3a3a; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .score-strip { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px; width: max-content; min-width: 100%; box-sizing: border-box; }
+.score-ribbon-anchor { position: sticky; top: 0; left: 0; width: 0; height: 0; z-index: 3; }
+.score-ribbon { position: absolute; top: 0; left: 0; display: block; }
+.score-panel[data-ribbon="on"] .score-scroller { overflow: hidden; }
 .score-page { position: relative; background: #fff; flex: none; box-shadow: 0 1px 6px rgba(0,0,0,.5); }
 .score-page canvas { display: block; width: 100%; height: 100%; }
 .score-page.score-fail::after { content: "Page could not be drawn"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #b00; font-size: 13px; }
@@ -1357,6 +1360,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="score-mark-prev" data-testid="score-mark-prev" class="btn score-tbtn" title="Previous mark" hidden>&#9664; Mark</button>
           <button id="score-mark-next" data-testid="score-mark-next" class="btn score-tbtn" title="Next mark" hidden>Mark &#9654;</button>
           <button id="score-resume-follow" data-testid="score-resume-follow" class="btn score-tbtn score-resume" hidden>Resume follow</button>
+          <button id="score-ribbon-toggle" data-testid="score-ribbon-toggle" class="btn score-tbtn" aria-pressed="true" title="Play mode: the score scrolls sideways only, the next line sliding in from the right" hidden>Ribbon</button>
           <button id="score-offset-tool" data-testid="score-offset-tool" class="btn score-tbtn" aria-pressed="false" title="Set where a voice's staff sits below the marks" hidden>Set track offset</button>
         </div>
         <div id="score-selbar" data-testid="score-selbar" class="score-tools score-selbar" hidden>
@@ -1393,6 +1397,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <span id="score-progress-text"></span>
         </div>
         <div id="score-scroller" data-testid="score-scroller" class="score-scroller" hidden>
+          <div class="score-ribbon-anchor"><canvas id="score-ribbon" data-testid="score-ribbon" class="score-ribbon" hidden></canvas></div>
           <div id="score-strip" data-testid="score-strip" class="score-strip"></div>
         </div>
       </section>
@@ -2002,10 +2007,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.1.19";
+var STATIC_BUILD_VERSION_ = "1.7.1.20";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-28T16:02:39.108Z";
+var STATIC_BUILD_DATE_ = "2026-10-29T00:32:02.752Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8213,6 +8218,56 @@ function scoreFollowView(marks, t, geo, cur, opt, offsets, trackId) {
   if (!marks.length || tv.v < 0) return tv;
   return scoreShiftView(tv, scoreOffsetDyAt(offsets, trackId, marks[tv.v].t), marks, geo);
 }
+// ---- Ribbon follow (branch continuous-scroll): in play mode the score only scrolls horizontally ----
+var SCORE_RIBBON_MARGIN = 0.02;
+/** Each derived line becomes a horizontal slice of its page (line start minus a 2% margin to the page right edge) and the slices lie
+ *  end to end in page, then y, order. The slice's window is the view height with the line's y (plus the vertical pan and the focus
+ *  track's offset at the line start time) at the anchor y, so every line sits at the same screen height. srcY is not clamped to the
+ *  page: the renderer clips. geo = {W, H, ay?, pages:[{w, h, ptW}]}; opt = {panY, offsets, trackId}.
+ *  Returns {segs:[{line, page, srcX, srcY, srcW, srcH, ribbonX}], width, markX:[ribbon x per mark index], W, H}. */
+function scoreRibbonLayout(marks, geo, opt) {
+  var d = scoreDeriveLines(marks), panY = (opt && Number(opt.panY)) || 0;
+  var ay = geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay;
+  var segs = d.lines.map(function (ln, li) {
+    var f = marks[ln.first], pg = scorePagePx(geo, f.page), s = pg.w / pg.ptW;
+    var srcX = Math.max(0, f.x * s - SCORE_RIBBON_MARGIN * pg.w);
+    var dy = opt ? scoreOffsetDyAt(opt.offsets, opt.trackId, f.t) : 0;
+    return { line: li, page: f.page, y: f.y, srcX: srcX, srcY: f.y * s + dy * pg.h + panY - ay * geo.H, srcW: pg.w - srcX, srcH: geo.H, ribbonX: 0 };
+  });
+  segs.sort(function (a, b) { return a.page - b.page || a.y - b.y || a.line - b.line; });
+  var x = 0, segOf = {};
+  segs.forEach(function (sg, i) { sg.ribbonX = x; x += sg.srcW; segOf[sg.line] = i; delete sg.y; });
+  var markX = marks.map(function (k, i) {
+    var sg = segs[segOf[d.lineOf[i]]], pg = scorePagePx(geo, k.page);
+    return sg.ribbonX + k.x * pg.w / pg.ptW - sg.srcX;
+  });
+  return { segs: segs, width: x, markX: markX, W: geo.W, H: geo.H };
+}
+/** The playhead's x on the ribbon at track time t: linear between consecutive marks (across a line change that runs from the last
+ *  mark of one line to the first mark of the next, so the next line arrives continuously from the right); clamped outside the marks. */
+function scoreRibbonX(marks, t, layout) {
+  if (!marks.length || !layout.markX.length) return 0;
+  var n = scoreIndexAt(marks, t);
+  if (n < 0) return layout.markX[0];
+  if (n >= marks.length - 1) return layout.markX[marks.length - 1];
+  var span = marks[n + 1].t - marks[n].t;
+  return scoreLerp(layout.markX[n], layout.markX[n + 1], span > 0 ? scoreClamp((t - marks[n].t) / span, 0, 1) : 1);
+}
+/** scrollLeft of the ribbon view that puts ribbon x at the anchor (10% from left), kept inside the ribbon. */
+function scoreRibbonScroll(rx, layout, viewW, ax) {
+  return scoreClamp(rx - (ax === undefined ? SCORE_ANCHOR_X : ax) * viewW, 0, Math.max(0, layout.width - viewW));
+}
+/** A tap at ribbon x (rx) and window y (ry) -> {page, x, y, ptW, ptH} in PDF pt, or null off the ribbon. */
+function scoreRibbonHit(layout, rx, ry, geo) {
+  for (var i = 0; i < layout.segs.length; i++) {
+    var sg = layout.segs[i];
+    if (rx >= sg.ribbonX && rx < sg.ribbonX + sg.srcW) {
+      var pg = scorePagePx(geo, sg.page), s = pg.ptW / pg.w;
+      return { page: sg.page, x: (sg.srcX + rx - sg.ribbonX) * s, y: (sg.srcY + ry) * s, ptW: pg.ptW, ptH: pg.ptH };
+    }
+  }
+  return null;
+}
 /** A seek is a jump of the audio clock that the elapsed frame time does not explain. prev/cur = {clock, ts (ms), playing}. */
 function scoreDetectSeek(prev, cur) {
   var delta = cur.clock - prev.clock;
@@ -8581,15 +8636,18 @@ function initScorePanel_() {
     snapPending: true, easeFrom: null, easeStart: -1, lastN: null, last: null, loop: 0, touching: false, gesture: null,
     ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, pan: null, seekDim: '',
     folder: '', shared: null, sharedP: null, stale: false, saving: false, savedAt: '', saveMsg: '',
-    carriedKey: '', focusId: null, offsets: {}, offsetMode: false, offsetTrack: '', orphan: {}
+    carriedKey: '', focusId: null, offsets: {}, offsetMode: false, offsetTrack: '', orphan: {},
+    ribbon: true, ribbonShown: false, ribbonLayout: null, ribbonKey: '', ribbonMarks: null, ribbonOffsets: null, ribbonSx: 0, ribbonTop: -1
   };
   var LEAD_KEY = 'pmix.' + pmixTarget() + '.v1.scoreLead';
   var REACT_KEY = 'pmix.' + pmixTarget() + '.v1.scoreReaction';
+  var RIBBON_KEY = 'pmix.' + pmixTarget() + '.v1.scoreRibbon';
   var INTRO_KEY = 'pmix.' + pmixTarget() + '.v1.scoreIntroSeen';
   var toolsEl = $('score-tools'), selbar = $('score-selbar');
 
   function store(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function recall(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  S.ribbon = recall(RIBBON_KEY) !== '0'; // default on
   function isOpen() { return !panel.classList.contains('hidden'); }
   function setState(s) { panel.setAttribute('data-state', s); toolsEl.hidden = s !== 'ready'; toolRows.hidden = toolsEl.hidden; if (s !== 'ready') selbar.hidden = true; }
   function num(x) { return String(+Number(x).toFixed(2)); }
@@ -9056,6 +9114,7 @@ function initScorePanel_() {
     resetPointers();
     panel.classList.add('hidden');
     page_.classList.remove('score-open');
+    if (S.ribbonShown) setRibbonShown(false);
     stopLoop();
     syncUi();
     S.pages.forEach(release); // free the canvases; the parsed document stays for a quick reopen
@@ -9207,6 +9266,7 @@ function initScorePanel_() {
     panel.setAttribute('data-offset-y', String(Math.round(S.offY)));
     renderSeekMarks();
     $('score-resume-follow').hidden = !scoreShowResume(S.followOn, has, S.edit);
+    $('score-ribbon-toggle').hidden = !has; $('score-ribbon-toggle').setAttribute('aria-pressed', String(S.ribbon));
     var playingNow = isPlayingNow();
     $('score-offset-tool').hidden = !S.edit || playingNow; $('score-offset-tool').setAttribute('aria-pressed', String(S.offsetMode));
     $('score-offsetbar').hidden = !(S.edit && S.offsetMode && !toolsEl.hidden && !playingNow);
@@ -9334,6 +9394,7 @@ function initScorePanel_() {
     syncUi();
   }
   $('score-resume-follow').addEventListener('click', resumeFollow);
+  $('score-ribbon-toggle').addEventListener('click', function () { S.ribbon = !S.ribbon; store(RIBBON_KEY, S.ribbon ? '1' : '0'); syncUi(); });
 
   // Frame loop: audio clock -> target view -> scroll position of the already-drawn pages (AC 10).
   function pageGeo() {
@@ -9347,6 +9408,62 @@ function initScorePanel_() {
     if (Math.abs(scroller.scrollLeft - x) > 0.01) scroller.scrollLeft = x;
     if (Math.abs(scroller.scrollTop - y) > 0.01) scroller.scrollTop = y;
   }
+  // ---- Ribbon (branch continuous-scroll): play mode draws horizontal slices of the rendered pages on one canvas ----
+  var ribbonCv = $('score-ribbon');
+  function ribbonActive() { return S.ribbon && playMode() && S.followOn && !S.pinch && !S.offsetMode && S.marks.length > 0 && S.pages.length > 0; }
+  function setRibbonShown(on) {
+    S.ribbonShown = on;
+    panel.setAttribute('data-ribbon', on ? 'on' : 'off');
+    ribbonCv.hidden = !on;
+    S.ribbonTop = -1; S.ribbonLayout = null; S.ribbonKey = '';
+    if (on) { S.pan = null; S.easeStart = -1; } else S.snapPending = true; // back to the normal page view at the current mark
+  }
+  function ribbonLayoutFor(geo) {
+    var tid = focusTrackId();
+    var key = [geo.W, geo.H, S.zoom, S.offY, tid, geo.pages.map(function (q) { return q.w + 'x' + q.h; }).join()].join('|');
+    if (!S.ribbonLayout || key !== S.ribbonKey || S.ribbonMarks !== S.marks || S.ribbonOffsets !== S.offsets) {
+      S.ribbonLayout = scoreRibbonLayout(S.marks, geo, { panY: S.offY, offsets: S.offsets, trackId: tid });
+      S.ribbonKey = key; S.ribbonMarks = S.marks; S.ribbonOffsets = S.offsets;
+    }
+    return S.ribbonLayout;
+  }
+  function drawRibbon(geo, t) {
+    var L = ribbonLayoutFor(geo), rx = scoreRibbonX(S.marks, t, L), sx = scoreRibbonScroll(rx, L, geo.W);
+    S.ribbonSx = sx;
+    var dpr = window.devicePixelRatio || 1, cw = Math.round(geo.W * dpr), ch = Math.round(geo.H * dpr);
+    if (ribbonCv.width !== cw || ribbonCv.height !== ch) { ribbonCv.width = cw; ribbonCv.height = ch; ribbonCv.style.width = geo.W + 'px'; ribbonCv.style.height = geo.H + 'px'; }
+    var n = scoreIndexAt(S.marks, t), pgN = S.marks[Math.max(0, n)].page, pp = S.pages[pgN - 1];
+    if (pp) { // keep the scroller (hidden under the ribbon) on the playing page so its neighbours stay rendered
+      var top = Math.max(0, pp.el.offsetTop - 8);
+      if (top !== S.ribbonTop) { S.ribbonTop = top; scroller.scrollTop = top; scroller.scrollLeft = 0; }
+    }
+    var ctx = ribbonCv.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#3a3a3a'; ctx.fillRect(0, 0, geo.W, geo.H);
+    L.segs.forEach(function (sg) {
+      var x0 = sg.ribbonX - sx;
+      if (x0 >= geo.W || x0 + sg.srcW <= 0) return;
+      var p = S.pages[sg.page - 1];
+      if (!p) return;
+      var vx0 = Math.max(0, -x0), vx1 = Math.min(sg.srcW, geo.W - x0);
+      var sy0 = Math.max(0, sg.srcY), sy1 = Math.min(p.cssH, sg.srcY + sg.srcH);
+      if (sy1 <= sy0 || vx1 <= vx0) return;
+      var dx = x0 + vx0, dy = sy0 - sg.srcY, dw = vx1 - vx0, dh = sy1 - sy0;
+      ctx.fillStyle = '#fff'; ctx.fillRect(dx, dy, dw, dh);
+      if (p.canvas && p.canvas.width) {
+        var f = p.canvas.width / p.cssW;
+        try { ctx.drawImage(p.canvas, (sg.srcX + vx0) * f, sy0 * f, dw * f, dh * f, dx, dy, dw, dh); } catch (e) { /* page canvas released mid-frame */ }
+      }
+      if (x0 > 0) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(x0, 0, 1, geo.H); } // seam between two lines
+    });
+  }
+  function ribbonHitAt(cx, cy) {
+    var L = S.ribbonLayout;
+    if (!L) return null;
+    var r = ribbonCv.getBoundingClientRect();
+    return scoreRibbonHit(L, S.ribbonSx + cx - r.left, cy - r.top, pageGeo());
+  }
   function tick(now) {
     S.loop = requestAnimationFrame(tick);
     if (!isOpen() || !S.pages.length || scroller.hidden) return;
@@ -9359,6 +9476,8 @@ function initScorePanel_() {
       if (playMode() && !S.followOn) resumeFollow(); // starting to play puts Follow back (atc-ore.17 AC 2)
       syncUi();
     }
+    var rb = ribbonActive();
+    if (!rb && S.ribbonShown) setRibbonShown(false);
     if (!S.marks.length) { if (S.curN !== -1) { S.curN = -1; syncUi(); } return; }
     var fid = focusTrackId();
     if (S.focusId !== fid) { if (S.focusId !== null) { S.snapPending = true; S.easeStart = -1; } S.focusId = fid; } // atc-ore.8 AC 27: a new focus track re-snaps Follow
@@ -9368,6 +9487,12 @@ function initScorePanel_() {
     if (S.seekDim !== document.getElementById('seek-bar').max + '|' + rate()) renderSeekMarks();
     if (!S.followOn && !S.edit && S.snapPending) { S.followOn = true; S.offY = 0; S.pan = null; syncUi(); } // a seek outside Edit mode puts Follow back: there is no Resume button
     if (!S.followOn) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.v; return; } // a seek while paused must not make Resume snap
+    if (rb) { // ribbon: the playhead's ribbon x is continuous, so there is no ease and no lead jump
+      if (!S.ribbonShown) setRibbonShown(true);
+      drawRibbon(geo, t);
+      S.lastN = tv.v; S.snapPending = false;
+      return;
+    }
     if (S.touching) return;
     if (S.pan) { // a vertical pan is settling (touch fling): the offset follows the scroll position (atc-ore.4 R6)
       var sy = scroller.scrollTop, sx = scroller.scrollLeft;
@@ -9436,7 +9561,7 @@ function initScorePanel_() {
   }
   function handleTap(cx, cy) {
     if (!S.marks.length && !S.edit) return;
-    var hit = pageAtPoint(cx, cy);
+    var hit = S.ribbonShown ? ribbonHitAt(cx, cy) : pageAtPoint(cx, cy);
     if (!hit) return;
     if (!S.edit) {
       var mk = scoreNearestPreceding(S.marks, hit.page, hit.x, hit.y);
@@ -9702,7 +9827,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
+  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonHit, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
   scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreParseOffsets, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreKeepStale };
 </script>
