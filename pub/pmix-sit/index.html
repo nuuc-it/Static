@@ -512,6 +512,11 @@ body {
 .score-tbtn .tsub:empty { display: none; }
 #score-place { height: 26px; font-size: 12px; padding: 0 2px; }
 .score-selbar input[type="text"] { flex: 1 1 8em; min-width: 6em; font-size: 12px; padding: 2px 4px; }
+/* atc-tty9.14: the per-mark editor is a sheet over the bottom of the panel (works at phone width; the score above stays tappable) */
+.score-pop { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; max-height: 70vh; overflow: auto; padding: 8px 10px; background: var(--surface-1); color: var(--text); border-top: 2px solid #b45309; box-shadow: 0 -4px 16px rgba(0,0,0,.4); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; box-sizing: border-box; }
+.score-pop[hidden] { display: none; }
+.score-pop input[type="text"] { flex: 1 1 10em; min-width: 6em; font-size: 14px; padding: 4px 6px; }
+.score-pop select { height: 30px; font-size: 13px; }
 .score-notebar { padding: 4px 8px; font-size: 13px; background: #fffbeb; color: #78350f; border-bottom: 1px solid #b45309; white-space: pre-wrap; }
 /* Edit mode: every mark carries a 0.5 inch hit area (sized by script) so a press on it drags instead of panning (atc-ore.5 AC 20). */
 .score-panel[data-edit="on"] .score-mark { pointer-events: auto; touch-action: none; }
@@ -1389,21 +1394,30 @@ li > .schedule-cal-wrap { margin-left: 8px; }
         </div>
         <div id="score-selbar" data-testid="score-selbar" class="score-tools score-selbar" hidden>
           <span id="score-sel-label" data-testid="score-sel-label" class="score-sel-label"></span>
-          <button id="score-nudge-minus" data-testid="score-nudge-minus" class="btn score-tbtn" title="Mark 0.1 s earlier">-0.1 s</button>
-          <button id="score-nudge-plus" data-testid="score-nudge-plus" class="btn score-tbtn" title="Mark 0.1 s later">+0.1 s</button>
           <button id="score-set-now" data-testid="score-set-now" class="btn score-tbtn" title="Move the mark to the playhead">Set to now</button>
-          <button id="score-delete" data-testid="score-delete" class="btn score-tbtn" title="Delete this mark">Delete</button>
+          <button id="score-edit-mark" data-testid="score-edit-mark" class="btn score-tbtn" title="Edit this mark: time, type, labels, delete">Edit mark</button>
         </div>
           <div id="score-fields" class="score-tools score-fields" style="flex:1 1 100%" hidden>
           <select id="score-place" data-testid="score-place" class="score-tbtn" aria-label="What a tap adds" title="What a tap on the score adds" hidden>
             <option value="timed">+ Timed</option><option value="untimed">+ Untimed</option><option value="eol">+ EOL</option><option value="jump">+ Jump</option></select>
+            <span id="score-jump-warn" data-testid="score-jump-warn" class="score-sel-label" role="status" style="flex:1 1 100%;color:#b91c1c" hidden></span>
+            <span id="score-field-msg" data-testid="score-field-msg" class="score-sel-label" role="status" style="flex:1 1 100%"></span>
+        </div>
+        <div id="score-pop" data-testid="score-pop" class="score-pop" role="dialog" aria-label="Edit mark" hidden>
+          <span id="score-pop-label" data-testid="score-pop-label" class="score-sel-label"></span>
+          <select id="score-pop-type" data-testid="score-pop-type" aria-label="Mark type" title="What this mark is">
+            <option value="mark">Mark</option><option value="eol">End of line</option><option value="jump">Jump</option></select>
+          <button id="score-nudge-minus" data-testid="score-nudge-minus" class="btn score-tbtn" title="Mark 0.1 s earlier">-0.1 s</button>
+          <button id="score-nudge-plus" data-testid="score-nudge-plus" class="btn score-tbtn" title="Mark 0.1 s later">+0.1 s</button>
+          <button id="score-pop-now" data-testid="score-pop-now" class="btn score-tbtn" title="Move the mark to the playhead">Set to now</button>
             <button id="score-clear-time" data-testid="score-clear-time" class="btn score-tbtn" title="Take the time off this mark">Untime</button>
             <input id="score-measure" data-testid="score-measure" type="text" maxlength="32" placeholder="Measure label" aria-label="Measure label" title="Measure label, unique in the score; empty clears it">
             <input id="score-note" data-testid="score-note" type="text" maxlength="500" placeholder="Note" aria-label="Note" title="Note shown when a singer taps the mark; empty clears it">
             <input id="score-jump-label" data-testid="score-jump-label" type="text" maxlength="64" placeholder="Jump label" aria-label="Jump label" title="Text shown on the jump (1-64 characters)" hidden>
             <select id="score-jump-target" data-testid="score-jump-target" class="score-tbtn" aria-label="Jump target" title="The timed mark this jump goes to" hidden></select>
-            <span id="score-jump-warn" data-testid="score-jump-warn" class="score-sel-label" role="status" style="flex:1 1 100%;color:#b91c1c" hidden></span>
-            <span id="score-field-msg" data-testid="score-field-msg" class="score-sel-label" role="status" style="flex:1 1 100%"></span>
+          <span id="score-pop-msg" data-testid="score-pop-msg" class="score-sel-label" role="status" style="flex:1 1 100%"></span>
+          <button id="score-delete" data-testid="score-delete" class="btn score-tbtn" title="Delete this mark">Delete</button>
+          <button id="score-pop-done" data-testid="score-pop-done" class="btn score-tbtn" title="Close">Done</button>
         </div>
         <div id="score-offsetbar" data-testid="score-offsetbar" class="score-tools score-selbar score-offsetbar" hidden>
           <select id="score-offset-track" data-testid="score-offset-track" aria-label="Track whose staff you tap"></select>
@@ -2043,10 +2057,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.0.3";
+var STATIC_BUILD_VERSION_ = "1.8.0.4";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-30T21:28:23.734Z";
+var STATIC_BUILD_DATE_ = "2026-10-30T22:37:05.676Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -9025,6 +9039,28 @@ function scoreSetJump(marks, id, patch) {
   }
   return { marks: list };
 }
+/** atc-tty9.14 AC 1: convert mark id to kind 'mark' | 'eol' | 'jump'. mark/EOL -> jump needs a label (default "Jump") and a target (the first timed
+ *  mark other than itself; refused when none); anything -> EOL drops time, measure, note, label and target; jump -> mark drops label and target
+ *  (an untimed mark). Deleting-style: jumps that targeted a mark that stops being a timed mark are left to scoreBrokenJumps. Returns {marks} or {error}. */
+function scoreSetKind(marks, id, kind) {
+  var list = scoreCopyMarks(marks), k = null;
+  list.forEach(function (q) { if (q.id === id) k = q; });
+  if (!k) return { error: 'Select a mark first.' };
+  var cur = k.kind === 'eol' || k.kind === 'jump' ? k.kind : 'mark';
+  if (kind !== 'mark' && kind !== 'eol' && kind !== 'jump') return { error: 'Unknown type.' };
+  if (kind === cur) return { marks: list };
+  if (kind === 'jump') {
+    var first = scoreTimed(scoreSorted(list.filter(function (q) { return q.id !== id; })))[0];
+    if (!first) return { error: 'Add a timed mark first: a jump needs a mark to go to.' };
+    k.kind = 'jump'; k.label = 'Jump'; k.targetMarkId = first.id;
+    delete k.t; delete k.measure; delete k.note;
+    return { marks: scoreSorted(list) };
+  }
+  delete k.label; delete k.targetMarkId;
+  if (kind === 'eol') { k.kind = 'eol'; delete k.t; delete k.measure; delete k.note; return { marks: scoreSorted(scoreAlignEols(list)) }; }
+  k.kind = 'mark';
+  return { marks: scoreSorted(list) };
+}
 /** atc-tty9.13 AC 3: the index of the line (in scoreDeriveLines order) an EOL mark at list[ei] belongs to, or -1: the line on its page
  *  whose start is nearest in y (within SCORE_SAME_LINE_PT) and whose last mark is left of the EOL; ties go to the upper line. */
 function scoreEolLineIdx(list, d, ei) {
@@ -10272,6 +10308,13 @@ function initScorePanel_() {
       if (document.activeElement !== $('score-note')) $('score-note').value = m.note || '';
       if (S.fieldMsgId !== m.id) { $('score-field-msg').textContent = ''; S.fieldMsgId = m.id; }
     }
+    if (!(S.edit && m)) S.pop = false;
+    $('score-pop').hidden = !S.pop;
+    if (S.pop && m) {
+      $('score-pop-label').textContent = $('score-sel-label').textContent; $('score-pop-msg').textContent = $('score-field-msg').textContent;
+      $('score-pop-type').value = m.kind === 'jump' ? 'jump' : m.kind === 'eol' ? 'eol' : 'mark';
+      $('score-pop-now').hidden = $('score-set-now').hidden; $('score-pop-now').textContent = $('score-set-now').textContent;
+    }
     syncSave();
     paintMarks();
   }
@@ -10701,14 +10744,10 @@ function initScorePanel_() {
     }
     if (S.offsetMode) { setOffsetAt(hit); return; }
     var onMark = scoreHitMark(S.marks, hit.page, hit.x, hit.y);
-    if (onMark && isPlayingNow() && onMark.kind === 'mark') { // atc-tty9.12 AC 5: tapping a mark while playing sets its time to now (an untimed mark becomes timed); undo restores
-      S.selId = onMark.id;
-      commit(scoreSetMarkTime(S.marks, onMark.id, scoreAddTime(trackNow(), true, S.reaction, rate())).marks, true);
-      return;
-    }
+    if (onMark && onMark.id === S.selId) { S.pop = true; syncUi(); return; } // atc-tty9.14: tapping the already-selected mark again opens its editor
     if (onMark) { // atc-tty9.13 AC 4: the playhead still goes to 1 s before the mark, but Follow pauses so the view stays where it is
-      S.selId = onMark.id; syncUi();
-      if (typeof onMark.t === 'number') { jumpTo(scoreJumpBefore(onMark.t)); if (!S.ribbonShown) pauseFollow(); }
+      S.selId = onMark.id; syncUi(); // atc-tty9.18: a tap while playing only selects; Set now times the mark
+      if (!isPlayingNow() && typeof onMark.t === 'number') { jumpTo(scoreJumpBefore(onMark.t)); if (!S.ribbonShown) pauseFollow(); }
       return;
     }
     if (S.place === 'jump') {
@@ -10956,6 +10995,18 @@ function initScorePanel_() {
     S.selId = r.selId;
     commit(r.marks, true);
   });
+  $('score-edit-mark').addEventListener('click', function () { if (selMark()) { S.pop = true; syncUi(); } });
+  $('score-pop-done').addEventListener('click', function () { S.pop = false; syncUi(); });
+  $('score-pop-now').addEventListener('click', function () { $('score-set-now').click(); });
+  $('score-pop-type').addEventListener('change', function () { // atc-tty9.14 AC 1, 4: one undo step per conversion
+    var m = selMark();
+    if (!m) return;
+    var r = scoreSetKind(S.marks, m.id, $('score-pop-type').value);
+    $('score-field-msg').textContent = r.error || ''; S.fieldMsgId = m.id;
+    if (r.error) { syncUi(); return; }
+    if (!scoreSameMarks(r.marks, S.marks)) commit(r.marks, true); else syncUi();
+    if (S.noteId === m.id) showNote(null);
+  });
   $('score-delete').addEventListener('click', function () {
     var m = selMark();
     if (!m) return;
@@ -10998,7 +11049,7 @@ function initScorePanel_() {
   chooseBtn.addEventListener('click', function () { buildChoices(); showChooser(); });
   var backBtn = $('back-btn');
   if (backBtn) backBtn.addEventListener('click', close);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && isOpen() && $('media-modal').classList.contains('hidden')) close(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && isOpen() && $('media-modal').classList.contains('hidden')) { if (S.pop) { S.pop = false; syncUi(); } else close(); } }); // atc-tty9.14: Escape closes the mark editor first
   scroller.addEventListener('scroll', function () {
     if (S.addrTimer) clearTimeout(S.addrTimer);
     S.addrTimer = setTimeout(function () { S.addrTimer = 0; if (isOpen() && !isPlayingNow()) notifyAddress(); }, 500);   // while playing, Follow's own scrolls write nothing; Pause writes the position   // 500 ms after scrolling or panning stops (ADR-0016)
@@ -11060,7 +11111,7 @@ function initScorePanel_() {
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonHit, scoreRibbonNudge, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreNudgeMark,
-  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreJumpTarget, scoreJumpTime, scoreBrokenJumps, scoreAddPlain, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreRibbonPos, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
+  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreBrokenJumps, scoreAddPlain, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreRibbonPos, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
 </script>
