@@ -2009,10 +2009,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.2.7";
+var STATIC_BUILD_VERSION_ = "1.7.2.8";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-30T14:40:25.585Z";
+var STATIC_BUILD_DATE_ = "2026-10-30T15:17:52.391Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8408,18 +8408,72 @@ var SCORE_EASE_MS = 200;
 var SCORE_UNDO_MAX = 50;
 var SCORE_ANCHOR_X = 0.10;
 var SCORE_ANCHOR_Y = 0.40;
-var scoreNextId_ = 1;
 
 function scoreRound2(v) { return Math.round(v * 100) / 100; }
 function scoreLerp(a, b, u) { return a + (b - a) * u; }
 function scoreClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-function scoreCopyMarks(marks) { return marks.map(function (k) { return { id: k.id, t: k.t, page: k.page, x: k.x, y: k.y }; }); }
-/** Copies of the marks, each carrying a runtime id (kept when present). */
-function scoreWithIds(marks) {
-  return marks.map(function (k) { return { id: k.id !== undefined ? k.id : scoreNextId_++, t: k.t, page: k.page, x: k.x, y: k.y }; });
+var SCORE_MARK_FIELDS_ = ['t', 'measure', 'note', 'label', 'targetMarkId']; // adr/0017: the optional v2 mark fields, in stored key order
+var SCORE_MARK_ID_RE_ = /^[A-Za-z0-9_-]{1,40}$/;
+/** adr/0017: copies keep the persistent id, the kind and every optional v2 field (a field a mark lacks stays absent). */
+function scoreCopyMarks(marks) {
+  return marks.map(function (k) {
+    var o = { id: k.id, kind: k.kind || 'mark', page: k.page, x: k.x, y: k.y };
+    SCORE_MARK_FIELDS_.forEach(function (f) { if (k[f] !== undefined) o[f] = k[f]; });
+    return o;
+  });
 }
+/** adr/0017: an id unused in the list: m<n> one past the highest m<n> present; deleting the highest then adding reuses it (stage 11, atc-tty9.9, handles jump targets). */
+function scoreFreshId(marks) {
+  var max = 0;
+  (marks || []).forEach(function (k) { var m = /^m(\d+)$/.exec(String(k && k.id)); if (m) max = Math.max(max, Number(m[1])); });
+  return 'm' + (max + 1);
+}
+/** Copies of the marks, each with a valid unique persistent id (kept when it has one) and a kind. */
+function scoreWithIds(marks) {
+  var out = [], seen = {};
+  scoreCopyMarks(marks).forEach(function (k) {
+    var id = typeof k.id === 'number' ? String(k.id) : k.id;
+    if (typeof id !== 'string' || !SCORE_MARK_ID_RE_.test(id) || seen['#' + id]) id = scoreFreshId(out.concat(marks));
+    while (seen['#' + id]) id = scoreFreshId(out);
+    seen['#' + id] = true; k.id = id; out.push(k);
+  });
+  return out;
+}
+/** Timed marks by time (stable: equal times keep their order); untimed marks after them in their order (adr/0017). */
 function scoreSorted(marks) {
-  return scoreCopyMarks(marks).sort(function (a, b) { return a.t - b.t; }); // stable: equal times keep their order
+  return scoreCopyMarks(marks).sort(function (a, b) {
+    var ua = typeof a.t !== 'number', ub = typeof b.t !== 'number';
+    if (ua || ub) return ua === ub ? 0 : ua ? 1 : -1;
+    return a.t - b.t;
+  });
+}
+/**
+ * adr/0017: v1 marks {t, page, x, y} -> v2 marks. Twin of scoreMigrateMarksV1_ in src/Score.js (keep identical; a unit
+ * test holds them equal): order by t, page, y, x (then input order), ids m1..mN, kind 'mark', numbers kept; a mark
+ * without four finite numbers is dropped.
+ */
+function scoreMigrateMarksV1(marks) {
+  function fin(v) { return typeof v === 'number' && isFinite(v); }
+  var list = [];
+  (Array.isArray(marks) ? marks : []).forEach(function (k, i) {
+    if (k && typeof k === 'object' && fin(k.t) && fin(k.page) && fin(k.x) && fin(k.y)) list.push({ k: k, i: i });
+  });
+  list.sort(function (a, b) { return (a.k.t - b.k.t) || (a.k.page - b.k.page) || (a.k.y - b.k.y) || (a.k.x - b.k.x) || (a.i - b.i); });
+  return list.map(function (e, n) { return { id: 'm' + (n + 1), kind: 'mark', page: e.k.page, x: e.k.x, y: e.k.y, t: e.k.t }; });
+}
+/** adr/0017: a v1 map or save payload -> v2 (marks migrated, every other field kept); v2 as is; any other version null. */
+function scoreUpgradeMap(o) {
+  if (!o || typeof o !== 'object') return null;
+  if (o.version === 2) return o;
+  if (o.version !== 1) return null;
+  var out = {};
+  Object.keys(o).forEach(function (k) { out[k] = o[k]; });
+  out.version = 2; out.marks = scoreMigrateMarksV1(o.marks);
+  return out;
+}
+/** Stage 10 edits and follows timed 'mark' marks only; a map holding any other mark is shown but not edited here (adr/0017). */
+function scoreEditableMarks(marks) {
+  return (marks || []).every(function (k) { return k && (k.kind === undefined || k.kind === 'mark') && typeof k.t === 'number'; });
 }
 /** track time t = clock x speed; the clock is what the audio engine reports. */
 function scoreTrackTime(clock, speed) { return clock * speed; }
@@ -8742,7 +8796,7 @@ function scoreAddMark(marks, spec) {
     var f = list[ln.first], dy = Math.abs(spec.y - f.y);
     if (f.page === spec.page && dy <= SCORE_SAME_LINE_PT && spec.x > f.x && dy < best) { best = dy; y = f.y; }
   });
-  var mark = { id: scoreNextId_++, t: scoreRound2(spec.t), page: spec.page, x: spec.x, y: y };
+  var mark = { id: scoreFreshId(list), kind: 'mark', page: spec.page, x: spec.x, y: y, t: scoreRound2(spec.t) };
   list.splice(at, 0, mark);
   return { marks: list, mark: mark };
 }
@@ -8784,19 +8838,24 @@ function scoreMoveMark(marks, id, x, y, ptW, ptH) {
   return list;
 }
 
-var SCORE_MARKS_PREFIX = 'pmix-score-marks-v1:';
+// adr/0017: v2 device values live under their own key; a v1 value (pmix-score-marks-v1:, a 1.7.2 page on this origin) is read,
+// migrated and left in place for that page.
+var SCORE_MARKS_PREFIX = 'pmix-score-marks-v2:';
+var SCORE_MARKS_PREFIX_V1 = 'pmix-score-marks-v1:';
 function scoreMarksKey(fileId) { return SCORE_MARKS_PREFIX + fileId; }
+/** The v1 key a v2 device key falls back to ('' for any other key). */
+function scoreMarksKeyV1(key) { return String(key).indexOf(SCORE_MARKS_PREFIX) === 0 ? SCORE_MARKS_PREFIX_V1 + String(key).slice(SCORE_MARKS_PREFIX.length) : ''; }
 function scoreSerializeMarks(marks, offsets) {
   var o = {
-    v: 1,
-    marks: scoreSorted(marks).map(function (k) { return { t: scoreRound2(k.t), page: k.page, x: scoreRound2(k.x), y: scoreRound2(k.y) }; })
+    v: 2,
+    marks: scorePlainMarks(marks)
   };
   if (offsets && Object.keys(offsets).length) o.offsets = offsets; // atc-ore.16 AC 10: unsaved track offsets travel with the marks
   return JSON.stringify(o);
 }
 /** The track offsets of a stored value (parsed object), or null when it has none (an older value, or unreadable). */
 function scoreOffsetsOf(o) {
-  if (!o || o.v !== 1 || !o.offsets || typeof o.offsets !== 'object' || Array.isArray(o.offsets)) return null;
+  if (!o || (o.v !== 1 && o.v !== 2) || !o.offsets || typeof o.offsets !== 'object' || Array.isArray(o.offsets)) return null;
   return JSON.parse(JSON.stringify(o.offsets));
 }
 /** atc-ore.24: the device value, parsed once: {marks, offsets, base}. A field is undefined when the device has no value of its own for it
@@ -8805,10 +8864,10 @@ function scoreParseDevice(s) {
   var o = null;
   try { o = JSON.parse(s); } catch (e) { o = null; }
   var d = { marks: undefined, offsets: undefined, base: null };
-  if (!o || o.v !== 1) return d;
+  if (!o || (o.v !== 1 && o.v !== 2)) return d;
   var b = o.base;
-  if (b && b.offsets && typeof b.offsets === 'object' && !Array.isArray(b.offsets)) {
-    d.base = { at: typeof b.at === 'string' ? b.at : null, offsets: JSON.parse(JSON.stringify(b.offsets)), marks: Array.isArray(b.marks) ? scorePlainMarks(b.marks) : null };
+  if (b && b.offsets && typeof b.offsets === 'object' && !Array.isArray(b.offsets)) { // adr/0017: a v1 baseline's marks migrate as the shared map's do, so its token stays valid
+    d.base = { at: typeof b.at === 'string' ? b.at : null, offsets: JSON.parse(JSON.stringify(b.offsets)), marks: Array.isArray(b.marks) ? scorePlainMarks(o.v === 1 ? scoreMigrateMarksV1(b.marks) : b.marks) : null };
   }
   if (Array.isArray(o.marks) && (o.marks.length || d.base)) d.marks = scoreMarksOf(o);
   d.offsets = scoreOffsetsOf(o) || undefined;
@@ -8881,7 +8940,7 @@ function scoreKeepMine(base, cur, use) {
  *  baseline is a copy of the shared map and follows Drive. Without one, the old shape. */
 function scoreDeviceEntry(marks, offsets, base) {
   if (!base || !base.offsets) return scoreSerializeMarks(marks, offsets);
-  var o = { v: 1 };
+  var o = { v: 2 }; // adr/0017
   if (!(base.marks && scoreSameMarks(marks, base.marks))) o.marks = scorePlainMarks(marks);
   if (!scoreSameOffsets(offsets || {}, base.offsets)) o.offsets = offsets || {};
   o.base = { at: base.at || null, offsets: base.offsets, marks: scorePlainMarks(base.marks) };
@@ -8914,7 +8973,7 @@ function scoreSaveButton(state, signedIn, playing) {
 function scoreMarksUnknownVersion(s) {
   var o;
   try { o = JSON.parse(s); } catch (e) { return false; }
-  return !!o && typeof o === 'object' && o.v !== 1;
+  return !!o && typeof o === 'object' && o.v !== 1 && o.v !== 2;
 }
 /** Stored value -> sorted marks with runtime ids; anything unreadable is an empty list. */
 function scoreParseMarks(s) {
@@ -8922,10 +8981,12 @@ function scoreParseMarks(s) {
   try { o = JSON.parse(s); } catch (e) { return []; }
   return scoreMarksOf(o);
 }
+/** A stored value's marks (v1 migrated) as runtime marks; stage 10 shows timed 'mark' marks only (adr/0017). */
 function scoreMarksOf(o) {
-  if (!o || o.v !== 1 || !Array.isArray(o.marks)) return [];
-  var ok = o.marks.filter(function (k) {
-    return k && typeof k.t === 'number' && isFinite(k.t) && k.t >= 0 && typeof k.page === 'number' && k.page >= 1 && k.page % 1 === 0 &&
+  if (!o || (o.v !== 1 && o.v !== 2) || !Array.isArray(o.marks)) return [];
+  var list = o.v === 1 ? scoreMigrateMarksV1(o.marks) : o.marks;
+  var ok = list.filter(function (k) {
+    return k && (k.kind === undefined || k.kind === 'mark') && typeof k.t === 'number' && isFinite(k.t) && k.t >= 0 && typeof k.page === 'number' && k.page >= 1 && k.page % 1 === 0 &&
       typeof k.x === 'number' && isFinite(k.x) && typeof k.y === 'number' && isFinite(k.y);
   });
   return scoreSorted(scoreWithIds(ok));
@@ -8939,21 +9000,33 @@ function scoreClearPrompt(n) { return 'Clear all ' + n + (n === 1 ? ' mark' : ' 
 
 // ---- Shared score map, client half (bd atc-ore.7) ----
 var SCORE_SHARED_PREFIX = 'pmix-score-shared-v1:';
-var SCORE_QUEUE_KEY = 'pmix-score-queue-v1';
+var SCORE_QUEUE_KEY = 'pmix-score-queue-v2';    // adr/0017: v2 saves; a 1.7.2 page on this origin flushes only its own v1 key
+var SCORE_QUEUE_KEY_V1 = 'pmix-score-queue-v1'; // read, migrated and emptied into the v2 key
 function scoreSharedKey(folderId) { return SCORE_SHARED_PREFIX + folderId; }
 function scoreCount(n) { return n + (n === 1 ? ' mark' : ' marks'); }
-/** Marks as the server stores them: plain {t, page, x, y}, rounded and sorted, no runtime ids. */
+/** Marks as the server stores them (adr/0017 v2): {id, kind, page, x, y, t?, ...}, numbers rounded, sorted. */
 function scorePlainMarks(marks) {
-  return scoreSorted(marks || []).map(function (k) { return { t: scoreRound2(k.t), page: k.page, x: scoreRound2(k.x), y: scoreRound2(k.y) }; });
+  return scoreSorted(scoreWithIds(marks || [])).map(function (k) {
+    var o = { id: k.id, kind: k.kind || 'mark', page: k.page, x: scoreRound2(k.x), y: scoreRound2(k.y) };
+    SCORE_MARK_FIELDS_.forEach(function (f) { if (k[f] !== undefined) o[f] = f === 't' ? scoreRound2(k.t) : k[f]; });
+    return o;
+  });
 }
-function scoreSameMarks(a, b) { return JSON.stringify(scorePlainMarks(a)) === JSON.stringify(scorePlainMarks(b)); }
+/** Same marks by value: ids are not compared, so a migrated copy never looks edited (adr/0017). */
+function scoreSameMarks(a, b) {
+  function key(ms) { return JSON.stringify(scorePlainMarks(ms).map(function (k) { var o = {}; Object.keys(k).forEach(function (f) { if (f !== 'id') o[f] = k[f]; }); return o; })); }
+  return key(a) === key(b);
+}
 /** A cached or received shared map, or null when it is not a usable one. */
 function scoreSharedParse(raw) {
   var o = raw;
   if (typeof raw === 'string') { try { o = JSON.parse(raw); } catch (e) { return null; } }
-  if (!o || typeof o !== 'object' || typeof o.pdfId !== 'string' || !Array.isArray(o.marks)) return null;
+  o = scoreUpgradeMap(o); // adr/0017: a v1 copy migrates as the server migrates it; an unknown version is not usable here
+  if (!o || typeof o.pdfId !== 'string' || !Array.isArray(o.marks)) return null;
   return o;
 }
+/** adr/0017: a getScore reply of a version this build does not know (never edited or saved over here). */
+function scoreSharedNewer(raw) { return !!raw && typeof raw === 'object' && raw.version !== 1 && raw.version !== 2; }
 /** The hidden-name rule (bd atc-dka3): starts with _, ends with _, or the part before the last . ends with _. Twin of isHiddenName_ in src/Code.js; keep identical. */
 function isHiddenName(name) {
   if (name === null || name === undefined) return false;
@@ -9049,7 +9122,7 @@ function scoreSaveState(marks, shared, pdfId, offsets) {
 /** The saveScore score argument: the open PDF's marks, name and modified time (atc-ore.8 AC 12 re-binds the map to it);
  *  offsets are the working ones, else carried over from the shared map. */
 function scoreSavePayload(shared, pdfId, pdfModified, marks, pdfName, offsets) {
-  var p = { version: 1, pdfId: pdfId, pdfModified: pdfModified || 0, marks: scorePlainMarks(marks), offsets: offsets || (shared && shared.offsets) || {} };
+  var p = { version: 2, pdfId: pdfId, pdfModified: pdfModified || 0, marks: scorePlainMarks(marks), offsets: offsets || (shared && shared.offsets) || {} };
   if (typeof pdfName === 'string' && pdfName) p.pdfName = pdfName;
   return p;
 }
@@ -9057,13 +9130,27 @@ function scoreSaveMessage(code, current) {
   if (code === 'not_editor') return 'Only score editors can save to Drive. Your marks stay on this device.';
   if (code === 'sign_in_required') return 'Sign in to save to Drive. Your marks stay on this device.';
   if (code === 'too_many_marks') return 'Too many marks to save (the limit is 2,000).';
+  if (code === 'outdated_client') return 'The saved score is from a newer version of Practice Mix. Reload the page to save. Your marks stay on this device.';
   if (code === 'too_large' || code === 'invalid_score' || code === 'bad_request') return 'The score could not be saved (' + code.replace(/_/g, ' ') + ').';
   if (code === 'stale') return 'A newer saved version exists' + (current && current.marks ? ' (' + scoreCount(current.marks.length) + ')' : '') + '. Use it, or keep your marks and save again.';
   return 'Could not save right now. Try again in a moment.';
 }
 /** The offline queue: one waiting save per folder. */
 function scoreQueueParse(raw) {
-  try { var q = JSON.parse(raw); return Array.isArray(q) ? q.filter(function (e) { return e && typeof e.folderId === 'string' && e.score; }) : []; } catch (e) { return []; }
+  try {
+    var q = JSON.parse(raw);
+    if (!Array.isArray(q)) return [];
+    return q.filter(function (e) { return e && typeof e.folderId === 'string' && e.score; }).map(function (e) { // adr/0017: a v1 save migrates; basedOn and queuedAt are kept
+      var sc = e.score.version === 1 ? scoreUpgradeMap(e.score) : e.score;
+      return sc === e.score ? e : { folderId: e.folderId, score: sc, basedOn: e.basedOn, queuedAt: e.queuedAt };
+    });
+  } catch (e) { return []; }
+}
+/** adr/0017: the v2 queue plus the v1 queue's saves for folders it does not hold (a v2 entry is the newer save). */
+function scoreQueueMerge(q2, q1) {
+  var out = q2.slice();
+  q1.forEach(function (e) { if (!out.some(function (x) { return x.folderId === e.folderId; })) out.push(e); });
+  return out;
 }
 function scoreQueueAdd(queue, entry) { return queue.filter(function (e) { return e.folderId !== entry.folderId; }).concat([entry]); }
 /** AC 18: a queued save leaves the queue only on ok, stale or a permanent refusal; offline, unavailable and sign_in_required keep it. */
@@ -9093,8 +9180,16 @@ function scoreKeepMineBase(stale, base, folder, fileId, use) { return scoreStale
 /** atc-ore.28 AC 4: the carried key a load remembers (carried or released); it is dropped only by a successful save, through scoreDropKey. */
 function scoreCarriedKeyAfterLoad(ck, rc) { return ck && (rc.carried || rc.release) ? ck : ''; }
 function scoreQueueRemove(queue, folderId) { return queue.filter(function (e) { return e.folderId !== folderId; }); }
-function scoreQueueRead_() { try { return scoreQueueParse(window.localStorage.getItem(SCORE_QUEUE_KEY)); } catch (e) { return []; } }
-function scoreQueueWrite_(q) { try { if (q.length) window.localStorage.setItem(SCORE_QUEUE_KEY, JSON.stringify(q)); else window.localStorage.removeItem(SCORE_QUEUE_KEY); } catch (e) { /* ignore */ } }
+function scoreQueueRead_() {
+  try { return scoreQueueMerge(scoreQueueParse(window.localStorage.getItem(SCORE_QUEUE_KEY)), scoreQueueParse(window.localStorage.getItem(SCORE_QUEUE_KEY_V1))); } catch (e) { return []; }
+}
+/** Writes the whole queue (v1 entries read through scoreQueueRead_ are in it) to the v2 key and empties the v1 key. */
+function scoreQueueWrite_(q) {
+  try {
+    if (q.length) window.localStorage.setItem(SCORE_QUEUE_KEY, JSON.stringify(q)); else window.localStorage.removeItem(SCORE_QUEUE_KEY);
+    window.localStorage.removeItem(SCORE_QUEUE_KEY_V1);
+  } catch (e) { /* ignore */ }
+}
 
 function scorePdfjsCacheName_() { return 'pmix-pdfjs-' + PDFJS_VER_ + '-v1'; }
 /** atc-ore.11: delete the PDF.js caches of other versions (a version bump leaves the old copy orphaned). Never throws. */
@@ -9166,6 +9261,8 @@ function initScorePanel_() {
 
   function store(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function recall(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  /** A device-marks key: its v2 value, else the v1 value a 1.7.2 page left (migrated when parsed; adr/0017). */
+  function recallMarks(k) { var v = recall(k), k1 = scoreMarksKeyV1(k); return v === null && k1 ? recall(k1) : v; }
   S.ribbon = recall(RIBBON_KEY) !== '0'; // default on
   function isOpen() { return !panel.classList.contains('hidden'); }
   (function () { var sb = document.getElementById('seek-bar'); if (sb) sb.addEventListener('input', function () { S.hold = false; }); })(); // a seek by the singer ends a restored view's hold
@@ -9468,6 +9565,7 @@ function initScorePanel_() {
   }
   /** atc-ore.24 AC 3: the one place a getScore reply touches the cache; a reply older than the last adoptShared is ignored. */
   function applyScoreReply(fid, seq0, r) {
+    if (r !== undefined && !scoreLateReply(seq0, appliedSeq[fid])) newerMap[fid] = scoreSharedNewer(r);
     var o = scoreReplyOutcome(scoreLateReply(seq0, appliedSeq[fid]), r, r == null ? null : scoreSharedParse(r), function () { return scoreSharedParse(recall(scoreSharedKey(fid))); });
     if (o.action === 'remove') { try { window.localStorage.removeItem(scoreSharedKey(fid)); } catch (e) { /* ignore */ } }
     else if (o.action === 'write') store(scoreSharedKey(fid), JSON.stringify(o.map));
@@ -9577,6 +9675,7 @@ function initScorePanel_() {
   var avail = { folder: '', fetched: '', ok: false, resolved: '', pending: '' }; // resolved = the folder whose check has settled (atc-ore.25 AC 4)
   var checkP = {}; // atc-ore.25 AC 3: per folder, the check's getScore request {p, at}; the first open within CHECK_REUSE_MS_ takes its reply instead of asking again
   var CHECK_REUSE_MS_ = 30000;
+  var newerMap = {}; // adr/0017: per folder, true when getScore answered a map version this build does not know (read-only here)
   var seqCount = {}, appliedSeq = {}; // atc-ore.24: per folder, one counter for getScore calls and adopts; appliedSeq = the last one applied
   function nextSeq(fid) { seqCount[fid] = (seqCount[fid] || 0) + 1; return seqCount[fid]; }
   function playbackShown() { return !page_.classList.contains('hidden'); }
@@ -9767,9 +9866,11 @@ function initScorePanel_() {
       S.orphan[fileId] = window.confirm(scoreOrphanPrompt(S.shared));
       use = sharedUse();
     }
-    var raw = recall(scoreMarksKey(fileId));
-    S.readOnly = scoreMarksUnknownVersion(raw); // a newer build wrote it: leave the key untouched
-    if (S.readOnly) {
+    var raw = recallMarks(scoreMarksKey(fileId));
+    var devNewer = scoreMarksUnknownVersion(raw); // a newer build wrote it: leave the key untouched
+    var sharedLocked = !!newerMap[S.folder] || !!(S.shared && use.applies && !scoreEditableMarks(S.shared.marks)); // adr/0017: a newer map, or marks stage 10 cannot edit
+    S.readOnly = devNewer || sharedLocked;
+    if (devNewer) {
       try { getClientTelemetry_().captureError('scoreMarks', new Error('unknown stored marks version; left untouched'), { fileId: fileId }); } catch (e) { /* best effort */ }
     }
     // atc-ore.8 AC 13: device marks kept for the PDF the map was saved for come along; its key stays until a save succeeds.
@@ -9777,7 +9878,7 @@ function initScorePanel_() {
     S.carriedKey = ''; // AC 23: set below only when those marks are carried or released
     var sh = S.shared;
     // atc-ore.24: one three-way merge (device, baseline, Drive) decides marks, offsets, basedOn and the new baseline.
-    var carried = ck && !S.readOnly ? scoreParseDevice(recall(ck)) : null;
+    var carried = ck && !S.readOnly ? scoreParseDevice(recallMarks(ck)) : null;
     var rc = scoreMergeLoad(scoreParseDevice(raw), carried, sh, use);
     S.marks = S.readOnly ? [] : rc.editedMarks ? rc.marks : [];
     S.offsets = rc.offsets; S.base = rc.base; S.basedOn = rc.basedOn;
@@ -9785,13 +9886,13 @@ function initScorePanel_() {
     S.offsetMode = false;
     S.carriedKey = scoreCarriedKeyAfterLoad(ck, rc); // atc-ore.28 AC 4: a released (legacy copy) key is dropped by a successful save too, not at load
     if (rc.carried) saveMarks();
-    if (!rc.editedMarks && !S.readOnly && use.applies && sh.marks.length) S.marks = marksFromShared(sh.marks);
+    if ((!rc.editedMarks || sharedLocked) && !devNewer && use.applies && sh && sh.marks.length) S.marks = marksFromShared(sh.marks); // a locked map is shown, never edited
     S.undo = []; S.selId = null; S.edit = false; S.followOn = true; S.snapPending = true; S.easeStart = -1; S.lastN = null; S.curN = -1; S.offY = 0; S.pan = null;
     var sl = scoreStaleAtLoad(S.stale, S.folder, S.fileId, rc.edited); // atc-ore.28 AC 1: a stale set by a flush before this load stays only while something is edited
     if (!sl.stale) { S.stale = null; S.saveMsg = sl.nothing ? scoreStaleText({ nothing: true }) : ''; }
     renderMarks(); syncUi();
   }
-  function marksFromShared(plain) { return scoreMarksOf({ v: 1, marks: plain }); }
+  function marksFromShared(plain) { return scoreMarksOf({ v: 2, marks: plain }); }
   function saveMarks() { if (S.readOnly) return; store(scoreMarksKey(S.fileId), scoreDeviceEntry(S.marks, S.offsets, S.base)); }
   /** Replace the mark list as one undoable step (the previous list goes on the undo stack). */
   function commit(next, keepSel) {
@@ -9818,7 +9919,7 @@ function initScorePanel_() {
   }
   function positionMarks() {
     Array.prototype.forEach.call(strip.querySelectorAll('.score-mark'), function (el) {
-      var id = Number(el.getAttribute('data-mark-id')), k = null;
+      var id = el.getAttribute('data-mark-id'), k = null;
       S.marks.forEach(function (q) { if (q.id === id) k = q; });
       var pg = k && pageIndexOf(k.page);
       if (!pg) return;
@@ -9829,7 +9930,7 @@ function initScorePanel_() {
   }
   function paintMarks() {
     Array.prototype.forEach.call(strip.querySelectorAll('.score-mark'), function (el) {
-      var id = Number(el.getAttribute('data-mark-id'));
+      var id = el.getAttribute('data-mark-id');
       var idx = -1;
       S.marks.forEach(function (q, i) { if (q.id === id) idx = i; });
       el.setAttribute('data-n', String(idx + 1));
@@ -9928,8 +10029,8 @@ function initScorePanel_() {
       var drop = here ? scoreDropKey(S.shared, out.result, S.pdfs, S.carriedKey) : ''; // AC 13: only a successful save releases the old PDF's device marks
       adoptShared(fid, out.result);
       var nb = here ? scoreRebaseAfterSave(S.fileId, score, out.result) : null; // atc-ore.24: only the open PDF's save re-baselines, through the one writer
-      if (nb) { S.base = nb; S.basedOn = nb.at; if (!S.readOnly && recall(scoreMarksKey(S.fileId))) saveMarks(); }
-      if (drop) { try { window.localStorage.removeItem(drop); } catch (e) { /* ignore */ } }
+      if (nb) { S.base = nb; S.basedOn = nb.at; if (!S.readOnly && recallMarks(scoreMarksKey(S.fileId))) saveMarks(); }
+      if (drop) { try { window.localStorage.removeItem(drop); if (scoreMarksKeyV1(drop)) window.localStorage.removeItem(scoreMarksKeyV1(drop)); } catch (e) { /* ignore */ } } // its v1 twin held the same carried marks
       if (here) { S.stale = null; S.saveMsg = 'Saved ' + scoreCount(out.result.marks.length); }
     } else if (out.kind === 'offline') {
       scoreQueueWrite_(scoreQueueAdd(scoreQueueRead_(), { folderId: fid, score: score, basedOn: basedOn, queuedAt: new Date().toISOString() }));
@@ -10536,7 +10637,7 @@ function initScorePanel_() {
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonHit, scoreRibbonNudge, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNudgeMark,
-  scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
+  scoreDeleteMark, scoreMoveMark, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
 </script>
