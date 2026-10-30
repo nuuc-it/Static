@@ -1243,6 +1243,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
       <div class="signin-panel hidden" data-testid="signin-panel">
         <div id="gis-signin-button"></div>
         <p class="signin-msg" data-testid="signin-msg" role="status"></p>
+        <button type="button" class="btn" data-testid="signin-close" aria-label="Close sign-in">Not now</button>
       </div>
 
       <!-- Folder Info Section -->
@@ -2008,10 +2009,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.7.2.6";
+var STATIC_BUILD_VERSION_ = "1.7.2.7";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-30T11:34:54.924Z";
+var STATIC_BUILD_DATE_ = "2026-10-30T14:40:25.585Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -3305,6 +3306,13 @@ async function onGoogleCredential_(credentialResponse) {
 document.addEventListener('DOMContentLoaded', function () {
   document.querySelector('[data-testid="signin-btn"]').addEventListener('click', openSignIn_);
   document.querySelector('[data-testid="signout-btn"]').addEventListener('click', signOut_);
+  // "Not now": the panel closes and the navigation it was waiting for is dropped (a link restore says so; bd atc-7k0).
+  document.querySelector('[data-testid="signin-close"]').addEventListener('click', function () {
+    document.querySelector('[data-testid="signin-panel"]').classList.add('hidden');
+    pendingSignInResume_ = null;
+    signInPrompt_ = '';
+    if (typeof onSignInDismissed_ === 'function') onSignInDismissed_();
+  });
   renderSignIn_();
 });
 </script>
@@ -5616,6 +5624,131 @@ if (typeof module !== 'undefined') {
 </script>
 <script>
 /**
+ * Address-bar state (ADR-0016, bd atc-ex0). ADDRESS_STATE_MODULE: pure helpers, no DOM.
+ * addressSearch_ builds the query string the page writes with history.replaceState: the contract
+ * fields in canonical order (v, folder, t, view, score, pg, y), then every parameter the contract does
+ * not own, in its original order. The practice fields (at, speed, mix, mv) and webapp are never kept.
+ * createAddressWriter_ coalesces writes to at most one per gapMs (310 ms: under Safari's 100 per 30 s).
+ * ASCII only.
+ */
+var ADDRESS_CONTRACT_FIELDS_ = ['v', 'folder', 't', 'view', 'score', 'pg', 'y', 'at', 'speed', 'mix', 'mv'];
+var ADDRESS_WRITE_GAP_MS_ = 310;
+
+/** st: { folder, tracks: [ids in selection order], play: bool, score?: pdf id, pg?: int >= 1, y?: 0..1 }. Returns '?...' */
+function addressSearch_(currentSearch, st) {
+  var parts = ['v=1', 'folder=' + encodeURIComponent(st.folder)];
+  if (st.tracks && st.tracks.length) parts.push('t=' + st.tracks.map(encodeURIComponent).join('.'));
+  if (st.play) {
+    parts.push('view=play');
+    if (st.score) {
+      parts.push('score=' + encodeURIComponent(st.score));
+      var pg = Math.floor(Number(st.pg));
+      parts.push('pg=' + (pg >= 1 ? pg : 1));
+      var y = Number(st.y);
+      if (!isFinite(y)) y = 0;
+      parts.push('y=' + (Math.round(Math.max(0, Math.min(1, y)) * 1000) / 1000));
+    }
+  }
+  var rest = new URLSearchParams(currentSearch || '');
+  rest.forEach(function (value, key) {
+    if (key === 'webapp' || ADDRESS_CONTRACT_FIELDS_.indexOf(key) !== -1) return;
+    parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(value));
+  });
+  return '?' + parts.join('&');
+}
+
+/** deps: { now(), setTimer(fn, ms), clearTimer(id), write(), gapMs? }. request() writes at once when idle, else once at the end of the gap. */
+function createAddressWriter_(deps) {
+  var gap = deps.gapMs === undefined ? ADDRESS_WRITE_GAP_MS_ : deps.gapMs;
+  var last = -Infinity, timer = null;
+  function fire() { timer = null; last = deps.now(); deps.write(); }
+  return {
+    request: function () {
+      if (timer !== null) return;
+      var wait = last + gap - deps.now();
+      if (wait <= 0) fire(); else timer = deps.setTimer(fire, wait);
+    },
+    pending: function () { return timer !== null; }
+  };
+}
+
+var ADDRESS_ID_RE_ = /^[A-Za-z0-9_-]+$/;
+var ADDRESS_NUM_RE_ = /^-?(\d+\.?\d*|\.\d+)$/;
+var ADDRESS_PRACTICE_FIELDS_ = ['at', 'speed', 'mix', 'mv'];
+
+/**
+ * Reads the address-bar query (ADR-0016 Restoring on load, step 1). Never throws. Returns
+ * { hasState, unknownVersion, folder|null, tracks[], play, score|null, pg|null, y|null, practice|null, ignored[] }.
+ * No v and no folder: hasState false, every contract field ignored. A v other than 1: folder only, unknownVersion.
+ * Numbers: a finite out-of-range value is clamped (pg to >= 1 here, to the page count at restore), a non-number or a
+ * non-integer pg/mv is ignored and named. Practice fields (at, speed, mix, mv) are parsed only with view=play and
+ * otherwise named in `ignored`; practice is null when none is valid. mix needs one token per track, a bad token is null.
+ */
+function parseAddressSearch_(search) {
+  var out = { hasState: false, unknownVersion: false, folder: null, tracks: [], play: false, score: null, pg: null, y: null, practice: null, ignored: [] };
+  var q;
+  try { q = new URLSearchParams(search || ''); } catch (e) { return out; }
+  var has = function (k) { return q.has(k); };
+  var folderRaw = has('folder') ? q.get('folder') : null;
+  var folder = folderRaw !== null && ADDRESS_ID_RE_.test(folderRaw) ? folderRaw : null;
+  var vRaw = has('v') ? q.get('v') : null;
+  if (vRaw === null && folder === null) return out;
+  out.hasState = true;
+  out.folder = folder;
+  if (vRaw !== null && vRaw !== '1') { out.unknownVersion = true; return out; }
+  var seen = {};
+  (has('t') ? q.get('t') : '').split('.').forEach(function (id) {
+    if (id && ADDRESS_ID_RE_.test(id) && !seen[id]) { seen[id] = true; out.tracks.push(id); }
+  });
+  out.play = q.get('view') === 'play';
+  if (has('view') && !out.play) out.ignored.push('view');
+  if (out.play) {
+    var sc = has('score') ? q.get('score') : null;
+    if (sc !== null && ADDRESS_ID_RE_.test(sc)) {
+      out.score = sc;
+      if (has('pg')) {
+        var pgRaw = q.get('pg'), pgN = ADDRESS_NUM_RE_.test(pgRaw) ? Number(pgRaw) : NaN;
+        if (isFinite(pgN) && Math.floor(pgN) === pgN) out.pg = Math.max(1, pgN); else out.ignored.push('pg');
+      }
+      if (has('y')) {
+        var yRaw = q.get('y'), yN = ADDRESS_NUM_RE_.test(yRaw) ? Number(yRaw) : NaN;
+        if (isFinite(yN)) out.y = Math.max(0, Math.min(1, yN)); else out.ignored.push('y');
+      }
+    } else if (has('score')) out.ignored.push('score');
+  }
+  var present = ADDRESS_PRACTICE_FIELDS_.filter(has);
+  if (!out.play) { present.forEach(function (k) { out.ignored.push(k); }); return out; }
+  var pr = {}, any = false;
+  if (has('at')) {
+    var atRaw = q.get('at'), atN = ADDRESS_NUM_RE_.test(atRaw) ? Number(atRaw) : NaN;
+    if (isFinite(atN)) { pr.at = Math.max(0, Math.round(atN * 10) / 10); any = true; } else out.ignored.push('at');
+  }
+  if (has('speed')) {
+    var spRaw = q.get('speed'), spN = ADDRESS_NUM_RE_.test(spRaw) ? Number(spRaw) : NaN;
+    if (isFinite(spN) && spN >= 0.7 - 1e-9 && spN <= 1.3 + 1e-9 && Math.abs(spN * 10 - Math.round(spN * 10)) < 1e-9) { pr.speed = Math.round(spN * 10) / 10; any = true; } else out.ignored.push('speed');
+  }
+  if (has('mix')) {
+    var toks = q.get('mix').split('.');
+    if (toks.length === out.tracks.length) {
+      pr.mix = toks.map(function (tk) {
+        var m = /^([0-3])([LCR])(s?)(m?)$/.exec(tk);
+        return m ? { level: Number(m[1]), pan: m[2], solo: !!m[3], mute: !!m[4] } : null;
+      });
+      any = true;
+    } else out.ignored.push('mix');
+  }
+  if (has('mv')) {
+    var mvRaw = q.get('mv');
+    if (/^-?\d+$/.test(mvRaw)) { pr.mv = Math.max(0, Math.min(100, Number(mvRaw))); any = true; } else out.ignored.push('mv');
+  }
+  if (any) out.practice = pr;
+  return out;
+}
+
+if (typeof module !== 'undefined') module.exports = { addressSearch_: addressSearch_, createAddressWriter_: createAddressWriter_, ADDRESS_WRITE_GAP_MS_: ADDRESS_WRITE_GAP_MS_, parseAddressSearch_: parseAddressSearch_ };
+</script>
+<script>
+/**
  * UI Logic - v2.0 Navigation-First Redesign
  * Selection page → Playback page with responsive layout
  *
@@ -5745,6 +5878,7 @@ const UI = (() => {
       state.trackLoadStatus.delete(id);
       AudioEngine.removeTrack(id);
     });
+    if (dropped.length) requestAddressWrite_();
     // Loaded-but-deselected tracks that vanished also leave the engine.
     const present = new Set((listing.audio || []).map(f => f.id));
     [...state.trackLoadStatus.keys()].forEach(id => {
@@ -5929,9 +6063,11 @@ const UI = (() => {
     state.trackLoadStatus.clear();
     state.loadedTracks.clear();
     state.trackMixSettings.clear();
+    requestAddressWrite_();
   }
 
   async function handleFolderGoClick() {
+    endRestore_();
     const folderId = extractFolderId(el.folderIdInput.value);
     if (!folderId) {
       showFolderStatus('Enter a valid folder ID or Drive URL', 'error');
@@ -6028,7 +6164,7 @@ const UI = (() => {
   }
 
   /**
-   * Puts the current folder in the address bar without a reload, so the page is linkable and the
+   * Puts the current address-bar state (folder, tracks, page, score; ADR-0016) in the address bar without a reload, so the page is linkable and the
    * back button is not a dead end. `?webapp=` is dropped on the way through: it is a local-dev
    * bootstrap parameter, already remembered in sessionStorage, and has no business in a link
    * anyone shares. The header Drive buttons follow the same folder.
@@ -6040,15 +6176,43 @@ const UI = (() => {
       a.href = driveUrl;
       a.onclick = () => { logActivity_('driveFolder', { folderId: state.folderId, folderName: state.folderName }); };
     });
+    requestAddressWrite_();
+  }
+
+  /** The address-bar state as the contract sees it (ADR-0016): folder, selection order, page, and the open score's PDF, page and anchor position. */
+  function addressStateNow_() {
+    const st = { folder: state.folderId, tracks: [...state.selectedFileIds], play: state.currentPage === 'playback' };
+    const sc = (st.play && typeof scorePanel_ !== 'undefined' && scorePanel_ && scorePanel_.addressState) ? scorePanel_.addressState() : null;
+    if (sc) { st.score = sc.pdf; st.pg = sc.pg; st.y = sc.y; }
+    return st;
+  }
+
+  /** The one address-bar write: history.replaceState only, passing history.state through so an open help guide or media viewer keeps its entry flag. */
+  function writeAddressBar_() {
+    if (!state.folderId || addressHeld_) return;
     try {
+      const next = addressSearch_(window.location.search, addressStateNow_());
+      if (next === window.location.search) return;
       const url = new URL(window.location.href);
-      url.searchParams.delete('webapp');
-      url.searchParams.set('folder', state.folderId);
-      window.history.replaceState({ folderId: state.folderId }, '', url.toString());
+      url.search = next;
+      window.history.replaceState(window.history.state, '', url.toString());
     } catch (e) {
       console.warn('[url] could not update the address bar', e);
     }
   }
+  // ADR-0016 Restoring on load: the incoming URL is read once, before the first write, and the address bar is held
+  // (nothing written) until the restore finishes or the singer does something else.
+  const addrReq_ = parseAddressSearch_(window.location.search);
+  let addressHeld_ = true;
+  let restoreRun_ = null;
+  let restoreCancelled_ = false;   // the singer acted before the restore could start (uncached initial load)
+  const addressWriter_ = createAddressWriter_({
+    now: () => Date.now(), setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (id) => clearTimeout(id), write: writeAddressBar_
+  });
+  function requestAddressWrite_() { if (!addressHeld_) addressWriter_.request(); }   // a request during the hold must not use up the writer's slot
+  window.pmixAddressChanged_ = requestAddressWrite_;   // the score panel calls this on open, close, PDF and page changes and when its view settles
+  // An overlay closing (help, media viewer) pops its history entry; the app state stays the source of truth.
+  window.addEventListener('popstate', requestAddressWrite_);
 
   function showSelectionStatus(message, type) {
     el.selectionStatus.textContent = message;
@@ -6216,10 +6380,12 @@ const UI = (() => {
 
   /** Pops one folder level. Returns true when it went back; the Back button logs the nav (error paths do not). */
   function handleSelectionBack() {
+    endRestore_();
     if (!state.navStack.length) return false;
     state.folderToken++;
     prefetcher.cancel();
     const prev = state.navStack.pop();
+    if (!prev.folderFiles) { backToSeeded_(prev); return true; }   // a parent seeded from a link's ancestor chain (id and name only)
     state.folderId = prev.folderId;
     state.folderName = prev.folderName;
     state.folderFiles = prev.folderFiles;
@@ -6239,7 +6405,38 @@ const UI = (() => {
     return true;
   }
 
+  /** Back to a parent known only by id and name (ADR-0016 In-app Back from a link): cached listing at once, else fetched. */
+  async function backToSeeded_(prev) {
+    const token = state.folderToken;
+    clearSelectedTracks();
+    el.selectionBackBtn.style.display = state.navStack.length ? '' : 'none';
+    let listing = getCachedListing(prev.folderId);
+    const fresh = !listing;
+    if (fresh) {
+      state.folderId = prev.folderId;
+      state.folderName = prev.folderName;
+      showFolderLoadingState();
+      try {
+        const result = await callApi('listFilesAndFolders', { folderId: prev.folderId, folderPath: [] });
+        if (token !== state.folderToken) return;
+        if (!result || result.error) throw new Error(result && result.error ? result.error : 'no listing');
+        storeListing(prev.folderId, result);
+        listing = result;
+      } catch (error) {
+        if (token !== state.folderToken) return;
+        showSelectionStatus('Failed to open folder: ' + ((error && error.message) || error), 'error');
+        return;
+      }
+    }
+    state.currentPath = listing.currentPath || [];
+    showListing(listing);
+    renderTrackButtons();
+    renderSubFolders();
+    if (!fresh) revalidateListing(prev.folderId, prev.folderId);
+  }
+
   async function handleSubFolderClick(folderId) {
+    endRestore_();
     if (!isAllowedFolder_(folderId)) { requireSignIn_(() => handleSubFolderClick(folderId)); return; }
     pushNav();
 
@@ -6295,6 +6492,7 @@ const UI = (() => {
 
   // Signing out while inside a non-initial folder returns to the initial one (never asks).
   window.onSignedOutHook_ = function () {
+    endRestore_();
     if (!initialFolderId_ || state.folderId === initialFolderId_ || state.currentPage !== 'selection') return;
     const init = state.folderCache.get('__initial__') || loadListingPersistent('__initial__');
     if (!init) return;
@@ -6310,16 +6508,19 @@ const UI = (() => {
     logNav_('back', true);
   };
 
-  async function handleTrackButtonClick(fileId) {
+  async function handleTrackButtonClick(fileId, opts) {
+    const fromRestore = !!(opts && opts.restore);
+    if (!fromRestore) endRestore_();
     const btn = document.querySelector(`[data-file-id="${fileId}"]`);
 
     // Toggle selection
     const isSelected = state.selectedFileIds.has(fileId);
     // bd atc-xr8 AC 2b: focus = the first selected track (the singer's own part).
-    logActivity_(isSelected ? 'deselect' : 'select', { fileId: fileId, label: trackLabelOf_(fileId), role: (isSelected ? state.selectedFileIds.values().next().value === fileId : state.selectedFileIds.size === 0) ? 'focus' : 'background' });
+    if (!fromRestore) logActivity_(isSelected ? 'deselect' : 'select', { fileId: fileId, label: trackLabelOf_(fileId), role: (isSelected ? state.selectedFileIds.values().next().value === fileId : state.selectedFileIds.size === 0) ? 'focus' : 'background' });
     if (isSelected) {
       state.selectedFileIds.delete(fileId);
       state.trackLoadStatus.delete(fileId);
+      requestAddressWrite_();
       if (btn) { btn.dataset.selected = 'false'; updateTrackBtnState(btn, 'available'); }
       // Keep track cached in AudioEngine memory for reuse, but mute it so it
       // does not contribute audio if play() is called while still loaded.
@@ -6328,6 +6529,7 @@ const UI = (() => {
       }
     } else {
       state.selectedFileIds.add(fileId);
+      requestAddressWrite_();
       // First selection in a folder = the singer's focus part; remember its label (FR-1.5.3).
       prefetcher.noteSelection(parseTrackLabels(state.folderFiles).labels.get(fileId), state.selectedFileIds.size);
       if (btn) btn.dataset.selected = 'true';
@@ -6359,6 +6561,7 @@ const UI = (() => {
           // Load failed — deselect so a single click re-selects and retries
           state.selectedFileIds.delete(fileId);
           state.trackLoadStatus.delete(fileId);
+          requestAddressWrite_();
           if (currentBtn) { currentBtn.dataset.selected = 'false'; updateTrackBtnState(currentBtn, 'available'); }
           // bd atc-gat: say so (status line + 3s button error state); one tap re-selects and retries.
           const failLabel = parseTrackLabels(state.folderFiles).labels.get(fileId) || (state.folderFiles.find(f => f.id === fileId) || {}).name || fileId;
@@ -6513,6 +6716,7 @@ const UI = (() => {
 
   function navigateToPlayback() {
     state.currentPage = 'playback';
+    requestAddressWrite_();
     el.selectionPage.classList.remove('active');
     el.selectionPage.classList.add('hidden');
     el.playbackPage.classList.remove('hidden');
@@ -6525,6 +6729,7 @@ const UI = (() => {
 
   function navigateToSelection() {
     state.currentPage = 'selection';
+    requestAddressWrite_();
     playLog_.end('navigate', AudioEngine.getCurrentTime());
     AudioEngine.stop();
     setPlayingState(false);
@@ -6810,6 +7015,7 @@ const UI = (() => {
 
   function setPlayingState(playing) {
     state.isPlaying = playing;
+    if (!playing) requestAddressWrite_();   // the score position is written when playback settles (ADR-0016)
     syncWakeLock();
     el.playBtn.setAttribute('data-playing', playing ? 'true' : 'false');
     el.playBtn.textContent = playing ? '⏸' : '▶';
@@ -7171,8 +7377,8 @@ const UI = (() => {
   function setupEventListeners() {
     el.openNewBtn.addEventListener('click', handleOpenNewClick);
     el.selectionBackBtn.addEventListener('click', () => { if (handleSelectionBack()) logNav_('back', true); });
-    el.playSelectedBtn.addEventListener('click', navigateToPlayback);
-    el.backBtn.addEventListener('click', navigateToSelection);
+    el.playSelectedBtn.addEventListener('click', () => { endRestore_(); navigateToPlayback(); });
+    el.backBtn.addEventListener('click', () => { endRestore_(); navigateToSelection(); });
     el.pickerOverlay.addEventListener('click', () => showFolderPicker(false));
     el.closePickerBtn.addEventListener('click', () => showFolderPicker(false));
     el.folderGoBtn.addEventListener('click', handleFolderGoClick);
@@ -7185,6 +7391,119 @@ const UI = (() => {
     setupSpeedControls();
     setupMasterControls();
     setupExportControls();
+  }
+
+  // ================================================================
+  // RESTORE FROM THE ADDRESS BAR (ADR-0016 "Restoring on load", bd atc-7k0)
+  // ================================================================
+
+  /** Singer acted (or the restore finished): stop restoring and let the address bar follow the app again. Writes nothing itself. */
+  function endRestore_() {
+    restoreCancelled_ = true;
+    if (restoreRun_) { restoreRun_.cancelled = true; restoreRun_ = null; }
+    addressHeld_ = false;
+  }
+  function restoreNoteText_(run) {
+    const parts = run.sentences.slice();
+    if (run.problems.length) parts.push('Not restored: ' + run.problems.join('; ') + '.');
+    return parts.join(' ');
+  }
+  function finishRestore_(run) {
+    if (run.cancelled) return;
+    restoreRun_ = null;
+    addressHeld_ = false;
+    const text = restoreNoteText_(run);
+    if (text) showSelectionStatus(text, 'info');
+    requestAddressWrite_();
+  }
+  window.onSignInDismissed_ = function () {
+    const run = restoreRun_;
+    if (!run || !run.waiting) return;
+    run.waiting = false;
+    run.sentences.push('The linked folder needs sign-in.');
+    finishRestore_(run);
+  };
+
+  /** Opens the linked folder through the gated path, asking for its Drive ancestors always. Returns true, false (could not be opened), or 'wait' (sign-in). */
+  async function openLinkedFolder_(target, run) {
+    const initial = { folderId: state.folderId, folderName: state.folderName };
+    const token = ++state.folderToken;
+    prefetcher.cancel();
+    let result = null;
+    try {
+      result = await callApi('listFilesAndFolders', { folderId: target, folderPath: [], ancestors: true });
+    } catch (e) {
+      if (e && e.code === 'sign_in_required') return 'wait';   // callApi opened the panel; the caller resumes after sign-in
+      result = null;
+    }
+    if (run.cancelled || token !== state.folderToken) return null;
+    if (!result || result.error || result.unchanged) return false;
+    const chain = Array.isArray(result.ancestors) ? result.ancestors : null;
+    const listing = Object.assign({}, result);
+    delete listing.ancestors;
+    state.navStack = (chain === null ? [initial] : chain.map(a => ({ folderId: a.id, folderName: a.name })));
+    state.currentPath = result.currentPath || [];
+    showListing(listing);
+    storeListing(target, listing);
+    el.selectionBackBtn.style.display = state.navStack.length ? '' : 'none';
+    showSelectionStatus('', '');
+    clearSelectedTracks();
+    renderTrackButtons();
+    renderSubFolders();
+    logNav_('deeplink', false);
+    return true;
+  }
+
+  /** runRestore_ that can never leave the address bar held: a throw ends the restore and lets writes resume. */
+  async function runRestoreSafe_(req, run) {
+    try { await runRestore_(req, run); }
+    catch (e) { console.error('[url] restore failed', e); endRestore_(); requestAddressWrite_(); }
+  }
+  async function runRestore_(req, run) {
+    if (run.cancelled) return;
+    if (!req.hasState) { finishRestore_(run); return; }
+    if (req.unknownVersion && !run.versionNoted) {
+      run.versionNoted = true;
+      run.sentences.push('This link came from a newer version of Practice Mix; ' + (req.folder ? 'only the folder was opened.' : 'it could not be used.'));
+    }
+    if (req.folder && req.folder !== state.folderId) {
+      if (!isAllowedFolder_(req.folder)) {
+        run.waiting = true;
+        requireSignIn_(() => { run.waiting = false; return runRestoreSafe_(req, run); });
+        return;
+      }
+      const opened = await openLinkedFolder_(req.folder, run);
+      if (run.cancelled || opened === null) return;
+      if (opened === 'wait') {
+        run.waiting = true;
+        pendingSignInResume_ = () => { run.waiting = false; return runRestoreSafe_(req, run); };
+        return;
+      }
+      if (opened === false) { run.sentences.push('The linked folder could not be opened.'); finishRestore_(run); return; }
+    }
+    if (req.unknownVersion) { finishRestore_(run); return; }
+    const token = state.folderToken;
+    const here = new Set(state.folderFiles.map(f => f.id));
+    const ids = req.tracks.filter(id => here.has(id));
+    const missing = req.tracks.length - ids.length;
+    if (missing) run.problems.push(missing + (missing === 1 ? ' track' : ' tracks') + ' no longer in the folder');
+    await Promise.all(ids.map(id => handleTrackButtonClick(id, { restore: true })));   // selection order = URL order; loads run together
+    if (run.cancelled || token !== state.folderToken) return;
+    let shown = false;
+    if (req.play && state.selectedFileIds.size > 0 && [...state.selectedFileIds].every(id => state.trackLoadStatus.get(id) === 'loaded')) {
+      navigateToPlayback();
+      shown = true;
+    }
+    const ignored = req.ignored.concat(req.practice ? Object.keys(req.practice) : []);   // practice values are applied by the practice-link stage (atc-tty9.5)
+    const pdf = shown && req.score ? state.folderPdfs.find(f => f.id === req.score) : null;
+    if (shown && req.score && (!pdf || !scorePanel_)) run.problems.push('score PDF not found');
+    if (ignored.length) run.problems.push('ignored ' + ignored.join(', '));
+    if (pdf && scorePanel_) {
+      // the panel reports back once the PDF is at the restored position (or failed), so the first write already carries it
+      scorePanel_.open(state.folderPdfs, null, { pdf: req.score, pg: req.pg, y: req.y, done: () => finishRestore_(run) });
+      return;
+    }
+    finishRestore_(run);
   }
 
   // ================================================================
@@ -7300,8 +7619,16 @@ const UI = (() => {
         renderSubFolders();
         logNav_(startVia, !!cachedInit);
         if (cachedInit) revalidateListing(null, folderResult.folderId);
+        if (restoreCancelled_) { requestAddressWrite_(); }
+        else {
+          restoreRun_ = { cancelled: false, waiting: false, sentences: [], problems: [] };
+          await runRestoreSafe_(addrReq_, restoreRun_);
+        }
+      } else {
+        endRestore_();
       }
     } catch (error) {
+      endRestore_();
       console.error('Failed to load initial folder:', error);
       // Never a blank page: the folder name is still "Loading…" at this point, and without this
       // the only evidence of failure is the console. Outside the HtmlService sandbox there is no
@@ -8841,6 +9168,7 @@ function initScorePanel_() {
   function recall(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   S.ribbon = recall(RIBBON_KEY) !== '0'; // default on
   function isOpen() { return !panel.classList.contains('hidden'); }
+  (function () { var sb = document.getElementById('seek-bar'); if (sb) sb.addEventListener('input', function () { S.hold = false; }); })(); // a seek by the singer ends a restored view's hold
   function setState(s) { panel.setAttribute('data-state', s); toolsEl.hidden = s !== 'ready'; toolRows.hidden = toolsEl.hidden; if (s !== 'ready') selbar.hidden = true; }
   function num(x) { return String(+Number(x).toFixed(2)); }
 
@@ -8947,8 +9275,24 @@ function initScorePanel_() {
     var g = geometry();
     return scoreWindow(g.tops, g.heights, scroller.scrollTop, scroller.clientHeight);
   }
+  // ---- Address bar (ADR-0016, bd atc-ex0): the open PDF, the page under the view anchor and how far down it the anchor sits ----
+  function notifyAddress() { if (typeof window.pmixAddressChanged_ === 'function') window.pmixAddressChanged_(); }
+  function addressPosition() {
+    if (!S.pages.length) return null;
+    var g = geometry(), ay = scroller.scrollTop + SCORE_ANCHOR_Y * scroller.clientHeight;
+    var i = scorePageAt(g.tops, g.heights, ay), h = g.heights[i];
+    return { pg: i + 1, y: h > 0 ? Math.max(0, Math.min(1, (ay - g.tops[i]) / h)) : 0 };
+  }
+  /** { pdf, pg, y } while the panel shows a loaded PDF, else null. */
+  function addressState() {
+    if (!isOpen() || !S.fileId || !S.pdf) return null;
+    var pos = addressPosition();
+    return pos ? { pdf: S.fileId, pg: pos.pg, y: pos.y } : null;
+  }
   function updatePageLabel() {
     if (!S.pages.length) return;
+    var ap = addressPosition();
+    if (ap && ap.pg !== S.addrPg) { S.addrPg = ap.pg; notifyAddress(); }
     var g = geometry();
     var cur = scorePageAt(g.tops, g.heights, scroller.scrollTop);
     panel.setAttribute('data-current-page', String(cur));
@@ -9097,6 +9441,7 @@ function initScorePanel_() {
   }
   function fail(file, err) {
     console.error('[score] open failed: ' + (err && err.message ? err.message : err));
+    dropRestore();
     try { getClientTelemetry_().captureError('scoreOpen', err instanceof Error ? err : new Error(String(err)), { fileId: file.id }); } catch (e) { /* ignore */ }
     setState('error');
     showProgress(true, 'Could not open this PDF (' + (err && err.message ? err.message : 'error') + '). Check the connection and try again.');
@@ -9137,6 +9482,8 @@ function initScorePanel_() {
   }
   async function load(file) {
     var gen = ++S.loadGen;
+    S.hold = false;   // a PDF switch ends a restored view's hold
+    if (S.restore && S.restore.pdf !== file.id) dropRestore();   // the singer chose another PDF: the restore is over
     titleEl.textContent = file.name;
     titleEl.href = DRIVE_FILE_URL_ + encodeURIComponent(file.id) + '/view';
     choicesEl.hidden = true;
@@ -9147,6 +9494,7 @@ function initScorePanel_() {
       await (S.sharedP || Promise.resolve(null));
       if (gen !== S.loadGen) return;
       loadMarks(file.id);
+      applyRestore(file);
       return;
     }
     setState('loading');
@@ -9182,6 +9530,7 @@ function initScorePanel_() {
     await (S.sharedP || Promise.resolve(null));
     if (gen !== S.loadGen) return;
     loadMarks(file.id);
+    applyRestore(file);
   }
   async function adopt(pdf, file) {
     await dropDoc();
@@ -9295,9 +9644,15 @@ function initScorePanel_() {
   }
   try { new MutationObserver(maybeShowIntro).observe(page_, { attributes: true, attributeFilter: ['class'] }); } catch (e) { /* no observer: the pop-up waits for the next check */ }
 
-  function open(pdfs, btn) {
+  /** req (link restore, bd atc-7k0): { pdf, pg, y, done } opens that PDF at that anchor point and calls done once it is placed (or fails, or the panel closes). */
+  function open(pdfs, btn, req) {
     markIntroSeen(); // the score panel has been opened: the how-to is not needed (atc-ore.22 AC 4)
+    dropRestore();
     S.pdfs = scoreVisiblePdfs(pdfs);
+    var want = req ? S.pdfs.filter(function (f) { return f.id === req.pdf; })[0] : null;
+    S.restore = want ? req : null;
+    if (want) S.restoreTimer = setTimeout(function () { S.restoreTimer = 0; dropRestore(); }, 60000);   // a PDF fetch that never settles must not hold the address bar for good
+    if (req && !want && req.done) req.done();
     S.opener = btn || null;
     S.pages.forEach(function (p) { p.reported = false; }); // one scoreRender record per page per open, also for a document kept parsed across close (atc-ore.14)
     var sameSet = S.fileKeys === S.pdfs.map(fileKey).join(',');
@@ -9316,7 +9671,10 @@ function initScorePanel_() {
     S.orphan = {}; // the editor's answer to 'use these marks for this PDF?' lasts for this open only (atc-ore.8 AC 11)
     var sharedP = startShared();
     flushQueue();
-    if (S.pdfs.length === 1) {
+    if (want) {
+      logActivity_('pdfOpen', { fileId: want.id, fileName: want.name });
+      load(want);
+    } else if (S.pdfs.length === 1) {
       logActivity_('pdfOpen', { fileId: S.pdfs[0].id, fileName: S.pdfs[0].name });
       load(S.pdfs[0]);
     } else {
@@ -9329,8 +9687,28 @@ function initScorePanel_() {
       });
     }
   }
+  function dropRestore() { var r = S.restore; S.restore = null; if (S.restoreTimer) { clearTimeout(S.restoreTimer); S.restoreTimer = 0; } if (r && r.done) r.done(); }
+  /** After a link restore's PDF is loaded: put page pg at fraction y under the anchor and hold Follow there until Play or a seek (ADR-0016 step 6). */
+  function applyRestore(file) {
+    var r = S.restore;
+    if (!r) return;
+    if (r.pdf !== file.id) { dropRestore(); return; }
+    S.restore = null;
+    if (S.restoreTimer) { clearTimeout(S.restoreTimer); S.restoreTimer = 0; }
+    var n = S.pages.length;
+    if (n && (r.pg != null || r.y != null)) {
+      var pgN = Math.max(1, Math.min(n, r.pg || 1)), g = geometry();
+      var top = g.tops[pgN - 1] + (r.y == null ? 0 : r.y) * g.heights[pgN - 1] - SCORE_ANCHOR_Y * scroller.clientHeight;
+      scroller.scrollTop = Math.max(0, Math.min(top, scroller.scrollHeight - scroller.clientHeight));
+      S.hold = true; S.snapPending = false; S.easeStart = -1;
+      refresh(); updatePageLabel();
+    }
+    if (r.done) r.done();
+  }
   function close() {
     if (!isOpen()) return;
+    dropRestore();
+    S.hold = false;
     S.loadGen++; // a load in flight is abandoned
     S.offY = 0; S.pan = null;
     resetPointers();
@@ -9342,6 +9720,7 @@ function initScorePanel_() {
     syncUi();
     S.pages.forEach(release); // free the canvases; the parsed document stays for a quick reopen
     publish();
+    notifyAddress();
     if (S.opener && typeof S.opener.focus === 'function') S.opener.focus();
   }
   /** The folder changed: forget the document if its PDFs are not the ones now listed. */
@@ -9371,6 +9750,7 @@ function initScorePanel_() {
   function trackNow() { return scoreRound2(scoreTrackTime(clockNow(), rate())); }
   /** Move the playhead to track time t (kept playing or paused as it was) and snap the view. */
   function jumpTo(t) {
+    S.hold = false;
     try { AudioEngine.seek(scoreClockTime(Math.max(0, t), rate())); } catch (e) { /* no audio loaded */ }
     S.snapPending = true; S.easeStart = -1;
   }
@@ -9381,6 +9761,7 @@ function initScorePanel_() {
   function sharedUse() { return scoreSharedFor(S.pdfs, S.shared, S.fileId, S.orphan[S.fileId]); }
   function loadMarks(fileId) {
     S.fileId = fileId;
+    notifyAddress();
     var use = sharedUse();
     if (use.ask && isSignedIn_()) { // AC 11: no PDF here matches the shared map; an editor chooses (no write: opening never saves)
       S.orphan[fileId] = window.confirm(scoreOrphanPrompt(S.shared));
@@ -9763,7 +10144,7 @@ function initScorePanel_() {
     S.loop = requestAnimationFrame(tick);
     if (!isOpen() || !S.pages.length || scroller.hidden) return;
     var playing = isPlayingNow(), cur = { clock: clockNow(), ts: now, playing: playing };
-    if (S.last && scoreDetectSeek(S.last, cur)) S.snapPending = true;
+    if (S.last && scoreDetectSeek(S.last, cur)) { S.snapPending = true; S.hold = false; }   // a seek ends a restored view's hold
     S.last = cur;
     if (playing !== S.playing) {
       S.playing = playing; paintMarks();
@@ -9773,6 +10154,10 @@ function initScorePanel_() {
     }
     var rb = ribbonActive();
     if (!rb && S.ribbonShown) setRibbonShown(false);
+    if (S.hold) { // a restored page/position holds Follow still until Play or a seek (ADR-0016 step 6)
+      if (playing) { S.hold = false; S.snapPending = true; }
+      else { S.snapPending = false; S.easeStart = -1; return; }
+    }
     if (!S.marks.length) { if (S.curN !== -1) { S.curN = -1; syncUi(); } return; }
     var fid = focusTrackId();
     if (S.focusId !== fid) { if (S.focusId !== null) { S.snapPending = true; S.easeStart = -1; } S.focusId = fid; } // atc-ore.8 AC 27: a new focus track re-snaps Follow
@@ -10091,6 +10476,8 @@ function initScorePanel_() {
   if (backBtn) backBtn.addEventListener('click', close);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && isOpen() && $('media-modal').classList.contains('hidden')) close(); });
   scroller.addEventListener('scroll', function () {
+    if (S.addrTimer) clearTimeout(S.addrTimer);
+    S.addrTimer = setTimeout(function () { S.addrTimer = 0; if (isOpen() && !isPlayingNow()) notifyAddress(); }, 500);   // while playing, Follow's own scrolls write nothing; Pause writes the position   // 500 ms after scrolling or panning stops (ADR-0016)
     if (S.raf || S.pinch) return;
     S.raf = requestAnimationFrame(function () { S.raf = 0; updatePageLabel(); pump(); });
   }, { passive: true });
@@ -10143,7 +10530,7 @@ function initScorePanel_() {
   scroller.addEventListener('touchcancel', endPinch);
   panel.setAttribute('data-pinching', 'false');
 
-  scorePanel_ = { open: open, close: close, setFolderPdfs: setFolderPdfs, isOpen: isOpen, checkScore: checkScore, folderChanged: folderChanged };
+  scorePanel_ = { open: open, close: close, setFolderPdfs: setFolderPdfs, isOpen: isOpen, checkScore: checkScore, folderChanged: folderChanged, addressState: addressState };
 }
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
