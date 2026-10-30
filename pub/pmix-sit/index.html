@@ -1390,6 +1390,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="score-mark-next" data-testid="score-mark-next" class="btn score-tbtn" title="Next mark" hidden><span>Mark &#9654;</span><span class="tsub" data-testid="score-mark-next-lbl"></span></button>
           <button id="score-resume-follow" data-testid="score-resume-follow" class="btn score-tbtn score-resume" hidden>Resume follow</button>
           <button id="score-ribbon-toggle" data-testid="score-ribbon-toggle" class="btn score-tbtn" aria-pressed="true" title="Play mode: the score scrolls sideways only, the next line sliding in from the right" hidden>Ribbon</button>
+          <input id="score-ribbon-height" data-testid="score-ribbon-height" class="score-tbtn" type="number" min="0.5" max="6" step="0.25" placeholder="in" style="width:4.5em" title="Ribbon height in inches (empty = off): each line is cropped from 0.5 in above its top-most mark" hidden>
           <button id="score-offset-tool" data-testid="score-offset-tool" class="btn score-tbtn" aria-pressed="false" title="Set where a voice's staff sits below the marks" hidden>Set track offset</button>
         </div>
         <div id="score-selbar" data-testid="score-selbar" class="score-tools score-selbar" hidden>
@@ -2057,10 +2058,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.0.4";
+var STATIC_BUILD_VERSION_ = "1.8.0.5";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-30T22:37:05.676Z";
+var STATIC_BUILD_DATE_ = "2026-10-30T22:44:30.364Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8666,19 +8667,25 @@ function scoreFollowView(marks, t, geo, cur, opt, offsets, trackId) {
 /** Each derived line becomes a full-width slice of its page (brace, clef and key signature included) and the slices lie
  *  end to end in page, then y, order. The slice's window is the view height with the line's y (plus the vertical pan and the focus
  *  track's offset at the line start time) at the anchor y, so every line sits at the same screen height. srcY is not clamped to the
- *  page: the renderer clips. geo = {W, H, ay?, pages:[{w, h, ptW}]}; opt = {panY, offsets, trackId}.
+ *  page: the renderer clips. geo = {W, H, ay?, pages:[{w, h, ptW}]}; opt = {panY, offsets, trackId, heightIn (inches; crops each slice to 0.5 in above its top-most mark down to this height)}.
  *  Returns {segs:[{line, page, srcX, srcY, srcW, srcH, ribbonX}], width, markX:[ribbon x per mark index], W, H}. */
+var SCORE_RIBBON_PAD_PT = 36;
 function scoreRibbonLayout(marks, geo, opt) {
   var eols = (marks || []).filter(function (k) { return k && k.kind === 'eol'; });
   marks = scoreTimed(marks);
   var d = scoreDeriveLines(marks), panY = (opt && Number(opt.panY)) || 0;
-  var ay = geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay;
+  var ay = geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay, hIn = (opt && Number(opt.heightIn)) || 0;
   var starts = d.lines.map(function (ln) { return marks[ln.first]; });
   var segs = d.lines.map(function (ln, li) {
     var f = marks[ln.first], pg = scorePagePx(geo, f.page), s = pg.w / pg.ptW;
     var dy = opt ? scoreOffsetDyAt(opt.offsets, opt.trackId, f.t) : 0;
     var last = marks[ln.members[ln.members.length - 1]], cut = scoreEolFor(eols, f, last, starts);
-    return { line: li, page: f.page, y: f.y, srcX: 0, srcY: f.y * s + dy * pg.h + panY - ay * geo.H, srcW: cut === null ? pg.w : Math.min(pg.w, Math.max(1, cut * s)), srcH: geo.H, ribbonX: 0 };
+    var srcW = cut === null ? pg.w : Math.min(pg.w, Math.max(1, cut * s));
+    if (hIn > 0) { // atc-tty9.19: crop from 0.5 in (36 pt) above the line's top-most mark down to the set height (72 pt per inch)
+      var top = Math.min.apply(null, ln.members.map(function (mi) { return marks[mi].y; }));
+      return { line: li, page: f.page, y: f.y, srcX: 0, srcY: (top - SCORE_RIBBON_PAD_PT) * s + dy * pg.h + panY, srcW: srcW, srcH: hIn * 72 * s, ribbonX: 0 };
+    }
+    return { line: li, page: f.page, y: f.y, srcX: 0, srcY: f.y * s + dy * pg.h + panY - ay * geo.H, srcW: srcW, srcH: geo.H, ribbonX: 0 };
   });
   var lineY = [];
   segs.sort(function (a, b) { return a.page - b.page || a.y - b.y || a.line - b.line; });
@@ -8747,6 +8754,7 @@ function scoreRibbonHit(layout, rx, ry, geo, panY) {
   for (var i = 0; i < layout.segs.length; i++) {
     var sg = layout.segs[i];
     if (rx >= sg.ribbonX && rx < sg.ribbonX + sg.srcW) {
+      if (ry >= sg.srcH) return null; // below a cropped slice
       var pg = scorePagePx(geo, sg.page), s = pg.ptW / pg.w;
       return { page: sg.page, x: (sg.srcX + rx - sg.ribbonX) * s, y: (scoreRibbonSrcY(sg, panY) + ry) * s, ptW: pg.ptW, ptH: pg.ptH };
     }
@@ -9528,11 +9536,12 @@ function initScorePanel_() {
     ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, pan: null, seekDim: '',
     folder: '', shared: null, sharedP: null, stale: null, saving: false, saveMsg: '',
     carriedKey: '', focusId: null, offsets: {}, offsetMode: false, place: 'timed', noteId: null, fieldMsgId: null, offsetTrack: '', orphan: {},
-    ribbon: true, ribbonShown: false, ribbonLayout: null, ribbonKey: '', ribbonMarks: null, ribbonOffsets: null, ribbonSx: 0, ribbonTop: -1
+    ribbon: true, ribbonIn: 0, ribbonShown: false, ribbonLayout: null, ribbonKey: '', ribbonMarks: null, ribbonOffsets: null, ribbonSx: 0, ribbonTop: -1
   };
   var LEAD_KEY = 'pmix.' + pmixTarget() + '.v1.scoreLead';
   var REACT_KEY = 'pmix.' + pmixTarget() + '.v1.scoreReaction';
   var RIBBON_KEY = 'pmix.' + pmixTarget() + '.v1.scoreRibbon';
+  function ribbonHKey() { return RIBBON_KEY + 'In.' + S.fileId; } // atc-tty9.19: per device per score
   var INTRO_KEY = 'pmix.' + pmixTarget() + '.v1.scoreIntroSeen';
   var toolsEl = $('score-tools'), selbar = $('score-selbar');
 
@@ -10138,6 +10147,7 @@ function initScorePanel_() {
   function loadMarks(fileId) {
     S.fileId = fileId;
     notifyAddress();
+    var rin = parseFloat(recall(ribbonHKey())); S.ribbonIn = rin > 0 ? rin : 0; $('score-ribbon-height').value = S.ribbonIn ? String(S.ribbonIn) : ''; S.ribbonKey = ''; // atc-tty9.19
     var use = sharedUse();
     if (use.ask && isSignedIn_()) { // AC 11: no PDF here matches the shared map; an editor chooses (no write: opening never saves)
       S.orphan[fileId] = window.confirm(scoreOrphanPrompt(S.shared));
@@ -10267,7 +10277,7 @@ function initScorePanel_() {
     panel.setAttribute('data-offset-y', String(Math.round(S.offY)));
     renderSeekMarks();
     $('score-resume-follow').hidden = !scoreShowResume(S.followOn, has, S.edit);
-    /* play mode only: hidden in Edit so the tools row keeps its room (atc-ore.5 AC 18) */ $('score-ribbon-toggle').hidden = !has || S.edit; $('score-ribbon-toggle').setAttribute('aria-pressed', String(S.ribbon));
+    /* play mode only: hidden in Edit so the tools row keeps its room (atc-ore.5 AC 18) */ $('score-ribbon-toggle').hidden = !has || S.edit; $('score-ribbon-toggle').setAttribute('aria-pressed', String(S.ribbon)); $('score-ribbon-height').hidden = $('score-ribbon-toggle').hidden;
     var playingNow = isPlayingNow();
     $('score-offset-tool').hidden = !S.edit || playingNow; $('score-offset-tool').setAttribute('aria-pressed', String(S.offsetMode));
     $('score-offsetbar').hidden = !(S.edit && S.offsetMode && !toolsEl.hidden && !playingNow);
@@ -10453,6 +10463,10 @@ function initScorePanel_() {
     syncUi();
   }
   $('score-resume-follow').addEventListener('click', resumeFollow);
+  $('score-ribbon-height').addEventListener('change', function () {
+    var v = parseFloat(this.value); S.ribbonIn = v > 0 ? scoreClamp(v, 0.5, 6) : 0;
+    this.value = S.ribbonIn ? String(S.ribbonIn) : ''; store(ribbonHKey(), S.ribbonIn ? String(S.ribbonIn) : ''); syncUi();
+  });
   $('score-ribbon-toggle').addEventListener('click', function () { S.ribbon = !S.ribbon; store(RIBBON_KEY, S.ribbon ? '1' : '0'); syncUi(); });
 
   // Frame loop: audio clock -> target view -> scroll position of the already-drawn pages (AC 10).
@@ -10481,12 +10495,13 @@ function initScorePanel_() {
   }
   function ribbonLayoutFor(geo) {
     var tid = focusTrackId();
-    var key = [geo.W, geo.H, S.zoom, tid, geo.pages.map(function (q) { return q.w + 'x' + q.h; }).join()].join('|');
+    var key = [geo.W, geo.H, S.zoom, tid, S.ribbonIn, geo.pages.map(function (q) { return q.w + 'x' + q.h; }).join()].join('|');
     if (!S.ribbonLayout || key !== S.ribbonKey || S.ribbonMarks !== S.marks || S.ribbonOffsets !== S.offsets) {
-      S.ribbonLayout = scoreRibbonLayout(S.marks, geo, { offsets: S.offsets, trackId: tid }); // the pan (S.offY) is added at draw and hit time
+      S.ribbonLayout = scoreRibbonLayout(S.marks, geo, { offsets: S.offsets, trackId: tid, heightIn: S.ribbonIn }); // the pan (S.offY) is added at draw and hit time
       S.ribbonBuilds = (S.ribbonBuilds || 0) + 1;
       panel.setAttribute('data-ribbon-builds', String(S.ribbonBuilds)); // test seam: layout rebuilds
       panel.setAttribute('data-ribbon-width', String(Math.round(S.ribbonLayout.width))); // test seam: the ribbon's length (an EOL mark shortens its line)
+      var s0 = S.ribbonLayout.segs[0]; panel.setAttribute('data-ribbon-slice', s0 ? Math.round(s0.srcH) + ',' + Math.round(s0.srcY) : ''); // test seam: first slice height and top (view px)
       S.ribbonKey = key; S.ribbonMarks = S.marks; S.ribbonOffsets = S.offsets;
     }
     return S.ribbonLayout;
