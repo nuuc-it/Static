@@ -2061,10 +2061,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.6";
+var STATIC_BUILD_VERSION_ = "1.8.1.7";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T06:19:38.947Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T06:33:30.135Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -9041,6 +9041,12 @@ function scoreNextVisual(marks, id) {
   if (at < 0) return null;
   return at + 1 < seq.length ? seq[at + 1] : id;
 }
+/** atc-tty9.30: the number of each plain mark ('mark' kind) = its position in reading order (scoreVisualRows: page, line, x); {id: n}. Independent of mark times. */
+function scoreMarkNumbers(marks) {
+  var out = {}, n = 0;
+  scoreVisualRows(marks).forEach(function (r) { r.forEach(function (k) { if (k.kind === 'mark') out[k.id] = ++n; }); });
+  return out;
+}
 function scoreNudgeMark(marks, id, dt) {
   var k = null;
   marks.forEach(function (q) { if (q.id === id) k = q; });
@@ -10314,6 +10320,7 @@ function initScorePanel_() {
     if (!selMark()) S.selId = null;
     saveMarks(); renderMarks(); syncUi();
   }
+  function markNums() { if (S.numsFor !== S.marks) { S.nums = scoreMarkNumbers(S.marks); S.numsFor = S.marks; } return S.nums; } // atc-tty9.30: reading-order numbers, cached per marks array
   function renderMarks() {
     Array.prototype.forEach.call(strip.querySelectorAll('.score-mark'), function (e) { e.remove(); });
     S.marks.forEach(function (k, i) {
@@ -10323,7 +10330,7 @@ function initScorePanel_() {
       el.className = 'score-mark';
       el.setAttribute('data-testid', 'score-mark');
       el.setAttribute('data-mark-id', String(k.id));
-      var dot = document.createElement('span'); dot.className = 'dot'; dot.textContent = String(i + 1);
+      var dot = document.createElement('span'); dot.className = 'dot'; dot.textContent = String(markNums()[k.id] || i + 1);
       var mt = document.createElement('span'); mt.className = 'mt'; mt.textContent = typeof k.t === 'number' ? fmtT(k.t) : '';
       el.append(dot, mt);
       if (k.kind === 'eol') el.classList.add('eol');
@@ -10358,12 +10365,12 @@ function initScorePanel_() {
       var id = el.getAttribute('data-mark-id');
       var idx = -1;
       S.marks.forEach(function (q, i) { if (q.id === id) idx = i; });
-      el.setAttribute('data-n', String(idx + 1));
+      el.setAttribute('data-n', String((idx >= 0 && markNums()[S.marks[idx].id]) || idx + 1));
       el.setAttribute('data-current', String(idx === S.curN));
       el.setAttribute('data-selected', String(S.edit && id === S.selId));
       if (!S.edit) { el.style.width = ''; el.style.height = ''; }
       var dot = el.querySelector('.dot'), mtEl = el.querySelector('.mt'), tm = idx >= 0 && typeof S.marks[idx].t === 'number';
-      if (dot) dot.textContent = tm ? String(idx + 1) : '';
+      if (dot) dot.textContent = tm ? String(markNums()[S.marks[idx].id] || idx + 1) : '';
       if (mtEl) mtEl.textContent = tm ? fmtT(S.marks[idx].t) : '';
     });
     positionMarks();
@@ -10397,7 +10404,7 @@ function initScorePanel_() {
     $('score-mark-next').hidden = !has; $('score-mark-next').disabled = stepT.next === null;
     ['prev', 'next'].forEach(function (w) { // atc-tty9.13 AC 6: outside Edit, a second line names the mark the button goes to
       var tid = stepT[w], txt = '';
-      if (!S.edit && tid !== null) S.marks.forEach(function (q, qi) { if (q.id === tid) txt = scoreMarkLabel(q, qi + 1); });
+      if (!S.edit && tid !== null) S.marks.forEach(function (q, qi) { if (q.id === tid) txt = scoreMarkLabel(q, markNums()[q.id] || qi + 1); });
       $('score-mark-' + w).querySelector('.tsub').textContent = txt;
     });
     $('score-leadlbl').hidden = !S.edit; $('score-sliders').hidden = !S.edit || toolsEl.hidden;
@@ -10432,7 +10439,7 @@ function initScorePanel_() {
         if (document.activeElement !== $('score-jump-label')) $('score-jump-label').value = m.label || '';
         var opts = [], cur = scoreJumpTarget(S.marks, m) ? m.targetMarkId : '';
         if (!cur) opts.push(['', '(choose a target)']);
-        S.marks.forEach(function (q, qi) { if (scoreTimed([q]).length) opts.push([q.id, (q.measure ? 'Measure ' + q.measure : 'Mark ' + (qi + 1)) + ' at ' + fmtT(q.t)]); });
+        S.marks.forEach(function (q, qi) { if (scoreTimed([q]).length) opts.push([q.id, (q.measure ? 'Measure ' + q.measure : 'Mark ' + (markNums()[q.id] || qi + 1)) + ' at ' + fmtT(q.t)]); });
         var okey = JSON.stringify(opts), sel = $('score-jump-target');
         if (sel.getAttribute('data-opts') !== okey) {
           sel.textContent = '';
@@ -10577,9 +10584,10 @@ function initScorePanel_() {
     S.marks.forEach(function (k, i) {
       if (typeof k.t !== 'number') return;
       var sp_ = document.createElement('span');
-      sp_.setAttribute('data-n', String(i + 1));
+      var mn = markNums()[k.id] || i + 1;
+      sp_.setAttribute('data-n', String(mn));
       sp_.setAttribute('data-current', String(i === S.curN));
-      sp_.textContent = scoreSeekLabel(k, i + 1); // atc-tty9.13 AC 5
+      sp_.textContent = scoreSeekLabel(k, mn); // atc-tty9.13 AC 5
       sp_.style.left = 'calc(7px + (100% - 14px) * ' + scoreSeekFrac(k.t, sp, total) + ')'; // the thumb travel of the range input
       box.appendChild(sp_);
     });
@@ -10662,8 +10670,11 @@ function initScorePanel_() {
     panel.setAttribute('data-playhead-x', String(Math.round(rx - sx))); // test seam: the playhead's screen x (40% of the width inside the ribbon)
     var dpr = window.devicePixelRatio || 1, cw = Math.round(geo.W * dpr), ch = Math.round(geo.H * dpr);
     if (ribbonCv.width !== cw || ribbonCv.height !== ch) { ribbonCv.width = cw; ribbonCv.height = ch; ribbonCv.style.width = geo.W + 'px'; ribbonCv.style.height = geo.H + 'px'; }
-    var n = scoreIndexAt(S.marks, t), pgN = S.marks[Math.max(0, n)].page, pp = S.pages[pgN - 1];
-    if (pp) { // keep the scroller (hidden under the ribbon) on the playing page so its neighbours stay rendered
+    var n = scoreIndexAt(S.marks, t), pgN = S.marks[Math.max(0, n)].page, pp;
+    if (S.edit && isPlayingNow()) for (var si = 0; si < L.segs.length; si++) if (L.segs[si].ribbonX + L.segs[si].srcW > sx) { pgN = L.segs[si].page; break; } // atc-tty9.31: Edit while playing views the selection, which can be far from the playhead: park on the leftmost visible slice's page
+    pp = S.pages[pgN - 1];
+    panel.setAttribute('data-ribbon-page', String(pgN)); // test seam: the page the hidden scroller is parked on (rendered with its neighbours)
+    if (pp) { // keep the scroller (hidden under the ribbon) on that page so its neighbours stay rendered
       var top = Math.max(0, pp.el.offsetTop - 8);
       if (top !== S.ribbonTop) { S.ribbonTop = top; scroller.scrollTop = top; scroller.scrollLeft = 0; }
     }
@@ -10723,7 +10734,7 @@ function initScorePanel_() {
       if (isSel) { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py + dy0, 14, 0, 6.2832); ctx.stroke(); ctx.lineWidth = 1; } // atc-tty9.13: a label replaces the number; in Edit the number sits above it
       if (!lbl || S.edit) {
         ctx.fillStyle = timed ? '#0e7c86' : '#6b7280'; ctx.beginPath(); ctx.arc(px, py + dy0, 8, 0, 6.2832); ctx.fill();
-        if (timed) { ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(String(mi + 1), px, py + dy0); }
+        if (timed) { ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(String(markNums()[k.id] || mi + 1), px, py + dy0); }
       }
       ctx.font = 'bold 12px sans-serif';
       [k.measure, k.note ? scoreNoteShort(k.note) : ''].forEach(function (txt, j) {
@@ -11306,7 +11317,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonBar, scoreRibbonHit, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreDefaultMeasure, scoreNoteShort, scoreNudgeMark,
+  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonBar, scoreRibbonHit, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scoreDefaultMeasure, scoreNoteShort, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreRibbonPos, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
