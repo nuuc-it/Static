@@ -390,6 +390,9 @@ body {
   .header { padding-right: 212px; }
   .header:has(.btn-pdf:not(.hidden)) { padding-right: 254px; }
   .header h1 { font-size: 20px; }
+  /* The title wraps to two lines here, so the subtitle sits below the buttons and may use their column. */
+  .header > .header-subtitle { margin-right: -212px; }
+  .header:has(.btn-pdf:not(.hidden)) > .header-subtitle { margin-right: -254px; }
   /* Mixer: Back and the buttons share the top row; the song title gets the full width below. */
   .playback-header { grid-template-columns: auto 1fr; row-gap: 10px; }
   .playback-header h1 { grid-column: 1 / -1; grid-row: 2; }
@@ -482,6 +485,7 @@ body {
 .menu-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .menu-row .score-react { font-size: 14px; }
 .menu-row .score-react input[type="range"] { width: 140px; }
+.menu-drive { color: var(--blue); text-decoration: none; background: var(--surface-2); border: 1px solid var(--border-strong); }  /* default link blue is unreadable on the dark panel */
 .menu-reason { margin: 0; font-size: 12px; color: var(--text-2); }
 .menu-reason:empty { display: none; }
 .menu-body .btn:focus-visible, .menu-body input:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
@@ -2070,10 +2074,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.23";
+var STATIC_BUILD_VERSION_ = "1.8.1.24";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T16:07:53.464Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T16:23:26.812Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -7763,8 +7767,8 @@ const UI = (() => {
         <button id="menu-close-btn" data-testid="menu-close-btn" class="btn btn-close" aria-label="Close">&#10005;</button>
       </div>
       <div class="menu-body" data-testid="menu-body">
-        <div class="menu-row"><a class="btn menu-drive" data-testid="menu-drive" target="_blank" rel="noopener" title="Open this folder in Google Drive">Open Drive folder</a></div>
-        <div class="menu-row"><button type="button" id="menu-copy-link" data-testid="menu-copy-link" class="btn" disabled title="Copies a link to this practice setup">Copy Link</button> <span class="menu-reason">Coming soon</span></div>
+        <div class="menu-row"><a class="btn menu-drive" data-testid="menu-drive" target="_blank" rel="noopener" title="Open this folder in Google Drive"><span class="menu-icon" data-testid="menu-drive-icon" aria-hidden="true">&#128194;</span> Open Drive folder</a></div>
+        <div class="menu-row"><button type="button" id="menu-copy-link" data-testid="menu-copy-link" class="btn" disabled title="Copies a link to this practice setup"><span class="menu-icon" data-testid="menu-copy-icon" aria-hidden="true">&#128279;</span> Copy Link</button> <span class="menu-reason">Coming soon</span></div>
         <div class="menu-row">
           <label id="score-react" class="score-react" title="How far before the tap a new mark is placed while playing">Reaction
             <input id="score-reaction" data-testid="score-reaction" type="range" min="0" max="0.5" step="0.05" value="0.25">
@@ -7779,6 +7783,9 @@ const UI = (() => {
           <label id="score-prerolllbl" class="score-react" title="How long before a mark the music starts when you tap it or use Prev/Next (not while editing)">Pre-roll
             <input id="score-preroll" data-testid="score-preroll" type="range" min="0" max="3" step="0.25" value="1">
             <output id="score-preroll-out" data-testid="score-preroll-out">1.00 s</output></label>
+        </div>
+        <div class="menu-row">
+          <button id="score-crop-toggle" data-testid="score-crop-toggle" class="btn score-tbtn" aria-pressed="false" title="Page view: crop each page from 0.5 in left of its first mark to 0.5 in right of its first end-of-line mark, so the music is larger">Crop width</button>
         </div>
         <div class="menu-row">
           <button id="score-ribbon-toggle" data-testid="score-ribbon-toggle" class="btn score-tbtn" aria-pressed="true" title="Play mode: the score scrolls sideways only, the next line sliding in from the right">Ribbon</button>
@@ -8610,10 +8617,22 @@ function scoreIndexAt(marks, t) {
   for (var i = 0; i < marks.length; i++) { if (marks[i].t <= t) n = i; else break; }
   return n;
 }
+/** Crop width (atc-tty9.42): a page's display window in pt, from 36 pt left of its first mark to 36 pt right of its first EOL mark
+ *  (both in the page's scoreSorted order), clamped to the page. No mark, no EOL, or an EOL left of the first mark: the whole page.
+ *  Returns {x0, cw} (pt); display only, stored marks never change. */
+var SCORE_CROP_PAD_PT = 36;
+function scoreCropFor(marks, page, ptW) {
+  var all = { x0: 0, cw: ptW }, list = scoreSorted(marks).filter(function (k) { return k.page === page; });
+  var first = list.filter(function (k) { return k.kind !== 'eol' && k.kind !== 'jump' && k.kind !== 'note'; })[0];
+  var eol = list.filter(function (k) { return k.kind === 'eol'; })[0];
+  if (!first || !eol) return all;
+  var x0 = Math.max(0, first.x - SCORE_CROP_PAD_PT), x1 = Math.min(ptW, eol.x + SCORE_CROP_PAD_PT);
+  return x1 > x0 + 1 ? { x0: x0, cw: x1 - x0 } : all;
+}
 function scorePagePx(geo, page) { return geo.pages[Math.max(0, Math.min(geo.pages.length - 1, page - 1))]; }
 function scoreMarkPoint(mark, geo) {
   var pg = scorePagePx(geo, mark.page), s = pg.w / pg.ptW;
-  return { x: pg.left + mark.x * s, y: pg.top + mark.y * s };
+  return { x: pg.left + (mark.x - (pg.x0 || 0)) * s, y: pg.top + mark.y * s }; // pg.x0: the crop's left edge in pt (0 when not cropped)
 }
 /** Scroll position that puts the mark at the anchor (10% from left, 10% down), kept inside the scroll range. */
 function scoreAnchorView(mark, geo) {
@@ -9903,6 +9922,7 @@ function initScorePanel_() {
   var LEAD_KEY = 'pmix.' + pmixTarget() + '.v1.scoreLead';
   var REACT_KEY = 'pmix.' + pmixTarget() + '.v1.scoreReaction';
   var RIBBON_KEY = 'pmix.' + pmixTarget() + '.v1.scoreRibbon';
+  var CROP_KEY = 'pmix.' + pmixTarget() + '.v1.scoreCrop';
   /** atc-tty9.23: the ribbon's vertical offset in PDF points. S.viewOff is the remembered value; it follows S.offY only while the ribbon is
    *  drawn, so page-mode panning and Follow resets never change the saved view. */
   function ptScale() { var p = S.pages[0]; return p && p.w > 0 && p.cssW > 0 ? p.cssW / p.w : 1; }
@@ -9917,6 +9937,7 @@ function initScorePanel_() {
   /** A device-marks key: its v2 value, else the v1 value a 1.7.2 page left (migrated when parsed; adr/0017). */
   function recallMarks(k) { var v = recall(k), k1 = scoreMarksKeyV1(k); return v === null && k1 ? recall(k1) : v; }
   S.ribbon = recall(RIBBON_KEY) !== '0'; // default on
+  S.crop = recall(CROP_KEY) === '1'; // atc-tty9.42: default off
   function isOpen() { return !panel.classList.contains('hidden'); }
   (function () { var sb = document.getElementById('seek-bar'); if (sb) sb.addEventListener('input', function () { S.hold = false; }); })(); // a seek by the singer ends a restored view's hold
   function setState(s) { panel.setAttribute('data-state', s); toolsEl.hidden = s !== 'ready'; toolRows.hidden = toolsEl.hidden; if (s !== 'ready') selbar.hidden = true; }
@@ -9994,15 +10015,28 @@ function initScorePanel_() {
   function layout() {
     var W = stripWidth();
     S.pages.forEach(function (p) {
-      p.cssW = Math.round(W * S.zoom);
-      p.cssH = Math.round(p.cssW * p.h / p.w);
+      var c = S.crop ? scoreCropFor(S.marks, p.n, p.w) : { x0: 0, cw: p.w };
+      p.x0 = c.x0; p.cw = c.cw; // atc-tty9.42: the displayed window (pt); the canvas below always holds the whole page
+      p.cssW = Math.round(W * S.zoom);          // displayed width: the panel width x zoom
+      p.cssH = Math.round(p.cssW * p.h / p.cw);
+      p.baseH = Math.round(p.cssW * p.h / p.w); // the uncropped height at this zoom: the ribbon's scale
+      p.fullW = p.cssW * p.w / p.cw;            // css width of the whole page canvas
       p.el.style.width = p.cssW + 'px';
       p.el.style.height = p.cssH + 'px';
+      p.el.style.overflow = p.cw < p.w ? 'hidden' : '';
+      p.el.setAttribute('data-crop', p.cw < p.w ? Math.round(p.x0) + ',' + Math.round(p.cw) : ''); // test seam: the cropped window (pt)
+      if (p.canvas) placeCanvas(p);
     });
+    panel.setAttribute('data-crop-on', S.crop ? 'on' : 'off');
     zoomLabel.textContent = Math.round(S.zoom * 100) + '%';
     panel.setAttribute('data-zoom', num(S.zoom));
     zoomIn.disabled = S.zoom >= 4 - 1e-6;
     zoomOut.disabled = S.zoom <= scoreZoomFloor(fitZoom()) + 1e-6;
+  }
+  function placeCanvas(p) {
+    var cropped = p.cw < p.w;
+    p.canvas.style.width = cropped ? p.fullW + 'px' : ''; p.canvas.style.height = cropped ? p.cssH + 'px' : '';
+    p.canvas.style.marginLeft = cropped ? (-p.x0 * p.cssW / p.cw) + 'px' : '';
   }
   function geometry() {
     return { tops: S.pages.map(function (p) { return p.el.offsetTop; }), heights: S.pages.map(function (p) { return p.cssH; }) };
@@ -10068,7 +10102,7 @@ function initScorePanel_() {
     var tries = [1, 0.7, 0.5];
     var probeMsg = '', lastPlan = null;
     for (var t = 0; t < tries.length; t++) {
-      var plan = scorePlanCanvas(p.w, p.h, p.cssW * tries[t], window.devicePixelRatio || 1);
+      var plan = scorePlanCanvas(p.w, p.h, p.fullW * tries[t], window.devicePixelRatio || 1);
       lastPlan = plan;
       var c = document.createElement('canvas');
       c.width = plan.w; c.height = plan.h;
@@ -10085,7 +10119,7 @@ function initScorePanel_() {
       }
       if (!ok) { c.width = 0; c.height = 0; continue; }
       ctx.clearRect(0, 0, plan.w, plan.h);
-      p.el.appendChild(c); p.canvas = c; p.px = plan.w * plan.h; p.zoomRendered = S.zoom;
+      p.el.appendChild(c); p.canvas = c; p.px = plan.w * plan.h; p.zoomRendered = S.zoom; placeCanvas(p);
       p.el.classList.remove('score-fail');
       publish();
       try {
@@ -10118,7 +10152,7 @@ function initScorePanel_() {
         var order = w.visible.concat(w.keep.filter(function (i) { return w.visible.indexOf(i) < 0; }));
         var next = order.filter(function (i) { var p = S.pages[i]; return !p.canvas && !p.el.classList.contains('score-fail'); })[0];
         var incoming = 0;
-        if (next !== undefined) { var np = scorePlanCanvas(S.pages[next].w, S.pages[next].h, S.pages[next].cssW, window.devicePixelRatio || 1); incoming = np.w * np.h; }
+        if (next !== undefined) { var np = scorePlanCanvas(S.pages[next].w, S.pages[next].h, S.pages[next].fullW, window.devicePixelRatio || 1); incoming = np.w * np.h; }
         var drop = scoreTrimToBudget(S.pages.map(function (p, i) { return { i: i, px: p.px }; }).filter(function (c) { return c.px; }), w.visible, SCORE_MAX_LIVE_PX, incoming);
         drop.forEach(function (i) { release(S.pages[i]); });
         publish();
@@ -10244,7 +10278,7 @@ function initScorePanel_() {
       S.zoom = scoreParseZoom(recall(ZOOM_KEY), fitZoom()); layout(); refresh(); updatePageLabel();
       await (S.sharedP || Promise.resolve(null));
       if (gen !== S.loadGen) return;
-      loadMarks(file.id);
+      loadMarks(file.id); applyCrop();
       applyRestore(file);
       return;
     }
@@ -10280,7 +10314,7 @@ function initScorePanel_() {
     updatePageLabel();
     await (S.sharedP || Promise.resolve(null));
     if (gen !== S.loadGen) return;
-    loadMarks(file.id);
+    loadMarks(file.id); applyCrop();
     applyRestore(file);
   }
   async function adopt(pdf, file) {
@@ -10601,9 +10635,9 @@ function initScorePanel_() {
       S.marks.forEach(function (q) { if (q.id === id) k = q; });
       var pg = k && pageIndexOf(k.page);
       if (!pg) return;
-      el.style.left = (k.x / pg.w * 100) + '%';
+      el.style.left = ((k.x - pg.x0) / pg.cw * 100) + '%';
       el.style.top = (k.y / pg.h * 100) + '%';
-      if (S.edit) { el.style.width = (72 / pg.w * 100) + '%'; el.style.height = (72 / pg.h * 100) + '%'; } // 0.5 inch each way (AC 20)
+      if (S.edit) { el.style.width = (72 / pg.cw * 100) + '%'; el.style.height = (72 / pg.h * 100) + '%'; } // 0.5 inch each way (AC 20)
     });
   }
   function paintMarks() {
@@ -10635,8 +10669,9 @@ function initScorePanel_() {
   function syncSettings() {
     var ready = isOpen() && !toolsEl.hidden, hasT = ready && scoreTimed(S.marks).length > 0;
     ['score-reaction', 'score-lead'].forEach(function (i) { $(i).disabled = !ready; });
+    $('score-crop-toggle').disabled = !(ready && S.marks.length > 0);
     ['score-preroll', 'score-ribbon-toggle', 'score-ribbon-height'].forEach(function (i) { $(i).disabled = !hasT; });
-    $('menu-score-reason').textContent = !ready ? 'Open a score to change these settings.' : !hasT ? 'Pre-roll and Ribbon need a score with timed marks.' : '';
+    $('menu-score-reason').textContent = !ready ? 'Open a score to change these settings.' : !hasT ? 'Pre-roll, Ribbon and Crop width need a score with marks.' : '';
   }
   document.addEventListener('pmix-settings-open', function () { syncSettings(); });
   /** Outside Edit, Prev/Next count a mark as reached once the Pre-roll lead-in has started, so a second press moves on (atc-tty9.3). */
@@ -10668,6 +10703,7 @@ function initScorePanel_() {
     renderSeekMarks();
     $('score-resume-follow').hidden = !scoreShowResume(S.followOn, has, S.edit);
     $('score-ribbon-toggle').setAttribute('aria-pressed', String(S.ribbon));
+    $('score-crop-toggle').setAttribute('aria-pressed', String(S.crop));
     var playingNow = isPlayingNow();
     $('score-offset-tool').hidden = !S.edit || playingNow; $('score-offset-tool').setAttribute('aria-pressed', String(S.offsetMode));
     $('score-offsetbar').hidden = !(S.edit && S.offsetMode && !toolsEl.hidden && !playingNow);
@@ -10868,14 +10904,23 @@ function initScorePanel_() {
     var v = parseFloat(this.value); S.ribbonIn = v > 0 ? Math.round(scoreClamp(v, 0.5, 6) * 100) / 100 : 0;
     this.value = S.ribbonIn ? String(S.ribbonIn) : ''; store(ribbonHKey(), S.ribbonIn ? String(S.ribbonIn) : ''); syncUi();
   });
+  /** atc-tty9.42: a crop depends on the marks, so redo the layout when it differs from what is shown (after marks load, or a toggle). */
+  function applyCrop() {
+    var stale = S.pages.some(function (p) {
+      var c = S.crop ? scoreCropFor(S.marks, p.n, p.w) : { x0: 0, cw: p.w };
+      return Math.abs(c.x0 - (p.x0 || 0)) > 0.01 || Math.abs(c.cw - (p.cw || p.w)) > 0.01;
+    });
+    if (stale) { refresh(); renderMarks(); } else positionMarks();
+  }
+  $('score-crop-toggle').addEventListener('click', function () { S.crop = !S.crop; store(CROP_KEY, S.crop ? '1' : '0'); applyCrop(); syncUi(); });
   $('score-ribbon-toggle').addEventListener('click', function () { S.ribbon = !S.ribbon; store(RIBBON_KEY, S.ribbon ? '1' : '0'); syncUi(); });
 
   // Frame loop: audio clock -> target view -> scroll position of the already-drawn pages (AC 10).
-  function pageGeo() {
+  function pageGeo(forRibbon) { // the ribbon always works on the uncropped page (atc-tty9.42)
     return {
       W: scroller.clientWidth, H: scroller.clientHeight,
       maxX: Math.max(0, scroller.scrollWidth - scroller.clientWidth), maxY: Math.max(0, scroller.scrollHeight - scroller.clientHeight),
-      pages: S.pages.map(function (p) { return { left: p.el.offsetLeft, top: p.el.offsetTop, w: p.cssW, h: p.cssH, ptW: p.w, ptH: p.h }; })
+      pages: S.pages.map(function (p) { return forRibbon ? { left: p.el.offsetLeft, top: p.el.offsetTop, w: p.cssW, h: p.baseH, ptW: p.w, ptH: p.h } : { left: p.el.offsetLeft, top: p.el.offsetTop, w: p.cssW, h: p.cssH, ptW: p.cw, ptH: p.h, x0: p.x0 }; })
     };
   }
   function setView(x, y) {
@@ -10955,12 +11000,12 @@ function initScorePanel_() {
       if (!p) return;
       var vx0 = Math.max(0, -x0), vx1 = Math.min(sg.srcW, geo.W - x0);
       var sgY = scoreRibbonSrcY(sg, S.offY);
-      var sy0 = Math.max(0, sgY), sy1 = Math.min(p.cssH, sgY + sg.srcH);
+      var sy0 = Math.max(0, sgY), sy1 = Math.min(p.baseH, sgY + sg.srcH);
       if (sy1 <= sy0 || vx1 <= vx0) return;
       var dx = x0 + vx0, dy = sy0 - sgY, dw = vx1 - vx0, dh = sy1 - sy0;
       ctx.fillStyle = '#fff'; ctx.fillRect(dx, dy, dw, dh);
       if (p.canvas && p.canvas.width) {
-        var f = p.canvas.width / p.cssW;
+        var f = p.canvas.width / p.cssW; // the canvas holds the whole page, so cssW (the uncropped width) is its scale
         try { ctx.drawImage(p.canvas, (sg.srcX + vx0) * f, sy0 * f, dw * f, dh * f, dx, dy, dw, dh); } catch (e) { /* page canvas released mid-frame */ }
       }
       if (x0 > 0) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(x0, 0, 1, geo.H); } // seam between two lines
@@ -11018,7 +11063,7 @@ function initScorePanel_() {
     var L = layout || S.ribbonLayout;
     if (!L) return null;
     var r = ribbonCv.getBoundingClientRect();
-    return scoreRibbonHit(L, (sx === undefined ? S.ribbonSx : sx) + cx - r.left, cy - r.top, pageGeo(), S.offY, only);
+    return scoreRibbonHit(L, (sx === undefined ? S.ribbonSx : sx) + cx - r.left, cy - r.top, pageGeo(true), S.offY, only);
   }
   // ---- Performance stats: one stretch per play run (max 30 s), sent as a flat scorePerf activity record; overlay only when asked ----
   var PERF_KEY = 'pmix.' + pmixTarget() + '.v1.scorePerfOverlay';
@@ -11072,7 +11117,7 @@ function initScorePanel_() {
     perfFrame(now, performance.now() - w0);
   }
   /** atc-tty9.37: show the green bar at b = {page, x, y} (pt) or hide it; only writes the style when the position changed. */
-  function pageWOf(page) { var pg = pageIndexOf(page); return pg ? pg.w : 0; }
+  function pageWOf(page) { var pg = pageIndexOf(page); return pg ? pg.cw : 0; } // the displayed width: the bar is 10% of it
   function setBarAttr(v) { if (S.barAttr !== v) { S.barAttr = v; panel.setAttribute('data-page-bar', v); } }
   function drawPageBar(b) {
     var el = S.barEl;
@@ -11081,9 +11126,9 @@ function initScorePanel_() {
     if (!pg) { drawPageBar(null); return; }
     if (!el) { el = S.barEl = document.createElement('div'); el.className = 'score-page-bar'; el.setAttribute('data-testid', 'score-page-bar'); S.barLbl = document.createElement('span'); S.barLbl.className = 'score-bar-time'; S.barLbl.setAttribute('data-testid', 'score-bar-time'); el.appendChild(S.barLbl); }
     if (el.parentNode !== pg.el) pg.el.appendChild(el);
-    var key = (b.x / pg.w * 100).toFixed(3) + '|' + (b.y / pg.h * 100).toFixed(3);
+    var key = ((b.x - pg.x0) / pg.cw * 100).toFixed(3) + '|' + (b.y / pg.h * 100).toFixed(3);
     if (S.barKey !== key || el.style.display === 'none') {
-      S.barKey = key; el.style.left = (b.x / pg.w * 100) + '%'; el.style.top = (b.y / pg.h * 100) + '%'; el.style.display = '';
+      S.barKey = key; el.style.left = ((b.x - pg.x0) / pg.cw * 100) + '%'; el.style.top = (b.y / pg.h * 100) + '%'; el.style.display = '';
     }
     if (S.edit) { var tt = fmtT(Math.round(trackNow() * 10) / 10); if (S.barTxt !== tt) { S.barTxt = tt; S.barLbl.textContent = tt; } } // atc-tty9.40: the playhead time above the bar, written only when it changes
     setBarAttr(b.page + ',' + Math.round(b.x * 10) / 10 + ',' + Math.round(b.y * 10) / 10); // test seam
@@ -11126,7 +11171,7 @@ function initScorePanel_() {
     if (rb) { // ribbon: the playhead's ribbon x is continuous, so there is no ease and no lead jump
       if (!S.ribbonShown) setRibbonShown(true);
       var d0 = performance.now();
-      drawRibbon(geo, tRaw); // atc-tty9.35: the unrolled layout stays in audio time (its knots carry the jump offsets)
+      drawRibbon(pageGeo(true), tRaw); // atc-tty9.35: the unrolled layout stays in audio time (its knots carry the jump offsets)
       if (perfSt) scorePerfDraw(perfSt, performance.now() - d0);
       S.lastN = tv.v; S.snapPending = false;
       return;
@@ -11180,7 +11225,7 @@ function initScorePanel_() {
     for (var i = 0; i < S.pages.length; i++) {
       var p = S.pages[i], r = p.el.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-        return { page: i + 1, x: (cx - r.left) / r.width * p.w, y: (cy - r.top) / r.height * p.h, ptW: p.w, ptH: p.h };
+        return { page: i + 1, x: p.x0 + (cx - r.left) / r.width * p.cw, y: (cy - r.top) / r.height * p.h, ptW: p.w, ptH: p.h };
       }
     }
     return null;
@@ -11615,7 +11660,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonParkPage, scoreRibbonBar, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
+  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonParkPage, scoreRibbonBar, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
