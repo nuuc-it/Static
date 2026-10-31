@@ -2072,10 +2072,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.20";
+var STATIC_BUILD_VERSION_ = "1.8.1.21";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T15:24:27.957Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T15:33:04.754Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -9170,13 +9170,16 @@ function scorePageBar(marks, t, opt) {
   var d = scoreDeriveLines(tm), li = d.lineOf[n], ln = d.lines[li], first = tm[ln.first];
   var pw = opt && opt.pageW ? Number(typeof opt.pageW === 'function' ? opt.pageW(first.page) : opt.pageW) : 0;
   var w = pw > 0 ? pw * 0.1 : 0, lastI = ln.members[ln.members.length - 1], nxt = lastI + 1 < tm.length ? tm[lastI + 1] : null;
-  var endT = nxt ? nxt.t : null, endX = null, jt = null;
-  (marks || []).forEach(function (j) { // a valid timed jump on this line ends it at the jump, at its time
+  var endT = nxt ? nxt.t : null, endX = null, jt = null, passed = false;
+  (marks || []).forEach(function (j) { // a valid timed jump on this line ends it at the jump, at its time, until the playhead has passed it
     if (j && j.kind === 'jump' && typeof j.t === 'number' && j.t > first.t && j.page === first.page && Math.abs(j.y - first.y) <= SCORE_SAME_LINE_PT &&
-        j.x > first.x && (endT === null || j.t < endT) && (jt === null || j.t < jt.t) && scoreJumpTarget(marks, j)) jt = j;
+        j.x > first.x && (endT === null || j.t < endT) && scoreJumpTarget(marks, j)) {
+      if (j.t > t) { if (jt === null || j.t < jt.t) jt = j; } else passed = true;
+    }
   });
-  var knots = [{ t: first.t, x: first.x + 7.2 + w / 2 }];
-  ln.members.forEach(function (i) { if (i !== ln.first && (jt === null || tm[i].t < jt.t)) knots.push({ t: tm[i].t, x: tm[i].x }); });
+  var st = passed ? n : ln.first; // past a jump the knots restart at the current mark
+  var knots = [{ t: tm[st].t, x: st === ln.first ? first.x + 7.2 + w / 2 : tm[st].x }];
+  ln.members.forEach(function (i) { if (i > st && (jt === null || tm[i].t < jt.t)) knots.push({ t: tm[i].t, x: tm[i].x }); });
   if (jt) { endT = jt.t; endX = jt.x; }
   else if (endT !== null) {
     var eols = (marks || []).filter(function (k) { return k && k.kind === 'eol'; });
@@ -10476,7 +10479,6 @@ function initScorePanel_() {
     try { AudioEngine.seek(scoreClockTime(Math.max(0, t), rate())); } catch (e) { /* no audio loaded */ }
     S.snapPending = true; S.easeStart = -1;
   }
-  function selJumpT(t) { return S.edit ? t : scoreJumpBefore(t); } // atc-tty9.38: Edit seeks exactly to the mark; view mode keeps the 1 s pre-roll
   function selMark() { for (var i = 0; i < S.marks.length; i++) if (S.marks[i].id === S.selId) return S.marks[i]; return null; }
   function fmtT(t) { var m = Math.floor(t / 60), sec = t - m * 60; return m + ':' + (sec < 10 ? '0' : '') + sec.toFixed(1); }
   function pageIndexOf(page) { return S.pages[page - 1]; }
@@ -11041,7 +11043,7 @@ function initScorePanel_() {
     if (S.barKey !== key || el.style.display === 'none') {
       S.barKey = key; el.style.left = (b.x / pg.w * 100) + '%'; el.style.top = (b.y / pg.h * 100) + '%'; el.style.display = '';
     }
-    if (S.edit) { var tt = fmtT(Math.round(b.t * 10) / 10); if (S.barTxt !== tt) { S.barTxt = tt; S.barLbl.textContent = tt; } } // atc-tty9.40: the playhead time above the bar, written only when it changes
+    if (S.edit) { var tt = fmtT(Math.round(trackNow() * 10) / 10); if (S.barTxt !== tt) { S.barTxt = tt; S.barLbl.textContent = tt; } } // atc-tty9.40: the playhead time above the bar, written only when it changes
     setBarAttr(b.page + ',' + Math.round(b.x * 10) / 10 + ',' + Math.round(b.y * 10) / 10); // test seam
   }
   function tickBody(now) {
@@ -11180,10 +11182,10 @@ function initScorePanel_() {
     }
     if (S.offsetMode) { setOffsetAt(hit); return; }
     var onMark = scoreHitMark(S.marks, hit.page, hit.x, hit.y);
-    if (onMark && onMark.id === S.selId) { S.pop = true; syncUi(); if (!isPlayingNow() && typeof onMark.t === 'number' && onMark.kind !== 'jump') jumpTo(selJumpT(onMark.t)); return; } // atc-tty9.14: tapping the already-selected mark again opens its editor
-    if (onMark) { // atc-tty9.13 AC 4: the playhead still goes to 1 s before the mark, but Follow pauses so the view stays where it is
+    if (onMark && onMark.id === S.selId) { S.pop = true; syncUi(); if (!isPlayingNow() && typeof onMark.t === 'number' && onMark.kind !== 'jump') jumpTo(onMark.t); return; } // atc-tty9.14: tapping the already-selected mark again opens its editor
+    if (onMark) { // atc-tty9.13 AC 4: the playhead goes exactly to the mark (no pre-roll, atc-tty9.38) and Follow pauses so the view stays where it is
       S.selId = onMark.id; syncUi(); showSelAtNow(); // atc-tty9.18: a tap while playing only selects; Set now times the mark
-      if (!isPlayingNow() && typeof onMark.t === 'number' && onMark.kind !== 'jump') { jumpTo(selJumpT(onMark.t)); if (!S.ribbonShown) pauseFollow(); }
+      if (!isPlayingNow() && typeof onMark.t === 'number' && onMark.kind !== 'jump') { jumpTo(onMark.t); if (!S.ribbonShown) pauseFollow(); }
       return;
     }
     if (isPlayingNow()) return; // atc-tty9.28: no new marks while the track plays
@@ -11335,7 +11337,7 @@ function initScorePanel_() {
     if (playMode() && !S.followOn) resumeFollow(); // leaving Edit while playing is play mode: Follow is always on
     else syncUi();
   });
-  /** AC 19: select the neighbouring mark as a tap on it would (jump to 1 s before) and bring it into view. */
+  /** AC 19: select the neighbouring mark as a tap on it would (jump to its time) and bring it into view. */
   function stepMark(dir) {
     if (!S.edit) { // R4: jump the playhead to the previous / next mark's time
       var vt = scoreViewStep(S.marks, scoreNowT()), vid = dir < 0 ? vt.prev : vt.next, vm = null;
@@ -11350,7 +11352,7 @@ function initScorePanel_() {
     if (!m) return;
     syncUi();
     if (isPlayingNow()) { showSelAtNow(); return; } // atc-tty9.28: while playing, Previous/Next only select (no seek), like a tap
-    jumpTo(selJumpT(m.t));
+    jumpTo(m.t);
     if (!S.followOn || !markVisibleAtJump(m)) {
       pauseFollow(); // the glide at that time would leave the mark off screen: show the mark itself
       var geo = pageGeo(), a = scoreAnchorView(m, geo);
@@ -11358,7 +11360,7 @@ function initScorePanel_() {
     }
   }
   function markVisibleAtJump(m) {
-    var geo = pageGeo(), tv = scoreFollowView(S.marks, selJumpT(m.t), geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, undefined, S.offsets, focusTrackId());
+    var geo = pageGeo(), tv = scoreFollowView(S.marks, m.t, geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, undefined, S.offsets, focusTrackId());
     var p = scoreMarkPoint(m, geo);
     return p.x >= tv.x && p.x <= tv.x + geo.W && p.y >= tv.y && p.y <= tv.y + geo.H;
   }
