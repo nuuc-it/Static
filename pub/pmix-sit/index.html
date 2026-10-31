@@ -2061,10 +2061,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.12";
+var STATIC_BUILD_VERSION_ = "1.8.1.13";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T11:31:26.379Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T11:41:56.104Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -10328,6 +10328,8 @@ function initScorePanel_() {
   function focusTrackId() { return trackInfo().selected[0] || ''; }
   function trackName(id) { var t = trackInfo().tracks; for (var i = 0; i < t.length; i++) if (t[i].id === id) return t[i].name; return ''; }
   function trackNow() { return scoreRound2(scoreTrackTime(clockNow(), rate())); }
+  /** atc-tty9.34: the score time of the playhead (first-pass time inside a back jump's replay window); Set to now on a mark and Prev/Next use it. */
+  function scoreNowT() { return scoreRound2(scoreJumpClock(S.marks, trackNow())); }
   /** Move the playhead to track time t (kept playing or paused as it was) and snap the view. */
   function jumpTo(t) {
     S.hold = false;
@@ -10467,7 +10469,7 @@ function initScorePanel_() {
     $('score-undo').hidden = !S.edit; $('score-undo').disabled = !S.undo.length;
     $('score-clear').hidden = !S.edit; $('score-clear').disabled = !S.marks.length;
     $('score-react').hidden = !S.edit;
-    var stepT = S.edit ? scoreStepTargets(S.marks, S.selId, trackNow()) : scoreViewStep(S.marks, trackNow());
+    var stepT = S.edit ? scoreStepTargets(S.marks, S.selId, scoreNowT()) : scoreViewStep(S.marks, scoreNowT());
     $('score-mark-prev').hidden = !has; $('score-mark-prev').disabled = stepT.prev === null;
     $('score-mark-next').hidden = !has; $('score-mark-next').disabled = stepT.next === null;
     ['prev', 'next'].forEach(function (w) { // atc-tty9.13 AC 6: outside Edit, a second line names the mark the button goes to
@@ -10905,7 +10907,7 @@ function initScorePanel_() {
     var fid = focusTrackId();
     if (S.focusId !== fid) { if (S.focusId !== null) { S.snapPending = true; S.easeStart = -1; } S.focusId = fid; } // atc-ore.8 AC 27: a new focus track re-snaps Follow
     var geo = pageGeo(), tRaw = scoreTrackTime(dispT, rate()), t = scoreJumpClock(S.marks, tRaw); // atc-tty9.34: page-view Follow reads the jump clock
-    var tv = followView(geo, t);
+    var tv = followView(geo, rb ? tRaw : t); // atc-tty9.35: the ribbon reads audio time, so its highlight does too
     if (tv.n !== S.curN) { S.curN = tv.n; syncUi(); }
     if (S.seekDim !== document.getElementById('seek-bar').max + '|' + rate()) renderSeekMarks();
     if (!S.followOn && !S.edit && S.snapPending) { S.followOn = true; S.offY = 0; S.pan = null; syncUi(); } // a seek outside Edit mode puts Follow back: there is no Resume button
@@ -11011,10 +11013,10 @@ function initScorePanel_() {
     }
     if (S.offsetMode) { setOffsetAt(hit); return; }
     var onMark = scoreHitMark(S.marks, hit.page, hit.x, hit.y);
-    if (onMark && onMark.id === S.selId) { S.pop = true; syncUi(); if (!isPlayingNow() && typeof onMark.t === 'number') jumpTo(scoreJumpBefore(onMark.t)); return; } // atc-tty9.14: tapping the already-selected mark again opens its editor
+    if (onMark && onMark.id === S.selId) { S.pop = true; syncUi(); if (!isPlayingNow() && typeof onMark.t === 'number' && onMark.kind !== 'jump') jumpTo(scoreJumpBefore(onMark.t)); return; } // atc-tty9.14: tapping the already-selected mark again opens its editor
     if (onMark) { // atc-tty9.13 AC 4: the playhead still goes to 1 s before the mark, but Follow pauses so the view stays where it is
       S.selId = onMark.id; syncUi(); showSelAtNow(); // atc-tty9.18: a tap while playing only selects; Set now times the mark
-      if (!isPlayingNow() && typeof onMark.t === 'number') { jumpTo(scoreJumpBefore(onMark.t)); if (!S.ribbonShown) pauseFollow(); }
+      if (!isPlayingNow() && typeof onMark.t === 'number' && onMark.kind !== 'jump') { jumpTo(scoreJumpBefore(onMark.t)); if (!S.ribbonShown) pauseFollow(); }
       return;
     }
     if (isPlayingNow()) return; // atc-tty9.28: no new marks while the track plays
@@ -11169,12 +11171,12 @@ function initScorePanel_() {
   /** AC 19: select the neighbouring mark as a tap on it would (jump to 1 s before) and bring it into view. */
   function stepMark(dir) {
     if (!S.edit) { // R4: jump the playhead to the previous / next mark's time
-      var vt = scoreViewStep(S.marks, trackNow()), vid = dir < 0 ? vt.prev : vt.next, vm = null;
+      var vt = scoreViewStep(S.marks, scoreNowT()), vid = dir < 0 ? vt.prev : vt.next, vm = null;
       S.marks.forEach(function (k) { if (k.id === vid) vm = k; });
       if (vm) jumpTo(vm.t);
       return;
     }
-    var tg = scoreStepTargets(S.marks, S.selId, trackNow()), id = dir < 0 ? tg.prev : tg.next;
+    var tg = scoreStepTargets(S.marks, S.selId, scoreNowT()), id = dir < 0 ? tg.prev : tg.next;
     if (id === null) return;
     S.selId = id;
     var m = selMark();
@@ -11261,18 +11263,19 @@ function initScorePanel_() {
   $('score-set-now').addEventListener('click', function () {
     var m = selMark();
     if (!m) return;
+    var setT = m.kind === 'jump' ? trackNow() : scoreNowT(); // atc-tty9.34: a jump keeps audio time, a mark its first-pass time
     if (isPlayingNow()) { // atc-tty9.17: while playing, Set now selects the next mark visually; no seek, no pause
-      var nm = scoreSetMarkTime(S.marks, m.id, scoreAddTime(trackNow(), true, S.reaction, rate())).marks, nid = scoreNextVisual(nm, m.id);
+      var nm = scoreSetMarkTime(S.marks, m.id, scoreAddTime(setT, true, S.reaction, rate())).marks, nid = scoreNextVisual(nm, m.id);
       S.selId = nid || m.id;
       commit(nm, true);
-      showSelAtNow(); // atc-tty9.28
+      if (S.ribbonShown) showSelAtNow(); else if (!S.followOn) resumeFollow(); // atc-tty9.33: Set to now keeps the page view following; only tap-select and Prev/Next hold it
       return;
     }
     if (typeof m.t !== 'number' && m.kind !== 'jump') { // an untimed mark gets the time and stays selected
-      commit(scoreSetMarkTime(S.marks, m.id, scoreAddTime(trackNow(), isPlayingNow(), S.reaction, rate())).marks, true);
+      commit(scoreSetMarkTime(S.marks, m.id, scoreAddTime(setT, isPlayingNow(), S.reaction, rate())).marks, true);
       return;
     }
-    var r = scoreSetNow(S.marks, m.id, trackNow(), isPlayingNow(), S.reaction, rate()); // atc-ore.16 AC 8, 9
+    var r = scoreSetNow(S.marks, m.id, setT, isPlayingNow(), S.reaction, rate()); // atc-ore.16 AC 8, 9
     S.selId = r.selId;
     commit(r.marks, true);
   });
