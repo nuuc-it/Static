@@ -2061,10 +2061,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.9";
+var STATIC_BUILD_VERSION_ = "1.8.1.10";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T06:58:47.615Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T07:02:52.320Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8714,7 +8714,24 @@ function scoreRibbonLayout(marks, geo, opt) {
     return sg.ribbonX + k.x * pg.w / pg.ptW - sg.srcX;
   });
   var segIdx = marks.map(function (k, i) { return segOf[d.lineOf[i]]; });
-  return { segs: segs, width: x, markX: markX, segIdx: segIdx, lineY: lineY, W: geo.W, H: geo.H };
+  // atc-tty9.20: span i (mark i to i+1) is a hold at a repeat/skip; the span speed is 0 there and for a zero-length span
+  var hold = [], sp = [], markV = [];
+  marks.forEach(function (k, i) {
+    if (i + 1 >= marks.length) return;
+    var h = marks[i + 1].t - k.t;
+    hold[i] = markX[i + 1] < markX[i] || Math.abs(segIdx[i + 1] - segIdx[i]) > 1;
+    sp[i] = hold[i] || !(h > 0) ? 0 : (markX[i + 1] - markX[i]) / h;
+  });
+  marks.forEach(function (k, i) { // monotone end/interior slopes (weighted harmonic mean of the two span speeds, 0 at a stop or hold)
+    if (!marks.length || marks.length < 2) { markV[i] = 0; return; }
+    if (i === 0) { markV[i] = sp[0]; return; }
+    if (i === marks.length - 1) { markV[i] = sp[i - 1]; return; }
+    var d0 = sp[i - 1], d1 = sp[i], h0 = k.t - marks[i - 1].t, h1 = marks[i + 1].t - k.t;
+    if (d0 <= 0 || d1 <= 0) { markV[i] = 0; return; }
+    var w1 = 2 * h1 + h0, w2 = h1 + 2 * h0;
+    markV[i] = (w1 + w2) / (w1 / d0 + w2 / d1);
+  });
+  return { segs: segs, width: x, markX: markX, markV: markV, hold: hold, segIdx: segIdx, lineY: lineY, W: geo.W, H: geo.H };
 }
 /** atc-tty9.9: the x (pt) where an EOL mark cuts a line, or null. The EOL belongs to the line on its page whose start is nearest in y
  *  (within SCORE_SAME_LINE_PT) and lies right of the line's last mark; the nearest such EOL in y, then the leftmost, wins. */
@@ -8756,7 +8773,12 @@ function scoreRibbonX(marks, t, layout) {
   var span = marks[n + 1].t - marks[n].t;
   var back = layout.markX[n + 1] < layout.markX[n], far = layout.segIdx && Math.abs(layout.segIdx[n + 1] - layout.segIdx[n]) > 1;
   if (back || far) return layout.markX[n]; // a repeat or skipped line: hold, then jump at the next mark's time (no sweep across the gap)
-  return scoreLerp(layout.markX[n], layout.markX[n + 1], span > 0 ? scoreClamp((t - marks[n].t) / span, 0, 1) : 1);
+  if (!(span > 0)) return layout.markX[n + 1];
+  var u = scoreClamp((t - marks[n].t) / span, 0, 1), V = layout.markV;
+  if (!V) return scoreLerp(layout.markX[n], layout.markX[n + 1], u);
+  // atc-tty9.20: monotone cubic Hermite between marks, so the speed does not step at a mark
+  var u2 = u * u, u3 = u2 * u;
+  return (2 * u3 - 3 * u2 + 1) * layout.markX[n] + (u3 - 2 * u2 + u) * span * V[n] + (-2 * u3 + 3 * u2) * layout.markX[n + 1] + (u3 - u2) * span * V[n + 1];
 }
 /** The vertical pan offset in the ribbon: not tied to the page's scroll range, so any line can move either way, up to half the view height. */
 function scoreRibbonNudge(offY, dy, viewH) { return scoreClamp(offY + dy, -viewH / 2, viewH / 2); }
@@ -8823,10 +8845,10 @@ function scorePerfClock(st, clock) {
   if (ms < 0.0005) st.clkStall++; else scorePerfPush(st.clk, ms);
 }
 /** One drawn frame's scroll position (device-rounded px): per-frame movement; zero-move frames counted. Jumps over 300 px are seeks and are skipped. */
-function scorePerfPlayhead(st, x) {
+function scorePerfPlayhead(st, x, skip) {
   var last = st.pxLast;
   st.pxLast = x;
-  if (last === null) return;
+  if (last === null || skip) return; // skip: scroll clamped at an end, or a hold span (not stutter)
   var d = Math.abs(x - last);
   if (d > 300) return;
   st.pxN++;
@@ -8866,7 +8888,7 @@ function scorePerfRecord(st, nowMs, env) {
     canvasMB: scorePerfR2(env.canvasMB), ribbonMB: scorePerfR2(env.ribbonMB), ua: String(env.ua || '').slice(0, 160), platform: String(env.platform || '').slice(0, 40)
   };
   if (st.clkN) { r.stall = scorePerfR2(st.clkStall / st.clkN); r.cs50 = scorePerfR2(scorePerfPct(st.clk, 50)); r.cs95 = scorePerfR2(scorePerfPct(st.clk, 95)); }
-  if (st.pxN) { r.px95 = scorePerfR2(scorePerfPct(st.px, 95)); r.pxZero = scorePerfR2(st.pxZero / st.pxN); }
+  if (st.pxN) { r.px50 = scorePerfR2(scorePerfPct(st.px, 50)); r.px95 = scorePerfR2(scorePerfPct(st.px, 95)); r.pxZero = scorePerfR2(st.pxZero / st.pxN); }
   if (env.base !== null && env.base !== undefined) r.baseLat = scorePerfR2(env.base * 1000);
   if (env.out !== null && env.out !== undefined) r.outLat = scorePerfR2(env.out * 1000);
   if (env.ur !== null && env.ur !== undefined && st.au0 && st.au0.ur !== null && st.au0.ur !== undefined) { r.underruns = env.ur - st.au0.ur; r.underrunMs = scorePerfR2((env.urMs || 0) - (st.au0.urMs || 0)); }
@@ -10678,7 +10700,10 @@ function initScorePanel_() {
     }
     sx = scorePxRound(sx, window.devicePixelRatio || 1); // atc-tty9.20: whole device pixels
     S.ribbonSx = sx;
-    if (perfSt) scorePerfPlayhead(perfSt, sx);
+    if (perfSt) {
+      var pn = scoreIndexAt(scoreTimed(S.marks), t), pmax = Math.max(0, L.width - geo.W);
+      scorePerfPlayhead(perfSt, sx, sx <= 0 || sx >= pmax || (pn >= 0 && !!(L.hold && L.hold[pn])));
+    }
     panel.setAttribute('data-playhead-x', String(Math.round(rx - sx))); // test seam: the playhead's screen x (40% of the width inside the ribbon)
     var dpr = window.devicePixelRatio || 1, cw = Math.round(geo.W * dpr), ch = Math.round(geo.H * dpr);
     if (ribbonCv.width !== cw || ribbonCv.height !== ch) { ribbonCv.width = cw; ribbonCv.height = ch; ribbonCv.style.width = geo.W + 'px'; ribbonCv.style.height = geo.H + 'px'; }
