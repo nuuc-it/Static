@@ -485,8 +485,8 @@ body {
 #score-sel-label { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score-misplaced { padding: 4px 8px; font-size: 12px; font-weight: 600; background: #fef3c7; color: #78350f; border-bottom: 1px solid #b45309; }
 .score-offsetbar select { max-width: 160px; height: 30px; font-size: 13px; }
-.score-page-bar { position: absolute; width: 10%; height: 4px; transform: translate(-50%, -50%); background: #16a34a; border-radius: 2px; pointer-events: none; z-index: 2; }
-.score-mark { position: absolute; transform: translate(-50%, -50%); pointer-events: none; user-select: none; -webkit-user-select: none; display: flex; align-items: center; justify-content: center; }
+.score-page-bar { position: absolute; width: 10%; height: 4px; transform: translate(-50%, -50%); background: #16a34a; border-radius: 2px; pointer-events: none; z-index: 1; }
+.score-mark { position: absolute; z-index: 2; transform: translate(-50%, -50%); pointer-events: none; user-select: none; -webkit-user-select: none; display: flex; align-items: center; justify-content: center; }
 .score-mark .dot { width: 16px; height: 16px; border-radius: 50%; background: #0e7c86; border: 1px solid #fff; box-sizing: border-box; font-size: 9px; line-height: 1; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; }
 .score-mark[data-current="true"] .dot { background: #e11d48; width: 18px; height: 18px; font-size: 10px; }
 .score-mark .mt { display: none; position: absolute; left: 50%; top: 100%; margin-top: 1px; transform: translateX(-50%); font-size: 10px; line-height: 1; padding: 1px 3px; border-radius: 3px; background: rgba(0,0,0,.7); color: #fff; white-space: nowrap; }
@@ -2063,10 +2063,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.18";
+var STATIC_BUILD_VERSION_ = "1.8.1.19";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T14:54:55.155Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T15:05:02.666Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -9159,17 +9159,23 @@ function scorePageBar(marks, t, opt) {
     var eols = (marks || []).filter(function (k) { return k && k.kind === 'eol'; });
     var starts = d.lines.map(function (l) { return tm[l.first]; });
     var ex = scoreEolFor(eols, first, tm[ln.members[ln.members.length - 1]], starts);
-    endX = ex !== null ? ex : (opt && opt.pageW ? Number(opt.pageW) : cur.x);
+    var pw = opt && opt.pageW ? Number(typeof opt.pageW === 'function' ? opt.pageW(first.page) : opt.pageW) : 0; // the line's own page width (pt); the 10% bar ends 5% in from the edge
+    endX = ex !== null ? ex : (pw > 0 ? Math.max(cur.x, pw * 0.95) : cur.x);
   }
   var f = nxt ? scoreClamp((t - cur.t) / (nxt.t - cur.t || 1), 0, 1) : 0;
-  return { page: first.page, x: cur.x + f * (endX - cur.x), y: first.y };
+  var x = cur.x + f * (endX - cur.x);
+  (marks || []).forEach(function (j) { // a valid timed jump on this line between the current mark and the next stops the bar until its time
+    if (j && j.kind === 'jump' && typeof j.t === 'number' && j.t > t && j.page === first.page && Math.abs(j.y - first.y) <= SCORE_SAME_LINE_PT &&
+        j.x > cur.x && (!nxt || d.lineOf[n + 1] !== li || j.x < nxt.x) && scoreJumpTarget(marks, j)) x = Math.min(x, j.x);
+  });
+  return { page: first.page, x: x, y: first.y };
 }
 /** atc-tty9.36: the Edit selection label: head (type, number, time) then the measure label and the note when set; short = note cut to 24 characters. */
 function scoreSelLabel(head, mark, short) {
   var out = head;
   if (mark && mark.kind !== 'jump' && mark.kind !== 'eol' && mark.kind !== 'note' && mark.measure) out += ' - ' + mark.measure;
   var nt = mark && mark.kind !== 'jump' && mark.kind !== 'eol' ? (short ? scoreNoteShort(mark.note) : String(mark.note || '').replace(/\s+/g, ' ').trim()) : '';
-  return nt ? out + ' - ' + nt : out;
+  return nt && nt !== head ? out + ' - ' + nt : out; // a fresh note reads "Note", not "Note - Note"
 }
 /** atc-tty9.22: default measure label for the new mark id: the nearest mark to its left in the same row whose label ends in digits,
  *  prefix + (n+1), moved up to the first number not already a measure label in the score. null when there is no such mark,
@@ -10996,18 +11002,20 @@ function initScorePanel_() {
     perfFrame(now, performance.now() - w0);
   }
   /** atc-tty9.37: show the green bar at b = {page, x, y} (pt) or hide it; only writes the style when the position changed. */
+  function pageWOf(page) { var pg = pageIndexOf(page); return pg ? pg.w : 0; }
+  function setBarAttr(v) { if (S.barAttr !== v) { S.barAttr = v; panel.setAttribute('data-page-bar', v); } }
   function drawPageBar(b) {
     var el = S.barEl;
-    if (!b) { if (el && el.style.display !== 'none') el.style.display = 'none'; panel.setAttribute('data-page-bar', ''); return; }
+    if (!b) { if (el && el.style.display !== 'none') el.style.display = 'none'; setBarAttr(''); return; }
     var pg = pageIndexOf(b.page);
-    if (!pg) return;
+    if (!pg) { drawPageBar(null); return; }
     if (!el) { el = S.barEl = document.createElement('div'); el.className = 'score-page-bar'; el.setAttribute('data-testid', 'score-page-bar'); }
     if (el.parentNode !== pg.el) pg.el.appendChild(el);
     var key = (b.x / pg.w * 100).toFixed(3) + '|' + (b.y / pg.h * 100).toFixed(3);
     if (S.barKey !== key || el.style.display === 'none') {
       S.barKey = key; el.style.left = (b.x / pg.w * 100) + '%'; el.style.top = (b.y / pg.h * 100) + '%'; el.style.display = '';
     }
-    panel.setAttribute('data-page-bar', b.page + ',' + Math.round(b.x * 10) / 10 + ',' + Math.round(b.y * 10) / 10); // test seam
+    setBarAttr(b.page + ',' + Math.round(b.x * 10) / 10 + ',' + Math.round(b.y * 10) / 10); // test seam
   }
   function tickBody(now) {
     S.loop = requestAnimationFrame(tick);
@@ -11028,7 +11036,11 @@ function initScorePanel_() {
     if (!rb && S.ribbonShown) setRibbonShown(false);
     if (S.hold) { // a restored page/position holds Follow still until Play or a seek (ADR-0016 step 6)
       if (playing) { S.hold = false; S.snapPending = true; }
-      else { S.snapPending = false; S.easeStart = -1; return; }
+      else {
+        S.snapPending = false; S.easeStart = -1;
+        if (scoreTimed(S.marks).length) drawPageBar(!rb ? scorePageBar(S.marks, scoreJumpClock(S.marks, scoreTrackTime(dispT, rate())), { pageW: pageWOf }) : null); // the restored hold shows the bar at the held time
+        return;
+      }
     }
     if (!scoreTimed(S.marks).length) { drawPageBar(null); if (S.curN !== -1) { S.curN = -1; syncUi(); } return; }
     var fid = focusTrackId();
@@ -11036,7 +11048,7 @@ function initScorePanel_() {
     var geo = pageGeo(), tRaw = scoreTrackTime(dispT, rate()), t = scoreJumpClock(S.marks, tRaw); // atc-tty9.34: page-view Follow reads the jump clock
     var tv = followView(geo, t); // atc-tty9.35: the ribbon's knots are audio time + the span offset, which is exactly the jump clock, so the highlight reads it too
     if (tv.n !== S.curN) { S.curN = tv.n; syncUi(); }
-    drawPageBar(!rb ? scorePageBar(S.marks, t, { pageW: (pageIndexOf(1) || {}).w }) : null); // atc-tty9.37: one div, one style write per frame
+    drawPageBar(!rb ? scorePageBar(S.marks, t, { pageW: pageWOf }) : null); // atc-tty9.37: one div, one style write per frame
     if (S.seekDim !== document.getElementById('seek-bar').max + '|' + rate()) renderSeekMarks();
     if (!S.followOn && !S.edit && S.snapPending) { S.followOn = true; S.offY = 0; S.pan = null; syncUi(); } // a seek outside Edit mode puts Follow back: there is no Resume button
     if (!S.followOn) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.v; return; } // a seek while paused must not make Resume snap (atc-tty9.33: the page view follows in Edit while playing too)
