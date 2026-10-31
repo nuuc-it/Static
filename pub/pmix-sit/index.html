@@ -2061,10 +2061,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.2";
+var STATIC_BUILD_VERSION_ = "1.8.1.3";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T04:10:17.459Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T04:18:22.045Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8989,9 +8989,7 @@ function scoreSetNow(marks, id, t, playing, reaction, speed) {
   var list = scoreSetMarkTime(marks, id, scoreAddTime(t, playing, reaction, speed)).marks, idx = -1, i;
   for (i = 0; i < list.length; i++) if (list[i].id === id) idx = i;
   if (idx < 0) return { marks: list, selId: null };
-  var timed = scoreTimed(list); // atc-tty9.26: the next timed mark; jumps, notes, EOL and untimed marks are skipped
-  for (i = 0; i < timed.length; i++) if (timed[i].id === id) return { marks: list, selId: i + 1 < timed.length ? timed[i + 1].id : id };
-  return { marks: list, selId: id };
+  return { marks: list, selId: scoreNextVisual(list, id) || id }; // atc-tty9.26: the same visual advance as the playing path; jumps, notes and EOL are skipped
 }
 /** The rows of marks (every kind) left to right, rows in page then y order: derived lines plus untimed marks near a line (see scoreNextVisual). */
 function scoreVisualRows(marks) {
@@ -9146,9 +9144,10 @@ function scoreSetJump(marks, id, patch) {
   }
   return { marks: list };
 }
-/** atc-tty9.14 AC 1: convert mark id to kind 'mark' | 'eol' | 'jump'. mark/EOL -> jump needs a label (default "Jump") and a target (the first timed
+/** atc-tty9.14 AC 1: convert mark id to kind 'mark' | 'eol' | 'jump' | 'note'. mark/EOL -> jump needs a label (default "Jump") and a target (the first timed
  *  mark other than itself; refused when none); anything -> EOL drops time, measure, note, label and target; jump -> mark drops label and target
- *  (an untimed mark). Deleting-style: jumps that targeted a mark that stops being a timed mark are left to scoreBrokenJumps. Returns {marks} or {error}. */
+ *  (an untimed mark); anything -> note (atc-tty9.26) drops time, measure, label and target and keeps an existing note text (else "Note"); note -> mark
+ *  keeps the note text as an untimed mark; note -> EOL drops the note. Deleting-style: jumps that targeted a mark that stops being a timed mark are left to scoreBrokenJumps. Returns {marks} or {error}. */
 function scoreSetKind(marks, id, kind) {
   var list = scoreCopyMarks(marks), k = null;
   list.forEach(function (q) { if (q.id === id) k = q; });
@@ -9170,7 +9169,6 @@ function scoreSetKind(marks, id, kind) {
     return { marks: scoreSorted(list) };
   }
   delete k.label; delete k.targetMarkId;
-  if (cur === 'note' && kind === 'eol') delete k.note;
   if (kind === 'eol') { k.kind = 'eol'; delete k.t; delete k.measure; delete k.note; return { marks: scoreSorted(scoreAlignEols(list)) }; }
   k.kind = 'mark';
   return { marks: scoreSorted(list) };
@@ -9375,7 +9373,7 @@ function scoreMarksOf(o) {
   var list = o.v === 1 ? scoreMigrateMarksV1(o.marks) : o.marks;
   var ok = list.filter(function (k) {
     if (!k || !(k.kind === undefined || k.kind === 'mark' || k.kind === 'eol' || k.kind === 'jump' || k.kind === 'note')) return false;
-    if (k.kind === 'note' && (k.t !== undefined || k.measure !== undefined || typeof k.note !== 'string' || !k.note.trim() || k.note.length > 500)) return false;
+    if (k.kind === 'note' && (k.t !== undefined || k.measure !== undefined || k.label !== undefined || k.targetMarkId !== undefined || typeof k.note !== 'string' || !k.note.trim() || k.note.length > 500)) return false;
     if (k.kind === 'jump' && (k.t !== undefined || typeof k.label !== 'string' || !k.label.trim() || k.label.length > SCORE_LABEL_MAX || typeof k.targetMarkId !== 'string' || !SCORE_MARK_ID_RE_.test(k.targetMarkId))) return false;
     if (k.t !== undefined && !(typeof k.t === 'number' && isFinite(k.t) && k.t >= 0)) return false;
     if (k.kind === 'eol' && k.t !== undefined) return false;
