@@ -2061,10 +2061,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.11";
+var STATIC_BUILD_VERSION_ = "1.8.1.12";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T07:12:57.929Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T11:31:26.379Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8513,7 +8513,7 @@ function scoreWithIds(marks) {
 /** Timed marks by time (stable: equal times keep their order); untimed marks after them in their order (adr/0017). */
 function scoreSorted(marks) {
   return scoreCopyMarks(marks).sort(function (a, b) {
-    var ua = typeof a.t !== 'number', ub = typeof b.t !== 'number';
+    var ua = typeof a.t !== 'number' || a.kind === 'jump', ub = typeof b.t !== 'number' || b.kind === 'jump'; // atc-tty9.34: a timed jump is not a path point; it stays in the tail
     if (ua || ub) return ua === ub ? 0 : ua ? 1 : -1;
     return a.t - b.t;
   });
@@ -9028,7 +9028,7 @@ function scoreSetMarkTime(marks, id, t) {
   var tgt = list.filter(function (k) { return k.id === id; })[0];
   if (tgt && tgt.kind === 'mark' && typeof tgt.t !== 'number') // untimed -> timed: join a line like a newly placed mark
     tgt.y = scoreSnapY(scoreSorted(list.filter(function (k) { return k !== tgt; })), tgt);
-  list.forEach(function (k) { if (k.id === id && k.kind === 'mark') k.t = Math.max(0, scoreRound2(t)); }); // a jump or EOL never gets a time
+  list.forEach(function (k) { if (k.id === id && (k.kind === 'mark' || k.kind === 'jump')) k.t = Math.max(0, scoreRound2(t)); }); // an EOL never gets a time; a jump's t is when it is taken (atc-tty9.34)
   return { marks: scoreSorted(list) };
 }
 /** atc-ore.16 AC 8, 9: Set to now. The new time is the playhead less the reaction allowance while playing (scoreAddTime); the selection then moves
@@ -9083,8 +9083,15 @@ function scoreDefaultMeasure(marks, id) {
  *  Rows (scoreVisualRows) are the derived lines plus untimed marks on the nearest line of their page within SCORE_SAME_LINE_PT of its y (otherwise a row of
  *  their own by y). EOL and jump marks are skipped. Returns the next mark id, or id itself at the last mark, or null if id is not a mark. */
 function scoreNextVisual(marks, id) {
-  var seq = [];
-  scoreVisualRows(marks).forEach(function (r) { r.forEach(function (k) { if (k.kind === 'mark') seq.push(k.id); }); });
+  var seq = [], jmp = null, after = null;
+  marks.forEach(function (k) { if (k.id === id && k.kind === 'jump') jmp = k; });
+  scoreVisualRows(marks).forEach(function (r) { r.forEach(function (k) {
+    if (k.kind !== 'mark') return;
+    seq.push(k.id);
+    // atc-tty9.34: a jump sits in reading order (page, then line, then x); the first mark after it is next
+    if (jmp && !after && (k.page > jmp.page || (k.page === jmp.page && (Math.abs(k.y - jmp.y) <= SCORE_SAME_LINE_PT ? k.x > jmp.x : k.y > jmp.y)))) after = k.id;
+  }); });
+  if (jmp) return after;
   var at = seq.indexOf(id);
   if (at < 0) return null;
   return at + 1 < seq.length ? seq[at + 1] : id;
@@ -9146,7 +9153,7 @@ function scoreSetMarkFields(marks, id, patch) {
 /** atc-tty9.9: take the time off a timed 'mark' (it becomes an untimed mark, moved after the timed ones). */
 function scoreClearTime(marks, id) {
   var list = scoreCopyMarks(marks);
-  list.forEach(function (k) { if (k.id === id && (k.kind === 'mark')) delete k.t; });
+  list.forEach(function (k) { if (k.id === id && (k.kind === 'mark' || k.kind === 'jump')) delete k.t; });
   return scoreSorted(list);
 }
 /** Deleting a mark points every jump that targeted it at SCORE_NO_TARGET, so a later mark that reuses the id is never mistaken for the target (atc-tty9.10). */
@@ -9173,6 +9180,18 @@ function scoreJumpTime(marks, id) {
 }
 function scoreBrokenJumps(marks) {
   return (marks || []).filter(function (k) { return k && k.kind === 'jump' && !scoreJumpTarget(marks, k); });
+}
+/** atc-tty9.34: the score time Follow and the ribbon read, given the track time t. A jump timed j.t (the audio time it is taken) with a valid target at tt < j.t
+ *  replays the marks tt..j.t at t - (j.t - tt) until its second arrival, t = 2*j.t - tt; the latest timed jump at or before t decides, so a later jump (forward
+ *  or back) ends the window. Untimed and broken jumps are ignored. Everything else (Set to now, seek, transport) stays in audio time. */
+function scoreJumpClock(marks, t) {
+  var j = null, tt = 0;
+  (marks || []).forEach(function (k) {
+    if (!k || k.kind !== 'jump' || typeof k.t !== 'number' || k.t > t || (j && k.t < j.t)) return;
+    var g = scoreJumpTarget(marks, k);
+    if (g) { j = k; tt = g.t; }
+  });
+  return j && tt < j.t && t < 2 * j.t - tt ? t - (j.t - tt) : t;
 }
 /** A new jump (label "Jump", target the first timed mark); refused when the score has no timed mark. */
 function scoreAddJump(marks, spec) {
@@ -9223,6 +9242,7 @@ function scoreSetKind(marks, id, kind) {
     return { marks: scoreSorted(list) };
   }
   delete k.label; delete k.targetMarkId;
+  if (cur === 'jump') delete k.t; // atc-tty9.34: a jump's time is not a mark's
   if (kind === 'eol') { k.kind = 'eol'; delete k.t; delete k.measure; delete k.note; return { marks: scoreSorted(scoreAlignEols(list)) }; }
   k.kind = 'mark';
   return { marks: scoreSorted(list) };
@@ -9428,7 +9448,7 @@ function scoreMarksOf(o) {
   var ok = list.filter(function (k) {
     if (!k || !(k.kind === undefined || k.kind === 'mark' || k.kind === 'eol' || k.kind === 'jump' || k.kind === 'note')) return false;
     if (k.kind === 'note' && (k.t !== undefined || k.measure !== undefined || k.label !== undefined || k.targetMarkId !== undefined || typeof k.note !== 'string' || !k.note.trim() || k.note.length > 500)) return false;
-    if (k.kind === 'jump' && (k.t !== undefined || typeof k.label !== 'string' || !k.label.trim() || k.label.length > SCORE_LABEL_MAX || typeof k.targetMarkId !== 'string' || !SCORE_MARK_ID_RE_.test(k.targetMarkId))) return false;
+    if (k.kind === 'jump' && (typeof k.label !== 'string' || !k.label.trim() || k.label.length > SCORE_LABEL_MAX || typeof k.targetMarkId !== 'string' || !SCORE_MARK_ID_RE_.test(k.targetMarkId))) return false;
     if (k.t !== undefined && !(typeof k.t === 'number' && isFinite(k.t) && k.t >= 0)) return false;
     if (k.kind === 'eol' && k.t !== undefined) return false;
     return typeof k.page === 'number' && k.page >= 1 && k.page % 1 === 0 && typeof k.x === 'number' && isFinite(k.x) && typeof k.y === 'number' && isFinite(k.y);
@@ -10476,9 +10496,9 @@ function initScorePanel_() {
     $('score-jump-warn').textContent = brokenJ.length ? (brokenJ.length === 1 ? '1 jump has no valid target and is' : brokenJ.length + ' jumps have no valid target and are') + ' disabled for singers: ' + brokenJ.map(function (k) { return '"' + k.label + '"'; }).join(', ') + '. Select it and pick a target.' : '';
     if (m) {
       var timedM = typeof m.t === 'number', isJump = m.kind === 'jump', isEol = m.kind === 'eol', isNote = m.kind === 'note';
-      $('score-sel-label').textContent = isNote ? 'Note' : isJump ? 'Jump' : isEol ? 'End-of-line mark' : timedM ? 'Mark ' + (markNums()[m.id] || S.marks.indexOf(m) + 1) + ' at ' + fmtT(m.t) : 'Untimed mark';
+      $('score-sel-label').textContent = isNote ? 'Note' : isJump ? (timedM ? 'Jump at ' + fmtT(m.t) : 'Jump') : isEol ? 'End-of-line mark' : timedM ? 'Mark ' + (markNums()[m.id] || S.marks.indexOf(m) + 1) + ' at ' + fmtT(m.t) : 'Untimed mark';
       $('score-nudge-minus').hidden = $('score-nudge-plus').hidden = !timedM;
-      $('score-set-now').hidden = isEol || isJump || isNote; $('score-set-now').textContent = timedM ? 'Set to now' : 'Set time to now';
+      $('score-set-now').hidden = isEol || isNote; $('score-set-now').textContent = timedM ? 'Set to now' : 'Set time to now';
       $('score-clear-time').hidden = !timedM || isEol;
       var showF = !isEol && !isJump && !selbar.hidden;
       $('score-measure').hidden = !showF || isNote; $('score-note').hidden = !showF;
@@ -10631,7 +10651,7 @@ function initScorePanel_() {
     S.seekDim = bar.max + '|' + sp;
     box.textContent = '';
     S.marks.forEach(function (k, i) {
-      if (typeof k.t !== 'number') return;
+      if (typeof k.t !== 'number' || k.kind === 'jump') return; // a timed jump is not on the seek bar (atc-tty9.34)
       var sp_ = document.createElement('span');
       var mn = markNums()[k.id] || i + 1;
       sp_.setAttribute('data-n', String(mn));
@@ -10678,6 +10698,7 @@ function initScorePanel_() {
     if (!S.edit || !m || !isPlayingNow() || S.ribbonShown) return;
     var geo = pageGeo(), a = scoreAnchorView(m, geo), dy = typeof m.t === 'number' ? scoreOffsetDyAt(S.offsets, focusTrackId(), m.t) : 0; // the focus track's offset, as Follow applies it
     setView(a.x, scoreClamp(a.y + dy * scorePagePx(geo, m.page).h, 0, geo.maxY));
+    pauseFollow(); // atc-tty9.33: Follow would drag the view back to the playhead; the Follow button resumes it
   }
   // ---- Ribbon (branch continuous-scroll): play mode draws horizontal slices of the rendered pages on one canvas ----
   var ribbonCv = $('score-ribbon');
@@ -10871,7 +10892,7 @@ function initScorePanel_() {
       S.playing = playing; paintMarks();
       if (S.edit && !playing) pauseFollow(); // atc-tty9.28: pausing in Edit leaves the page where it is (no snap to the playhead)
       if (playing) S.offsetMode = false; // atc-ore.16 AC 17: starting playback turns offset mode off
-      if ((playMode() || (S.edit && S.ribbon)) && !S.followOn) resumeFollow(); // starting to play puts Follow back (atc-ore.17 AC 2); Edit with Ribbon on too, so the ribbon shows (atc-tty9.17)
+      if ((playMode() || S.edit) && !S.followOn) resumeFollow(); // starting to play puts Follow back (atc-ore.17 AC 2); Edit too, page view and ribbon (atc-tty9.17, atc-tty9.33)
       syncUi();
     }
     var rb = ribbonActive();
@@ -10883,16 +10904,16 @@ function initScorePanel_() {
     if (!scoreTimed(S.marks).length) { if (S.curN !== -1) { S.curN = -1; syncUi(); } return; }
     var fid = focusTrackId();
     if (S.focusId !== fid) { if (S.focusId !== null) { S.snapPending = true; S.easeStart = -1; } S.focusId = fid; } // atc-ore.8 AC 27: a new focus track re-snaps Follow
-    var geo = pageGeo(), t = scoreTrackTime(dispT, rate());
+    var geo = pageGeo(), tRaw = scoreTrackTime(dispT, rate()), t = scoreJumpClock(S.marks, tRaw); // atc-tty9.34: page-view Follow reads the jump clock
     var tv = followView(geo, t);
     if (tv.n !== S.curN) { S.curN = tv.n; syncUi(); }
     if (S.seekDim !== document.getElementById('seek-bar').max + '|' + rate()) renderSeekMarks();
     if (!S.followOn && !S.edit && S.snapPending) { S.followOn = true; S.offY = 0; S.pan = null; syncUi(); } // a seek outside Edit mode puts Follow back: there is no Resume button
-    if (!S.followOn || (S.edit && playing && !rb)) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.v; return; } // a seek while paused must not make Resume snap; Edit while playing does not follow (atc-tty9.28)
+    if (!S.followOn) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.v; return; } // a seek while paused must not make Resume snap (atc-tty9.33: the page view follows in Edit while playing too)
     if (rb) { // ribbon: the playhead's ribbon x is continuous, so there is no ease and no lead jump
       if (!S.ribbonShown) setRibbonShown(true);
       var d0 = performance.now();
-      drawRibbon(geo, t);
+      drawRibbon(geo, tRaw); // atc-tty9.35: the ribbon reads audio time until it gets its own unrolled layout for timed jumps
       if (perfSt) scorePerfDraw(perfSt, performance.now() - d0);
       S.lastN = tv.v; S.snapPending = false;
       return;
@@ -10928,7 +10949,7 @@ function initScorePanel_() {
   }
   function followTarget() {
     var geo = pageGeo();
-    return { tv: followView(geo, scoreTrackTime(clockNow(), rate())), geo: geo };
+    return { tv: followView(geo, scoreJumpClock(S.marks, scoreTrackTime(clockNow(), rate()))), geo: geo };
   }
   /** A vertical-only pan while playing: keep Follow, remember how far from the anchor the user wants the playing line. */
   function nudgeOffset(dy) {
@@ -11061,6 +11082,7 @@ function initScorePanel_() {
     if (!g.drag.started) {
       g.drag.started = true;
       S.selId = g.drag.id;
+      if (!S.ribbonShown && isPlayingNow()) pauseFollow(); // atc-tty9.33: Follow would chase the moved mark; a drag pauses it in the page view
       if (S.ribbonShown) S.ribbonSelAt = g.drag.id; // atc-tty9.28: selected by the drag, so the ribbon does not recentre under the finger
       S.undo = scoreUndoPush(S.undo, S.marks);
       syncUi();
@@ -11077,7 +11099,6 @@ function initScorePanel_() {
     S.gesture = null;
     if (cancelled) { // the browser took the gesture as a pan
       if (g.drag && g.drag.started) { saveMarks(); renderMarks(); syncUi(); }
-      else if (S.edit && isPlayingNow()) { /* atc-tty9.28: Edit while playing: free pan, no follow */ }
       else if (S.ribbonShown) { /* the ribbon is time-driven: nothing to settle, Follow stays */ }
       else if (S.followOn && isPlayingNow() && scoreTimed(S.marks).length) S.pan = { last: g.st0, lastX: g.sl0, idle: performance.now(), sl0: g.sl0, st0: g.st0 }; // R6: keep Follow; the tick decides from the scroll movement (Chrome cancels before any pointermove)
       else pauseFollow();
@@ -11100,7 +11121,6 @@ function initScorePanel_() {
       else if (S.edit && isPlayingNow() && S.ribbonSx !== undefined) S.ribbonSx = Math.max(0, S.ribbonSx + e.deltaX * (e.deltaMode === 1 ? 16 : 1)); // atc-tty9.28: sideways pan in Edit while playing
       return;
     }
-    if (S.edit && isPlayingNow()) return; // atc-tty9.28: free scroll
     if (S.followOn && isPlayingNow() && scoreTimed(S.marks).length && scoreIsVerticalPan(e.deltaX, e.deltaY)) { nudgeOffset(e.deltaY * (e.deltaMode === 1 ? 16 : 1)); return; } // R6
     if (playMode() && S.followOn && scoreTimed(S.marks).length) { // a sideways wheel: Follow stays and the view eases back when the wheel stops (atc-ore.17 AC 2)
       S.pan = { last: scroller.scrollTop, lastX: scroller.scrollLeft, idle: performance.now(), h: true };
@@ -11248,7 +11268,7 @@ function initScorePanel_() {
       showSelAtNow(); // atc-tty9.28
       return;
     }
-    if (typeof m.t !== 'number') { // an untimed mark gets the time and stays selected
+    if (typeof m.t !== 'number' && m.kind !== 'jump') { // an untimed mark gets the time and stays selected
       commit(scoreSetMarkTime(S.marks, m.id, scoreAddTime(trackNow(), isPlayingNow(), S.reaction, rate())).marks, true);
       return;
     }
@@ -11372,7 +11392,7 @@ function initScorePanel_() {
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonScroll, scoreRibbonParkPage, scoreRibbonBar, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scoreDefaultMeasure, scoreNoteShort, scoreNudgeMark,
-  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreRibbonPos, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
+  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreRibbonPos, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
 </script>
