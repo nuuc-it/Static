@@ -1400,6 +1400,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="score-zoom-out" data-testid="score-zoom-out" class="btn score-btn" aria-label="Zoom out" title="Zoom out">&minus;</button>
           <span id="score-zoom-label" data-testid="score-zoom-label" class="score-label">100%</span>
           <button id="score-zoom-in" data-testid="score-zoom-in" class="btn score-btn" aria-label="Zoom in" title="Zoom in">+</button>
+          <button class="btn btn-menu score-btn" data-testid="score-settings" aria-label="Settings" title="Settings">&#9881;</button>
           <button id="score-close" data-testid="score-close" class="btn btn-close score-btn" aria-label="Close the score" title="Close the score">&#10005;</button>
         </div>
         <div id="score-toolrows" class="score-toolrows" hidden>
@@ -2074,10 +2075,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.31";
+var STATIC_BUILD_VERSION_ = "1.8.1.32";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T18:49:47.246Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T18:57:04.325Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -2348,7 +2349,7 @@ function startClientTelemetry_() {
   } catch (e) { /* telemetry must never break startup */ }
 }
 
-async function callApi(action, args) {
+async function callApi(action, args, callOpts) {
   var url = resolveWebappUrl_();
   if (!url) {
     throw new Error('No web app URL configured — append ?webapp=<deployment /exec URL> or publish a built page.');
@@ -2379,7 +2380,22 @@ async function callApi(action, args) {
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload)
     });
-    text = await response.text();    // a body-read rejection is a transport failure: the response never arrived whole
+    if (callOpts && callOpts.onProgress && response.body && typeof response.body.getReader === 'function') {
+      // bd atc-dqed: stream the body so the caller sees progress (an idle timeout rather than a flat cap)
+      callOpts.onProgress();           // headers arrived
+      var reader_ = response.body.getReader();
+      var dec_ = new TextDecoder();
+      text = '';
+      for (;;) {
+        var chunk_ = await reader_.read();
+        if (chunk_.done) break;
+        text += dec_.decode(chunk_.value, { stream: true });
+        callOpts.onProgress();
+      }
+      text += dec_.decode();
+    } else {
+      text = await response.text();    // a body-read rejection is a transport failure: the response never arrived whole
+    }
   } catch (e) {
     tel_.release(carried_);
     act_.release(actCarried_);
@@ -2507,6 +2523,31 @@ function callWithTimeout_(start, ms, makeTimeoutError, setTimer, clearTimer) {
 }
 
 /**
+ * bd atc-dqed: like callWithTimeout_, but the deadline is an idle window that start()'s poke() re-arms on each
+ * sign of progress (a response chunk arriving), never later than maxMs after the start. A stalled call fails
+ * after idleMs; a slow but moving transfer is allowed up to maxMs.
+ */
+function callWithIdleTimeout_(start, idleMs, maxMs, makeTimeoutError, setTimer, clearTimer, nowFn) {
+  var setT = setTimer || setTimeout;
+  var clearT = clearTimer || clearTimeout;
+  var now = nowFn || Date.now;
+  var t0 = now();
+  var handle;
+  var rejectFn;
+  var timeout = new Promise(function (_, reject) { rejectFn = reject; });
+  function arm() {
+    if (handle !== undefined) clearT(handle);
+    var left = maxMs - (now() - t0);
+    handle = setT(function () { rejectFn(makeTimeoutError()); }, Math.max(0, Math.min(idleMs, left)));
+  }
+  arm();
+  return Promise.race([Promise.resolve().then(function () { return start(arm); }), timeout]).then(
+    function (v) { clearT(handle); return v; },
+    function (e) { clearT(handle); throw e; }
+  );
+}
+
+/**
  * Build identity. The HtmlService page gets this stamped into version.html at deploy time; here
  * it comes from the placeholders, and unbuilt it says so rather than claiming a version it does
  * not have.
@@ -2580,6 +2621,8 @@ if (typeof module !== 'undefined') module.exports = { listingCacheTarget, listin
  * uncached load. createAudioCache().fetchTrackBytes(entry) is the single entry point (cache check, download, store,
  * in-flight dedupe per key) that a prefetch queue should call as well.
  */
+var TRACK_DOWNLOAD_IDLE_MS_ = 18000;   // bd atc-dqed: no response progress for this long = stalled
+var TRACK_DOWNLOAD_MAX_MS_ = 90000;    // absolute ceiling for one track download
 var AUDIO_TTL_MS = 16 * 86400000;
 var AUDIO_CAP_BYTES = 128 * 1024 * 1024;
 var AUDIO_KEY_PREFIX = './__pmix_audio__/';
@@ -6758,9 +6801,10 @@ const UI = (() => {
     fetchBase64: async (fileId, rate, folderId) => {
       const t0 = performance.now();
       const args = rate ? { fileId: fileId, rate: rate, folderId: folderId } : { fileId: fileId };
-      const result = await callWithTimeout_(
-        () => callApi('getFileAsBase64', args),
-        18000,
+      // bd atc-dqed: idle window (response headers or a body chunk re-arm it), hard cap TRACK_DOWNLOAD_MAX_MS_
+      const result = await callWithIdleTimeout_(
+        (poke) => callApi('getFileAsBase64', args, { onProgress: poke }),
+        (window.pmixDownloadTimeouts_ || {}).idleMs || TRACK_DOWNLOAD_IDLE_MS_, (window.pmixDownloadTimeouts_ || {}).maxMs || TRACK_DOWNLOAD_MAX_MS_, // test seam
         () => {
           const timeoutErr = new Error('getFileAsBase64 timeout');
           // bd atc-f49: a timeout never reaches the server log by itself (the slow call may still finish there).
