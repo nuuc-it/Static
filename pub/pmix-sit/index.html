@@ -2076,10 +2076,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.34";
+var STATIC_BUILD_VERSION_ = "1.8.1.35";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T19:34:30.808Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T20:51:40.290Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8891,7 +8891,7 @@ function scoreRibbonLayout(marks, geo, opt) {
   if (!unrolled) segs.sort(function (a, b) { return a.page - b.page || a.y - b.y || a.line - b.line; });
   var x = 0, segOf = {};
   segs.forEach(function (sg, i) { sg.ribbonX = x; x += sg.srcW; if (segOf[sg.line] === undefined) segOf[sg.line] = i; lineY.push(sg.y); delete sg.y; });
-  var K, markX, segIdx;
+  var K, markX, segIdx, endKnot = null;
   if (!unrolled) {
     K = []; markX = []; segIdx = [];
     marks.forEach(function (k, i) {
@@ -8901,12 +8901,19 @@ function scoreRibbonLayout(marks, geo, opt) {
       if (i === ln.members[ln.members.length - 1] && lineEol[li] !== null && i + 1 < marks.length) { // the line's EOL knot, at the next line's first time
         K.push({ t: marks[i + 1].t, page: k.page, id: null, eol: true }); // atc-elfg.7: re-timed below, in proportion to distance
         segIdx.push(si);
-        markX.push(Math.max(markX[markX.length - 2], sg.ribbonX + scoreTimingX(lineEol[li], 'eol') * s - sg.srcX));
+        markX.push(Math.max(markX[markX.length - 1], sg.ribbonX + scoreTimingX(lineEol[li], 'eol') * s - sg.srcX));
       }
     });
     K.forEach(function (kn, i) { // atc-elfg.7: the EOL knot sits between the last mark and the next start knot in proportion to x, so the playhead keeps its speed across the line change
       if (kn.eol && i > 0 && i + 1 < K.length) kn.t = scoreRibbonEolT(K[i - 1].t, markX[i - 1], K[i + 1].t, markX[i + 1], markX[i]);
     });
+    if (marks.length) { // atc-elfg.10: the time-last mark's line EOL (no later mark to time it against) is the end knot
+      var ln0 = d.lines[d.lineOf[marks.length - 1]], si0 = segOf[d.lineOf[marks.length - 1]], sg0 = segs[si0];
+      if (lineEol[d.lineOf[marks.length - 1]] !== null && ln0.members[ln0.members.length - 1] === marks.length - 1) {
+        var pg0 = scorePagePx(geo, sg0.page);
+        endKnot = { x: sg0.ribbonX + scoreTimingX(lineEol[d.lineOf[marks.length - 1]], 'eol') * pg0.w / pg0.ptW - sg0.srcX, si: si0, page: sg0.page };
+      }
+    }
   } else { // knots (audio time, unrolled x): every timed mark of every span (t + the span's offset), and each taken forward jump at its cut
     K = [];
     spans.forEach(function (sp, si) {
@@ -8935,6 +8942,23 @@ function scoreRibbonLayout(marks, geo, opt) {
     K = K.map(function (kn, i) { kn.i = i; return kn; }).sort(function (a, b) { return a.t - b.t || (b.jump || b.eol ? 1 : 0) - (a.jump || a.eol ? 1 : 0) || a.i - b.i; }); // at equal time a jump's or EOL knot comes first (it is left of the target)
     markX = K.map(function (kn) { return kn.ux; });
     segIdx = K.map(function (kn) { return kn.si; });
+    var lk = K[K.length - 1], lsp = lk ? spans[lk.si] : null; // atc-elfg.10: the end knot of the time-last mark's span
+    if (lk && !lk.jump && !lk.eol && lsp.jcut === null && lineEol[lsp.li] !== null) {
+      var lsg = segs[lk.si], lpg = scorePagePx(geo, lsg.page);
+      endKnot = { x: lsg.ribbonX + scoreTimingX(lineEol[lsp.li], 'eol') * lpg.w / lpg.ptW - lsg.srcX, si: lk.si, page: lsg.page };
+    }
+  }
+  if (endKnot && K.length > 1 && endKnot.x > markX[K.length - 1]) { // atc-elfg.10: play on to the last line's EOL at the last forward span's speed (clamped to the track length)
+    var en = K.length - 1, ev = 0;
+    for (var ej = en - 1; ej >= 0 && !(ev > 0); ej--) {
+      if (K[ej + 1].t > K[ej].t && markX[ej + 1] > markX[ej] && Math.abs(segIdx[ej + 1] - segIdx[ej]) <= 1) ev = (markX[ej + 1] - markX[ej]) / (K[ej + 1].t - K[ej].t);
+    }
+    if (ev > 0) {
+      var eT = K[en].t + (endKnot.x - markX[en]) / ev;
+      if (opt && Number(opt.endT) > K[en].t) eT = Math.min(eT, Number(opt.endT));
+      K.push({ t: eT, page: endKnot.page, id: null, eol: true, end: true });
+      markX.push(endKnot.x); segIdx.push(endKnot.si);
+    }
   }
   // atc-tty9.20: span i (knot i to i+1) is a hold at a repeat/skip; the span speed is 0 there and for a zero-length span
   var hold = [], sp = [], markV = [];
@@ -9112,7 +9136,7 @@ function scoreRibbonFrame(inp) {
     if (sp && selAt !== inp.selId) { sx = scoreRibbonScroll(sp.x, L, W); selAt = inp.selId; } // only when the selection changes, so a drag of the mark is not chased
     else if (inp.prevSx !== null) sx = scoreClamp(inp.prevSx, 0, max);
   }
-  var hold = playing && inp.hold && typeof inp.hold.sx === 'number' ? inp.hold : null; // atc-hc3l: playing, the user's sideways drag holds the view; else the view follows the cursor
+  var hold = (playing || !edit) && inp.hold && typeof inp.hold.sx === 'number' ? inp.hold : null; // atc-hc3l: playing, the user's sideways drag holds the view; else the view follows the cursor
   if (hold) sx = scoreClamp(hold.sx, 0, max);
   if (inp.scrub) sx = scoreClamp(inp.scrub.sx, 0, max); // atc-qb45: paused, the user's sideways scroll sets the view
   sx = scorePxRound(sx, dpr); // atc-tty9.20: whole canvas pixels
@@ -11316,8 +11340,14 @@ function initScorePanel_() {
   function drawRibbon(geo, t) {
     var L = ribbonLayoutFor(geo), dpr = Math.min(window.devicePixelRatio || 1, SCORE_MAX_DPR); // atc-elfg.5: the ribbon canvas is sized like the page canvases (CSS stretches the rest), so slice blits are 1:1
     var pl = isPlayingNow();
-    if (!pl) { S.rv.hold = null; S.rv.glide = null; } // atc-hc3l: pausing (or playing from pause) resumes following; paused Edit holds by prevSx
-    else if (S.rv.glide && S.rv.hold) {
+    if (!pl && S.edit) { S.rv.hold = null; S.rv.glide = null; } // paused Edit holds by prevSx (atc-hc3l)
+    else if (!pl && !S.rv.hold) S.rv.glide = null; // atc-elfg.9: paused outside Edit, a held view stays held (Follow, seek, Previous/Next clear it)
+    if (pl && !S.rv.wasPl && S.edit && S.rv.sx !== null && !S.rv.hold) { // atc-elfg.9: Edit play from a held view glides to the cursor (the Follow glide) instead of jumping
+      var fx = scoreRibbonScroll(scoreRibbonX(S.marks, t, L), L, geo.W);
+      if (Math.abs(S.rv.sx - fx) > 1) { S.rv.hold = { sx: S.rv.sx }; S.rv.glide = { from: S.rv.sx, t0: performance.now() }; }
+    }
+    S.rv.wasPl = pl;
+    if (S.rv.glide && S.rv.hold) {
       var gp = (performance.now() - S.rv.glide.t0) / 250, fsx = scoreRibbonScroll(scoreRibbonX(S.marks, t, L), L, geo.W);
       if (gp >= 1) { S.rv.hold = null; S.rv.glide = null; } else S.rv.hold = { sx: scoreRibbonGlide(S.rv.glide.from, fsx, gp) };
     }
