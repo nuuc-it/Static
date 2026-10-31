@@ -2061,10 +2061,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.4";
+var STATIC_BUILD_VERSION_ = "1.8.1.5";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T05:07:41.281Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T05:52:07.180Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -10615,6 +10615,13 @@ function initScorePanel_() {
     if (Math.abs(scroller.scrollLeft - x) > 0.01) scroller.scrollLeft = x;
     if (Math.abs(scroller.scrollTop - y) > 0.01) scroller.scrollTop = y;
   }
+  /** atc-tty9.28: in Edit while playing, bring the selected mark to the now position: the follow anchor line on the page (the ribbon does it per frame at its bar). */
+  function showSelAtNow() {
+    var m = selMark();
+    if (!S.edit || !m || !isPlayingNow() || S.ribbonShown) return;
+    var a = scoreAnchorView(m, pageGeo());
+    setView(a.x, a.y);
+  }
   // ---- Ribbon (branch continuous-scroll): play mode draws horizontal slices of the rendered pages on one canvas ----
   var ribbonCv = $('score-ribbon');
   function ribbonActive() { return S.ribbon && (playMode() || (S.edit && isPlayingNow())) && // atc-tty9.17: Edit while playing keeps the ribbon
@@ -10624,7 +10631,7 @@ function initScorePanel_() {
     S.ribbonShown = on;
     panel.setAttribute('data-ribbon', on ? 'on' : 'off');
     ribbonCv.hidden = !on;
-    S.ribbonTop = -1; S.ribbonLayout = null; S.ribbonKey = '';
+    S.ribbonTop = -1; S.ribbonLayout = null; S.ribbonKey = ''; S.ribbonSx = undefined; S.ribbonSelAt = null;
     S.pan = null; // a pan record from either mode is stale after a switch (its scroll baseline belongs to the other view)
     if (on) { S.easeStart = -1; S.offY = (S.viewOff || 0) * ptScale(); } else S.snapPending = true; // back to the normal page view at the current mark
   }
@@ -10643,13 +10650,10 @@ function initScorePanel_() {
   }
   function drawRibbon(geo, t) {
     var L = ribbonLayoutFor(geo), rx = scoreRibbonX(S.marks, t, L), sx = scoreRibbonScroll(rx, L, geo.W);
-    if (S.edit && S.selId) { // atc-tty9.17: Edit keeps the selected mark in view (the playhead may then sit off the anchor)
+    if (S.edit && isPlayingNow()) { // atc-tty9.28: Edit while playing does not follow; the selected mark sits at the now bar, else the view holds
       var sm = selMark(), sp = sm && scoreRibbonPos(L, geo, sm, S.offY);
-      if (sp) {
-        var m = Math.min(40, geo.W / 4);
-        if (sp.x - sx < m) sx = scoreClamp(sp.x - m, 0, Math.max(0, L.width - geo.W));
-        else if (sp.x - sx > geo.W - m) sx = scoreClamp(sp.x - geo.W + m, 0, Math.max(0, L.width - geo.W));
-      }
+      if (sp && S.ribbonSelAt !== S.selId) { sx = scoreRibbonScroll(sp.x, L, geo.W); S.ribbonSelAt = S.selId; } // only when the selection changes, so a drag of the mark is not chased
+      else if (S.ribbonSx !== undefined) sx = scoreClamp(S.ribbonSx, 0, Math.max(0, L.width - geo.W));
     }
     sx = scorePxRound(sx, window.devicePixelRatio || 1); // atc-tty9.20: whole device pixels
     S.ribbonSx = sx;
@@ -10708,6 +10712,7 @@ function initScorePanel_() {
         ctx.fillStyle = jb ? '#374151' : '#fff'; ctx.textAlign = 'center'; ctx.fillText(jtx, px, py);
         return;
       }
+      if (S.edit && k.id === S.selId) { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py, 14, 0, 6.2832); ctx.stroke(); ctx.lineWidth = 1; panel.setAttribute('data-ribbon-sel', Math.round(px) + ',' + Math.round(py)); } // atc-tty9.28 AC 7: the selected mark keeps its highlight while playing (test seam: its screen x, y)
       var timed = typeof k.t === 'number', lbl = !!(k.measure || k.note), dy0 = lbl ? (S.edit ? -20 : 0) : 0; // atc-tty9.13: a label replaces the number; in Edit the number sits above it
       if (!lbl || S.edit) {
         ctx.fillStyle = timed ? '#0e7c86' : '#6b7280'; ctx.beginPath(); ctx.arc(px, py + dy0, 8, 0, 6.2832); ctx.fill();
@@ -10810,7 +10815,7 @@ function initScorePanel_() {
     if (tv.n !== S.curN) { S.curN = tv.n; syncUi(); }
     if (S.seekDim !== document.getElementById('seek-bar').max + '|' + rate()) renderSeekMarks();
     if (!S.followOn && !S.edit && S.snapPending) { S.followOn = true; S.offY = 0; S.pan = null; syncUi(); } // a seek outside Edit mode puts Follow back: there is no Resume button
-    if (!S.followOn) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.v; return; } // a seek while paused must not make Resume snap
+    if (!S.followOn || (S.edit && playing && !rb)) { S.snapPending = false; S.easeStart = -1; S.lastN = tv.v; return; } // a seek while paused must not make Resume snap; Edit while playing does not follow (atc-tty9.28)
     if (rb) { // ribbon: the playhead's ribbon x is continuous, so there is no ease and no lead jump
       if (!S.ribbonShown) setRibbonShown(true);
       var d0 = performance.now();
@@ -10914,10 +10919,11 @@ function initScorePanel_() {
     var onMark = scoreHitMark(S.marks, hit.page, hit.x, hit.y);
     if (onMark && onMark.id === S.selId) { S.pop = true; syncUi(); if (!isPlayingNow() && typeof onMark.t === 'number') jumpTo(scoreJumpBefore(onMark.t)); return; } // atc-tty9.14: tapping the already-selected mark again opens its editor
     if (onMark) { // atc-tty9.13 AC 4: the playhead still goes to 1 s before the mark, but Follow pauses so the view stays where it is
-      S.selId = onMark.id; syncUi(); // atc-tty9.18: a tap while playing only selects; Set now times the mark
+      S.selId = onMark.id; syncUi(); showSelAtNow(); // atc-tty9.18: a tap while playing only selects; Set now times the mark
       if (!isPlayingNow() && typeof onMark.t === 'number') { jumpTo(scoreJumpBefore(onMark.t)); if (!S.ribbonShown) pauseFollow(); }
       return;
     }
+    if (isPlayingNow()) return; // atc-tty9.28: no new marks while the track plays
     if (S.place === 'jump') {
       var aj = scoreAddJump(S.marks, { page: hit.page, x: hit.x, y: hit.y });
       if (aj.error) { $('score-field-msg').textContent = aj.error; S.fieldMsgId = S.selId; return; }
@@ -10996,6 +11002,7 @@ function initScorePanel_() {
     S.gesture = null;
     if (cancelled) { // the browser took the gesture as a pan
       if (g.drag && g.drag.started) { saveMarks(); renderMarks(); syncUi(); }
+      else if (S.edit && isPlayingNow()) { /* atc-tty9.28: Edit while playing: free pan, no follow */ }
       else if (S.ribbonShown) { /* the ribbon is time-driven: nothing to settle, Follow stays */ }
       else if (S.followOn && isPlayingNow() && scoreTimed(S.marks).length) S.pan = { last: g.st0, lastX: g.sl0, idle: performance.now(), sl0: g.sl0, st0: g.st0 }; // R6: keep Follow; the tick decides from the scroll movement (Chrome cancels before any pointermove)
       else pauseFollow();
@@ -11017,6 +11024,7 @@ function initScorePanel_() {
       if (scoreIsVerticalPan(e.deltaX, e.deltaY)) nudgeOffset(e.deltaY * (e.deltaMode === 1 ? 16 : 1));
       return;
     }
+    if (S.edit && isPlayingNow()) return; // atc-tty9.28: free scroll
     if (S.followOn && isPlayingNow() && scoreTimed(S.marks).length && scoreIsVerticalPan(e.deltaX, e.deltaY)) { nudgeOffset(e.deltaY * (e.deltaMode === 1 ? 16 : 1)); return; } // R6
     if (playMode() && S.followOn && scoreTimed(S.marks).length) { // a sideways wheel: Follow stays and the view eases back when the wheel stops (atc-ore.17 AC 2)
       S.pan = { last: scroller.scrollTop, lastX: scroller.scrollLeft, idle: performance.now(), h: true };
@@ -11077,6 +11085,7 @@ function initScorePanel_() {
     if (!m) return;
     syncUi();
     jumpTo(scoreJumpBefore(m.t));
+    if (isPlayingNow()) { showSelAtNow(); return; } // atc-tty9.28
     if (!S.followOn || !markVisibleAtJump(m)) {
       pauseFollow(); // the glide at that time would leave the mark off screen: show the mark itself
       var geo = pageGeo(), a = scoreAnchorView(m, geo);
@@ -11160,6 +11169,7 @@ function initScorePanel_() {
       var nm = scoreSetMarkTime(S.marks, m.id, scoreAddTime(trackNow(), true, S.reaction, rate())).marks, nid = scoreNextVisual(nm, m.id);
       S.selId = nid || m.id;
       commit(nm, true);
+      showSelAtNow(); // atc-tty9.28
       return;
     }
     if (typeof m.t !== 'number') { // an untimed mark gets the time and stays selected
