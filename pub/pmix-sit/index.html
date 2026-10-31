@@ -379,16 +379,16 @@ body {
 /* Phones: centring the title leaves it touching the four buttons, so align it left and keep the
    buttons' column clear (4 × 40px + 3 gaps + breathing room). */
 @media (max-width: 560px) {
-  .header { text-align: left; padding-right: 196px; }
+  .header { text-align: left; padding-right: 244px; }
   /* A folder PDF adds a fifth button (bd atc-lxk). */
-  .header:has(.btn-pdf:not(.hidden)) { padding-right: 244px; }
+  .header:has(.btn-pdf:not(.hidden)) { padding-right: 292px; }
 }
 /* Narrow phones: slightly smaller buttons leave the song title room to breathe on the mixer. */
 @media (max-width: 400px) {
   .header-actions { gap: 6px; }
   .btn-schedule, .btn-links, .btn-menu, .btn-drive, .btn-help, .btn-pdf { width: 36px; min-width: 36px; height: 36px; min-height: 36px; font-size: 16px; }
-  .header { padding-right: 164px; }
-  .header:has(.btn-pdf:not(.hidden)) { padding-right: 206px; }
+  .header { padding-right: 212px; }
+  .header:has(.btn-pdf:not(.hidden)) { padding-right: 254px; }
   .header h1 { font-size: 20px; }
   /* Mixer: Back and the buttons share the top row; the song title gets the full width below. */
   .playback-header { grid-template-columns: auto 1fr; row-gap: 10px; }
@@ -487,7 +487,6 @@ body {
 .menu-body .btn:focus-visible, .menu-body input:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .score-react { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); }
 .score-react input { width: 70px; }
-.score-sliders { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 3px 6px; background: var(--surface-2); }
 .score-sel-label { flex: 1 0 100%; font-size: 12px; font-weight: 600; }
 #score-sel-label { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .score-misplaced { padding: 4px 8px; font-size: 12px; font-weight: 600; background: #fef3c7; color: #78350f; border-bottom: 1px solid #b45309; }
@@ -2071,10 +2070,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.22";
+var STATIC_BUILD_VERSION_ = "1.8.1.23";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T15:55:33.649Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T16:07:53.464Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -6253,7 +6252,7 @@ const UI = (() => {
   function syncAddressBar() {
     if (!state.folderId) return;
     const driveUrl = 'https://drive.google.com/drive/folders/' + encodeURIComponent(state.folderId);
-    document.querySelectorAll('.btn-drive').forEach((a) => {
+    document.querySelectorAll('.btn-drive, .menu-drive').forEach((a) => {
       a.href = driveUrl;
       a.onclick = () => { logActivity_('driveFolder', { folderId: state.folderId, folderName: state.folderName }); };
     });
@@ -7764,6 +7763,7 @@ const UI = (() => {
         <button id="menu-close-btn" data-testid="menu-close-btn" class="btn btn-close" aria-label="Close">&#10005;</button>
       </div>
       <div class="menu-body" data-testid="menu-body">
+        <div class="menu-row"><a class="btn menu-drive" data-testid="menu-drive" target="_blank" rel="noopener" title="Open this folder in Google Drive">Open Drive folder</a></div>
         <div class="menu-row"><button type="button" id="menu-copy-link" data-testid="menu-copy-link" class="btn" disabled title="Copies a link to this practice setup">Copy Link</button> <span class="menu-reason">Coming soon</span></div>
         <div class="menu-row">
           <label id="score-react" class="score-react" title="How far before the tap a new mark is placed while playing">Reaction
@@ -11212,7 +11212,7 @@ function initScorePanel_() {
       var jmp = scoreHitMark(S.marks.filter(function (q) { return q.kind === 'jump'; }), hit.page, hit.x, hit.y);
       if (jmp) { // atc-tty9.10: a jump seeks to its target's current time; a broken one does nothing (it is shown disabled)
         var jt = scoreJumpTime(S.marks, jmp.id);
-        if (jt !== null) { showNote(null); jumpTo(jt); }
+        if (jt !== null) { showNote(null); jumpTo(jt - S.preroll); }
         return;
       }
       var noted = scoreHitMark(S.marks.filter(function (q) { return q.note; }), hit.page, hit.x, hit.y);
@@ -11816,6 +11816,7 @@ function createDocPopup(cfg) {
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (closeCalMenu()) return; // an open calendar menu takes the Escape; the modal stays
+    if (!modal.classList.contains('hidden')) e.stopImmediatePropagation(); // the score panel's Escape handler must not also fire
     close();
   });
 }
@@ -12081,7 +12082,7 @@ function initSettingsMenu() {
   document.querySelectorAll('.btn-menu').forEach((b) => b.addEventListener('click', () => open(b)));
   document.getElementById('menu-close-btn').addEventListener('click', close);
   document.getElementById('menu-overlay').addEventListener('click', close);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || modal.classList.contains('hidden')) return; e.stopImmediatePropagation(); close(); }); // the score panel's Escape handler must not also fire
 }
 
 /** Schedule popup's subscribe box (bd atc-hu9, atc-eb1): buttons and feed address come from the calendar block. */
@@ -12159,6 +12160,7 @@ function initHelpGuide() {
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (closeCalMenu()) return; // an open calendar menu takes the Escape; the modal stays
+    if (isOpen()) e.stopImmediatePropagation(); // the score panel's Escape handler must not also fire
     close();
   });
 }
