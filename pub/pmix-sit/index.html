@@ -2061,10 +2061,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.1.5";
+var STATIC_BUILD_VERSION_ = "1.8.1.6";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-10-31T05:52:07.180Z";
+var STATIC_BUILD_DATE_ = "2026-10-31T06:19:38.947Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8478,7 +8478,7 @@ var SCORE_HIT_PT = 36;
 var SCORE_EASE_MS = 200;
 var SCORE_UNDO_MAX = 50;
 var SCORE_ANCHOR_X = 0.10;
-var SCORE_ANCHOR_Y = 0.40;
+var SCORE_ANCHOR_Y = 0.10;
 
 function scoreRound2(v) { return Math.round(v * 100) / 100; }
 function scoreLerp(a, b, u) { return a + (b - a) * u; }
@@ -8567,7 +8567,7 @@ function scoreMarkPoint(mark, geo) {
   var pg = scorePagePx(geo, mark.page), s = pg.w / pg.ptW;
   return { x: pg.left + mark.x * s, y: pg.top + mark.y * s };
 }
-/** Scroll position that puts the mark at the anchor (10% from left, 40% down), kept inside the scroll range. */
+/** Scroll position that puts the mark at the anchor (10% from left, 10% down), kept inside the scroll range. */
 function scoreAnchorView(mark, geo) {
   var p = scoreMarkPoint(mark, geo);
   return {
@@ -10508,7 +10508,7 @@ function initScorePanel_() {
       if (here) {
         S.stale = null; S.saveMsg = 'Saved ' + scoreCount(out.result.marks.length);
         if (scoreBrokenJumps(S.marks).length) S.saveMsg += '. Some jumps have no valid target and are disabled for singers.'; // atc-tty9.27: this one stays, it needs reading
-        else { S.okMsg = S.saveMsg; setTimeout(clearOkMsg, 4000); }
+        else { S.okMsg = S.saveMsg; clearTimeout(S.okTimer); S.okTimer = setTimeout(clearOkMsg, 4000); }
       }
     } else if (out.kind === 'offline') {
       scoreQueueWrite_(scoreQueueAdd(scoreQueueRead_(), { folderId: fid, score: score, basedOn: basedOn, queuedAt: new Date().toISOString() }));
@@ -10619,8 +10619,8 @@ function initScorePanel_() {
   function showSelAtNow() {
     var m = selMark();
     if (!S.edit || !m || !isPlayingNow() || S.ribbonShown) return;
-    var a = scoreAnchorView(m, pageGeo());
-    setView(a.x, a.y);
+    var geo = pageGeo(), a = scoreAnchorView(m, geo), dy = typeof m.t === 'number' ? scoreOffsetDyAt(S.offsets, focusTrackId(), m.t) : 0; // the focus track's offset, as Follow applies it
+    setView(a.x, scoreClamp(a.y + dy * scorePagePx(geo, m.page).h, 0, geo.maxY));
   }
   // ---- Ribbon (branch continuous-scroll): play mode draws horizontal slices of the rendered pages on one canvas ----
   var ribbonCv = $('score-ribbon');
@@ -10650,6 +10650,7 @@ function initScorePanel_() {
   }
   function drawRibbon(geo, t) {
     var L = ribbonLayoutFor(geo), rx = scoreRibbonX(S.marks, t, L), sx = scoreRibbonScroll(rx, L, geo.W);
+    if (!S.selId) S.ribbonSelAt = null;
     if (S.edit && isPlayingNow()) { // atc-tty9.28: Edit while playing does not follow; the selected mark sits at the now bar, else the view holds
       var sm = selMark(), sp = sm && scoreRibbonPos(L, geo, sm, S.offY);
       if (sp && S.ribbonSelAt !== S.selId) { sx = scoreRibbonScroll(sp.x, L, geo.W); S.ribbonSelAt = S.selId; } // only when the selection changes, so a drag of the mark is not chased
@@ -10693,27 +10694,33 @@ function initScorePanel_() {
     else panel.setAttribute('data-ribbon-bar', '');
     ctx.font = 'bold 12px sans-serif'; ctx.textBaseline = 'middle'; // measure labels and note pills (atc-tty9.9)
     var drawn = 0, posMap = {};
+    panel.removeAttribute('data-ribbon-sel');
     S.marks.forEach(function (k, mi) { // every mark: timed number dot, EOL bar, untimed dot, and the label / note pills (atc-tty9.12)
       var pos = scoreRibbonPos(L, geo, k, S.offY);
       if (!pos) return;
       drawn++;
       var px = pos.x - sx, py = pos.y;
       if (S.edit) posMap[k.id] = [Math.round(px), Math.round(py)];
-      if (k.kind === 'eol') { ctx.fillStyle = '#b45309'; ctx.fillRect(px - 2, py - 11, 3, 22); return; }
+      var isSel = S.edit && k.id === S.selId; // atc-tty9.28 AC 7: the selected mark of any kind keeps an amber highlight while playing (test seam: data-ribbon-sel = its x, y)
+      var hl = function (x, y, w, h) { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h); ctx.lineWidth = 1; };
+      if (isSel) panel.setAttribute('data-ribbon-sel', Math.round(px) + ',' + Math.round(py));
+      if (k.kind === 'eol') { ctx.fillStyle = '#b45309'; ctx.fillRect(px - 2, py - 11, 3, 22); if (isSel) hl(px - 7, py - 16, 13, 32); return; }
       if (k.kind === 'note') { // atc-tty9.26: the text pill only (a jump or note inside the crop is drawn; neither changes the crop)
         var nt = scoreNoteShort(k.note), nw = ctx.measureText(nt).width + 12;
         ctx.fillStyle = '#fffbeb'; ctx.strokeStyle = '#b45309'; ctx.beginPath(); ctx.rect(px - nw / 2, py - 8, nw, 16); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#0f172a'; ctx.textAlign = 'center'; ctx.fillText(nt, px, py);
+        if (isSel) hl(px - nw / 2 - 3, py - 11, nw + 6, 22);
         return;
       }
       if (k.kind === 'jump') { // atc-tty9.10: indigo ">>" pill; grey when broken
         var jb = !scoreJumpTarget(S.marks, k), jtx = '>> ' + k.label, jw = ctx.measureText(jtx).width + 14;
         ctx.fillStyle = jb ? '#9ca3af' : '#4338ca'; ctx.fillRect(px - jw / 2, py - 10, jw, 20);
         ctx.fillStyle = jb ? '#374151' : '#fff'; ctx.textAlign = 'center'; ctx.fillText(jtx, px, py);
+        if (isSel) hl(px - jw / 2 - 3, py - 13, jw + 6, 26);
         return;
       }
-      if (S.edit && k.id === S.selId) { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py, 14, 0, 6.2832); ctx.stroke(); ctx.lineWidth = 1; panel.setAttribute('data-ribbon-sel', Math.round(px) + ',' + Math.round(py)); } // atc-tty9.28 AC 7: the selected mark keeps its highlight while playing (test seam: its screen x, y)
-      var timed = typeof k.t === 'number', lbl = !!(k.measure || k.note), dy0 = lbl ? (S.edit ? -20 : 0) : 0; // atc-tty9.13: a label replaces the number; in Edit the number sits above it
+      var timed = typeof k.t === 'number', lbl = !!(k.measure || k.note), dy0 = lbl ? (S.edit ? -20 : 0) : 0;
+      if (isSel) { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py + dy0, 14, 0, 6.2832); ctx.stroke(); ctx.lineWidth = 1; } // atc-tty9.13: a label replaces the number; in Edit the number sits above it
       if (!lbl || S.edit) {
         ctx.fillStyle = timed ? '#0e7c86' : '#6b7280'; ctx.beginPath(); ctx.arc(px, py + dy0, 8, 0, 6.2832); ctx.fill();
         if (timed) { ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(String(mi + 1), px, py + dy0); }
@@ -10730,11 +10737,11 @@ function initScorePanel_() {
     if (S.edit) panel.setAttribute('data-ribbon-pos', JSON.stringify(posMap)); // test seam: screen x, y of each drawn mark in Edit
     panel.setAttribute('data-ribbon-marks', String(drawn)); // test seam: marks drawn on the ribbon
   }
-  function ribbonHitAt(cx, cy, layout) {
+  function ribbonHitAt(cx, cy, layout, sx) {
     var L = layout || S.ribbonLayout;
     if (!L) return null;
     var r = ribbonCv.getBoundingClientRect();
-    return scoreRibbonHit(L, S.ribbonSx + cx - r.left, cy - r.top, pageGeo(), S.offY);
+    return scoreRibbonHit(L, (sx === undefined ? S.ribbonSx : sx) + cx - r.left, cy - r.top, pageGeo(), S.offY);
   }
   // ---- Performance stats: one stretch per play run (max 30 s), sent as a flat scorePerf activity record; overlay only when asked ----
   var PERF_KEY = 'pmix.' + pmixTarget() + '.v1.scorePerfOverlay';
@@ -10797,6 +10804,7 @@ function initScorePanel_() {
     var dispT = scoreDisplayClock(S.disp, cur.clock, now, playing, rate(), S.snapPending); // drawing clock only; audio and the transport keep the raw clock
     if (playing !== S.playing) {
       S.playing = playing; paintMarks();
+      if (S.edit && !playing) pauseFollow(); // atc-tty9.28: pausing in Edit leaves the page where it is (no snap to the playhead)
       if (playing) S.offsetMode = false; // atc-ore.16 AC 17: starting playback turns offset mode off
       if ((playMode() || (S.edit && S.ribbon)) && !S.followOn) resumeFollow(); // starting to play puts Follow back (atc-ore.17 AC 2); Edit with Ribbon on too, so the ribbon shows (atc-tty9.17)
       syncUi();
@@ -10959,7 +10967,7 @@ function initScorePanel_() {
     var g = { offY0: S.offY, id: e.pointerId, x0: e.clientX, y0: e.clientY, sl0: scroller.scrollLeft, st0: scroller.scrollTop, dx: 0, dy: 0, t0: performance.now(), moved: 0, drag: null };
     if (S.edit && !S.offsetMode) { // AC 20: any mark within 0.5 inch, playing or paused, no prior tap needed
       var hit = S.ribbonShown ? ribbonHitAt(e.clientX, e.clientY) : pageAtPoint(e.clientX, e.clientY), k = hit && scoreHitMark(S.marks, hit.page, hit.x, hit.y);
-      if (k) g.drag = { id: k.id, offX: k.x - hit.x, offY: k.y - hit.y, started: false, page: k.page, layout: S.ribbonShown ? S.ribbonLayout : null }; // atc-tty9.17: a ribbon drag maps through the layout frozen at its start
+      if (k) g.drag = { id: k.id, offX: k.x - hit.x, offY: k.y - hit.y, started: false, page: k.page, layout: S.ribbonShown ? S.ribbonLayout : null, sx: S.ribbonSx }; // atc-tty9.17: a ribbon drag maps through the layout frozen at its start
     }
     S.gesture = g;
   });
@@ -10972,14 +10980,15 @@ function initScorePanel_() {
       if (g.moved < 10) return;
       var ly = g.ly === undefined ? g.y0 : g.ly;
       if (scoreIsVerticalPan(g.dx, g.dy)) nudgeOffset(-(e.clientY - ly));
-      g.ly = e.clientY;
+      else if (S.edit && isPlayingNow() && S.ribbonSx !== undefined) S.ribbonSx = Math.max(0, S.ribbonSx - (e.clientX - (g.lx === undefined ? g.x0 : g.lx))); // atc-tty9.28: sideways pan of the held ribbon view (drawRibbon clamps)
+      g.ly = e.clientY; g.lx = e.clientX;
       return;
     }
     if (!g.drag || g.moved < 10) return;
     var pg = pageIndexOf(g.drag.page), r = pg.el.getBoundingClientRect();
     var px = (e.clientX - r.left) / r.width * pg.w, py = (e.clientY - r.top) / r.height * pg.h;
     if (g.drag.layout) { // ribbon: the slice under the pointer, in page coordinates
-      var rh = ribbonHitAt(e.clientX, e.clientY, g.drag.layout);
+      var rh = ribbonHitAt(e.clientX, e.clientY, g.drag.layout, g.drag.sx);
       if (!rh || rh.page !== g.drag.page) return;
       px = rh.x; py = rh.y;
     }
@@ -10987,6 +10996,7 @@ function initScorePanel_() {
     if (!g.drag.started) {
       g.drag.started = true;
       S.selId = g.drag.id;
+      if (S.ribbonShown) S.ribbonSelAt = g.drag.id; // atc-tty9.28: selected by the drag, so the ribbon does not recentre under the finger
       S.undo = scoreUndoPush(S.undo, S.marks);
       syncUi();
       try { scroller.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
@@ -11022,6 +11032,7 @@ function initScorePanel_() {
     if (S.ribbonShown) { // the ribbon owns the wheel: vertical sets the offset, sideways does nothing, and nothing chains to the document
       e.preventDefault();
       if (scoreIsVerticalPan(e.deltaX, e.deltaY)) nudgeOffset(e.deltaY * (e.deltaMode === 1 ? 16 : 1));
+      else if (S.edit && isPlayingNow() && S.ribbonSx !== undefined) S.ribbonSx = Math.max(0, S.ribbonSx + e.deltaX * (e.deltaMode === 1 ? 16 : 1)); // atc-tty9.28: sideways pan in Edit while playing
       return;
     }
     if (S.edit && isPlayingNow()) return; // atc-tty9.28: free scroll
@@ -11065,7 +11076,7 @@ function initScorePanel_() {
   });
   $('score-offset-track').addEventListener('change', function () { S.offsetTrack = this.value; });
   $('score-edit-toggle').addEventListener('click', function () {
-    S.edit = !S.edit;
+    S.edit = !S.edit; S.ribbonSelAt = null;
     if (!S.edit) { S.selId = null; S.offsetMode = false; }
     if (playMode() && !S.followOn) resumeFollow(); // leaving Edit while playing is play mode: Follow is always on
     else syncUi();
@@ -11084,8 +11095,8 @@ function initScorePanel_() {
     var m = selMark();
     if (!m) return;
     syncUi();
+    if (isPlayingNow()) { showSelAtNow(); return; } // atc-tty9.28: while playing, Previous/Next only select (no seek), like a tap
     jumpTo(scoreJumpBefore(m.t));
-    if (isPlayingNow()) { showSelAtNow(); return; } // atc-tty9.28
     if (!S.followOn || !markVisibleAtJump(m)) {
       pauseFollow(); // the glide at that time would leave the mark off screen: show the mark itself
       var geo = pageGeo(), a = scoreAnchorView(m, geo);
