@@ -2141,10 +2141,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.3.1";
+var STATIC_BUILD_VERSION_ = "1.8.3.2";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-01T15:16:48.584Z";
+var STATIC_BUILD_DATE_ = "2026-11-01T15:26:26.721Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8826,11 +8826,6 @@ function scoreSeekFrac(t, speed, total) {
   if (!(total > 0)) return 0;
   return scoreClamp(scoreClockTime(t, Number(speed) > 0 ? Number(speed) : 1) / total, 0, 1);
 }
-/** Previous / next mark ids with Edit off: relative to the current mark (last mark at or before t). null at an end. */
-function scoreViewStep(marks, t) {
-  var list = scoreSorted(scoreTimed(marks)), n = scoreIndexAt(list, t);
-  return { prev: n > 0 ? list[n - 1].id : null, next: n + 1 < list.length ? list[n + 1].id : null };
-}
 /** A vertical-only pan: |dy| more than twice |dx| (atc-ore.4 R6). */
 function scoreIsVerticalPan(dx, dy) { return Math.abs(dy) > 2 * Math.abs(dx); }
 /** A cancelled touch pan has no pointer deltas; decide from the scroll movement since pointerdown (atc-ore.4 R6). */
@@ -9462,18 +9457,6 @@ function scoreAddTime(t, playing, reaction, speed) {
   var s = Number(speed) > 0 ? Number(speed) : 1;
   return playing ? Math.max(0, scoreRound2(t - reaction * s)) : scoreRound2(t);
 }
-/** Previous / next mark ids for the Edit buttons (atc-ore.5 AC 19). Selected: the neighbours in time order. None selected:
- *  Next = first mark after the playhead t, Previous = last mark at or before it. null at an end. */
-function scoreStepTargets(marks, selId, t) {
-  var list = scoreSorted(scoreTimed(marks)), idx = -1, i;
-  var seq = []; // atc-tty9.30: a selected mark steps in reading order (the numbers), timed marks only
-  scoreVisualRows(marks).forEach(function (r) { r.forEach(function (k) { if (k.kind === 'mark' && typeof k.t === 'number') seq.push(k); }); });
-  for (i = 0; i < seq.length; i++) if (seq[i].id === selId) { return { prev: i > 0 ? seq[i - 1].id : null, next: i < seq.length - 1 ? seq[i + 1].id : null }; }
-  for (i = 0; i < list.length; i++) if (list[i].id === selId) idx = i;
-  if (idx >= 0) return { prev: idx > 0 ? list[idx - 1].id : null, next: idx < list.length - 1 ? list[idx + 1].id : null };
-  var n = scoreIndexAt(list, t);
-  return { prev: n >= 0 ? list[n].id : null, next: n + 1 < list.length ? list[n + 1].id : null };
-}
 /** Score panel height: the window height less the transport controls and gap, never under 260 px (atc-ore.4 AC 16). */
 function scoreFitHeight(viewH, transportH, gap) {
   var h = Number(viewH) - (Number(transportH) || 0) - (Number(gap) || 0);
@@ -9627,7 +9610,7 @@ function scoreMarkNumbers(marks) {
   scoreVisualRows(marks).forEach(function (r) { r.forEach(function (k) { if (k.kind === 'mark') out[k.id] = ++n; }); });
   return out;
 }
-/** atc-ore.33: the PREV | NOW | NEXT position strip. t is the jump-clock score time. Within 0.05 s of a timed mark M (or of M minus the optional pre, the Pre-roll landing), `at` is M, prev the mark
+/** atc-ore.33: the PREV | NOW | NEXT position strip. t is the jump-clock score time. From M minus the optional pre (Pre-roll) minus 0.05 s to M plus 0.05 s, `at` is M, prev the mark
  *  before M and next the mark after it; otherwise prev = last timed mark with t < now, next = first with t > now (null at an end).
  *  A cell is {id, name, sub, t}: name = the measure label when set, else '#n'; sub = '#n' (dim) only when a label is the name. */
 function scorePosStrip(marks, t, nums, pre) {
@@ -9637,18 +9620,20 @@ function scorePosStrip(marks, t, nums, pre) {
     var n = '#' + (nums[k.id] || (marks.indexOf(k) + 1)), lab = k.measure ? String(k.measure) : '';
     return { id: k.id, name: lab || n, sub: lab ? n : '', t: k.t };
   }
-  pre = Number(pre) > 0 ? Number(pre) : 0; // Edit off lands Pre-roll seconds before the mark: that landing spot is 'at' the mark too
+  pre = Number(pre) > 0 ? Number(pre) : 0; // Edit off lands Pre-roll seconds before the mark: the whole lead-in is 'at' the mark
   for (i = 0; i < list.length; i++) {
-    var d = Math.min(Math.abs(list[i].t - t), pre ? Math.abs(list[i].t - pre - t) : Infinity);
-    if (d <= 0.05 + 1e-9 && d < best) { best = d; at = i; }
+    var m = list[i].t, d = t - m; // d > 0: past the mark
+    if (d > 0.05 + 1e-9 || d < -(pre + 0.05) - 1e-9) continue; // window [m - pre - 0.05, m + 0.05]; a landing clamped to 0 is inside it (t >= 0)
+    var dist = Math.abs(t - Math.max(0, m - pre)); // overlapping windows: the mark whose landing point is nearest
+    if (dist < best) { best = dist; at = i; }
   }
   if (at >= 0) return { prev: at > 0 ? cell(list[at - 1]) : null, next: at + 1 < list.length ? cell(list[at + 1]) : null, at: cell(list[at]) };
   var p = scoreIndexAt(list, t);
   return { prev: p >= 0 ? cell(list[p]) : null, next: p + 1 < list.length ? cell(list[p + 1]) : null, at: null };
 }
 /** atc-ore.36: the NOW cell's mark list - every timed mark in time order, named as the strip names it; cur = the mark at the playhead, else the one before it. */
-function scoreMarkListRows(marks, t, nums) {
-  var r = scorePosStrip(marks, t, nums), cur = r.at ? r.at.id : null, rows = [];
+function scoreMarkListRows(marks, t, nums, pre) {
+  var r = scorePosStrip(marks, t, nums, pre), cur = r.at ? r.at.id : null, rows = [];
   if (!cur && r.prev) cur = r.prev.id;
   scoreSorted(scoreTimed(marks)).forEach(function (k) {
     var n = '#' + ((nums || {})[k.id] || (marks.indexOf(k) + 1)), lab = k.measure ? String(k.measure) : '';
@@ -11107,7 +11092,6 @@ function initScorePanel_() {
     $('menu-score-reason').textContent = !ready ? 'Open a score to change these settings.' : !hasT ? 'Pre-roll and Ribbon need a score with timed marks.' : '';
   }
   document.addEventListener('pmix-settings-open', function () { syncSettings(); });
-  /** Outside Edit, Prev/Next count a mark as reached once the Pre-roll lead-in has started, so a second press moves on (atc-tty9.3). */
   /** atc-ore.33: write textContent only when it changed (the strip updates every animation tick). */
   function setText(el, txt) { if (el.textContent !== txt) el.textContent = txt; }
   function fmtDelta(d) { var r = Math.round(d * 10) / 10; return (r < 0 ? '-' : '+') + Math.abs(r).toFixed(1) + ' s'; }
@@ -12066,7 +12050,7 @@ function initScorePanel_() {
     if (box.hidden === !open) return;
     box.hidden = !open; btn.setAttribute('aria-expanded', String(open));
     if (!open) return;
-    var rows = scoreMarkListRows(S.marks, scoreNowT(), markNums());
+    var rows = scoreMarkListRows(S.marks, scoreNowT(), markNums(), S.edit ? 0 : S.preroll);
     box.textContent = '';
     rows.forEach(function (r) {
       var b = document.createElement('button'), n = document.createElement('span'), tm = document.createElement('span');
@@ -12298,7 +12282,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
+  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
