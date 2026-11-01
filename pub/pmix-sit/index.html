@@ -2141,10 +2141,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.3.3";
+var STATIC_BUILD_VERSION_ = "1.8.3.4";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-01T17:38:45.357Z";
+var STATIC_BUILD_DATE_ = "2026-11-01T21:38:12.034Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -7909,11 +7909,6 @@ const UI = (() => {
             <output id="score-lead-out" data-testid="score-lead-out">1.00 s</output></label>
         </div>
         <div class="menu-row">
-          <label id="score-prerolllbl" class="score-react" title="How long before a mark the music starts when you tap it or use Prev/Next (not while editing)">Pre-roll
-            <input id="score-preroll" data-testid="score-preroll" type="range" min="0" max="3" step="0.25" value="1">
-            <output id="score-preroll-out" data-testid="score-preroll-out">1.00 s</output></label>
-        </div>
-        <div class="menu-row">
           <button id="score-crop-toggle" data-testid="score-crop-toggle" class="btn score-tbtn" aria-pressed="false" title="Page view: crop each page from 0.5 in left of its first mark to 0.5 in right of its first end-of-line mark, so the music is larger">Crop width</button>
         </div>
         <div class="menu-row">
@@ -8743,7 +8738,6 @@ function scoreTimed(marks) {
 /** track time t = clock x speed; the clock is what the audio engine reports. */
 function scoreTrackTime(clock, speed) { return clock * speed; }
 function scoreClockTime(t, speed) { return t / speed; }
-function scoreJumpBefore(t, pre) { return Math.max(0, scoreRound2(t - (pre === undefined ? 1 : pre))); } // pre: the Pre-roll setting in seconds (atc-tty9.3)
 function scoreEase(ms) { var k = scoreClamp(ms / SCORE_EASE_MS, 0, 1); return k * k * (3 - 2 * k); }
 
 /** Index of the last mark with time <= t (marks sorted by time), -1 before the first. */
@@ -9610,21 +9604,20 @@ function scoreMarkNumbers(marks) {
   scoreVisualRows(marks).forEach(function (r) { r.forEach(function (k) { if (k.kind === 'mark') out[k.id] = ++n; }); });
   return out;
 }
-/** atc-ore.33: the PREV | NOW | NEXT position strip. t is the jump-clock score time. From M minus the optional pre (Pre-roll) minus 0.05 s to M plus 0.05 s, `at` is M, prev the mark
+/** atc-ore.33: the PREV | NOW | NEXT position strip. t is the jump-clock score time. From M minus 0.05 s to M plus 0.05 s, `at` is M, prev the mark
  *  before M and next the mark after it; otherwise prev = last timed mark with t < now, next = first with t > now (null at an end).
  *  A cell is {id, name, sub, t}: name = the measure label when set, else '#n'; sub = '#n' (dim) only when a label is the name. */
-function scorePosStrip(marks, t, nums, pre) {
+function scorePosStrip(marks, t, nums) {
   var list = scoreSorted(scoreTimed(marks)), i, at = -1, best = Infinity;
   nums = nums || {};
   function cell(k) {
     var n = '#' + (nums[k.id] || (marks.indexOf(k) + 1)), lab = k.measure ? String(k.measure) : '';
     return { id: k.id, name: lab || n, sub: lab ? n : '', t: k.t };
   }
-  pre = Number(pre) > 0 ? Number(pre) : 0; // Edit off lands Pre-roll seconds before the mark: the whole lead-in is 'at' the mark
   for (i = 0; i < list.length; i++) {
     var m = list[i].t, d = t - m; // d > 0: past the mark
-    if (d > 0.05 + 1e-9 || d < -(pre + 0.05) - 1e-9) continue; // window [m - pre - 0.05, m + 0.05]; a landing clamped to 0 is inside it (t >= 0)
-    var dist = Math.abs(t - Math.max(0, m - pre)); // overlapping windows: the mark whose landing point is nearest
+    if (d > 0.05 + 1e-9 || d < -0.05 - 1e-9) continue; // window [m - 0.05, m + 0.05]
+    var dist = Math.abs(d); // overlapping windows: the nearest mark
     if (dist < best) { best = dist; at = i; }
   }
   if (at >= 0) return { prev: at > 0 ? cell(list[at - 1]) : null, next: at + 1 < list.length ? cell(list[at + 1]) : null, at: cell(list[at]) };
@@ -9632,8 +9625,8 @@ function scorePosStrip(marks, t, nums, pre) {
   return { prev: p >= 0 ? cell(list[p]) : null, next: p + 1 < list.length ? cell(list[p + 1]) : null, at: null };
 }
 /** atc-ore.36: the NOW cell's mark list - every timed mark in time order, named as the strip names it; cur = the mark at the playhead, else the one before it. */
-function scoreMarkListRows(marks, t, nums, pre) {
-  var r = scorePosStrip(marks, t, nums, pre), cur = r.at ? r.at.id : null, rows = [];
+function scoreMarkListRows(marks, t, nums) {
+  var r = scorePosStrip(marks, t, nums), cur = r.at ? r.at.id : null, rows = [];
   if (!cur && r.prev) cur = r.prev.id;
   scoreSorted(scoreTimed(marks)).forEach(function (k) {
     var n = '#' + ((nums || {})[k.id] || (marks.indexOf(k) + 1)), lab = k.measure ? String(k.measure) : '';
@@ -10329,7 +10322,6 @@ function initScorePanel_() {
     carriedKey: '', focusId: null, offsets: {}, offsetMode: false, place: 'timed', noteId: null, fieldMsgId: null, offsetTrack: '', orphan: {},
     ribbon: true, ribbonIn: 0, ribbonShown: false, rv: ribbonReset(null), ribbonBuilds: 0
   };
-  var PREROLL_KEY = 'pmix.' + pmixTarget() + '.v1.scorePreroll';
   var LEAD_KEY = 'pmix.' + pmixTarget() + '.v1.scoreLead';
   var REACT_KEY = 'pmix.' + pmixTarget() + '.v1.scoreReaction';
   var RIBBON_KEY = 'pmix.' + pmixTarget() + '.v1.scoreRibbon';
@@ -11097,8 +11089,8 @@ function initScorePanel_() {
     var ready = isOpen() && isReady(), hasT = ready && scoreTimed(S.marks).length > 0;
     ['score-reaction', 'score-lead'].forEach(function (i) { $(i).disabled = !ready; });
     $('score-crop-toggle').disabled = !(ready && S.marks.length > 0);
-    ['score-preroll', 'score-ribbon-toggle', 'score-ribbon-height'].forEach(function (i) { $(i).disabled = !hasT; });
-    $('menu-score-reason').textContent = !ready ? 'Open a score to change these settings.' : !hasT ? 'Pre-roll and Ribbon need a score with timed marks.' : '';
+    ['score-ribbon-toggle', 'score-ribbon-height'].forEach(function (i) { $(i).disabled = !hasT; });
+    $('menu-score-reason').textContent = !ready ? 'Open a score to change these settings.' : !hasT ? 'Ribbon needs a score with timed marks.' : '';
   }
   document.addEventListener('pmix-settings-open', function () { syncSettings(); });
   /** atc-ore.33: write textContent only when it changed (the strip updates every animation tick). */
@@ -11113,10 +11105,10 @@ function initScorePanel_() {
     return posEls;
   }
   /** atc-ore.33: the PREV | NOW | NEXT strip, rendered from scorePosStrip; run every tick and after every syncUi (S.posKey = null forces it). */
-  function posStrip(t) { return scorePosStrip(S.marks, t, markNums(), S.edit ? 0 : S.preroll); } // the one source for the strip's labels and its taps
+  function posStrip(t) { return scorePosStrip(S.marks, t, markNums()); } // the one source for the strip's labels and its taps
   function syncPos() {
     if ($('score-pos').hidden) return;
-    var t = scoreNowT(), pl = isPlayingNow(), key = t + '|' + (pl ? 1 : 0) + '|' + (S.edit ? 1 : 0) + '|' + S.preroll;
+    var t = scoreNowT(), pl = isPlayingNow(), key = t + '|' + (pl ? 1 : 0) + '|' + (S.edit ? 1 : 0);
     if (S.posKey === key && S.posMarks === S.marks) return;
     S.posKey = key; S.posMarks = S.marks;
     var P = posRefs(), r = posStrip(t);
@@ -11837,18 +11829,18 @@ function initScorePanel_() {
     if (!hit) return;
     if (!S.edit) {
       var sh0 = ribbonStripHitAt(cx, cy); // atc-2ld9: a tap on a timed mark in the top strip seeks to it
-      if (sh0) { showNote(sh0.mark.note && S.noteId !== sh0.mark.id ? sh0.mark : null); jumpTo(sh0.mark.t - S.preroll + scoreRibbonSeekD(S.rv.layout, sh0.seg, sh0.mark)); return; }
+      if (sh0) { showNote(sh0.mark.note && S.noteId !== sh0.mark.id ? sh0.mark : null); jumpTo(sh0.mark.t + scoreRibbonSeekD(S.rv.layout, sh0.seg, sh0.mark)); return; }
       var jmp = scoreHitMark(S.marks.filter(function (q) { return q.kind === 'jump'; }), hit.page, hit.x, hit.y);
       if (jmp) { // atc-tty9.10: a jump seeks to its target's current time; a broken one does nothing (it is shown disabled)
         var jt = scoreJumpTime(S.marks, jmp.id);
-        if (jt !== null) { showNote(null); jumpTo(jt - S.preroll); }
+        if (jt !== null) { showNote(null); jumpTo(jt); }
         return;
       }
       var noted = scoreHitMark(pdfHitMarks().filter(function (q) { return q.note; }), hit.page, hit.x, hit.y);
       showNote(noted && S.noteId !== noted.id ? noted : null); // a tap on a noted mark shows its text; tapping again hides it
       if (noted && noted.kind === 'note') return; // atc-tty9.26: a note is untimed; tapping it seeks nowhere
       var mk = scoreNearestPreceding(S.marks, hit.page, hit.x, hit.y);
-      if (mk) jumpTo(mk.t - S.preroll + (S.ribbonShown && S.rv.layout && hit.seg !== undefined ? scoreRibbonSeekD(S.rv.layout, hit.seg, mk) : 0)); // atc-tty9.35: a tap on a replay copy seeks to that copy's audio time
+      if (mk) jumpTo(mk.t + (S.ribbonShown && S.rv.layout && hit.seg !== undefined ? scoreRibbonSeekD(S.rv.layout, hit.seg, mk) : 0)); // atc-tty9.35: a tap on a replay copy seeks to that copy's audio time
       return;
     }
     if (S.offsetMode) { setOffsetAt(hit); return; }
@@ -12032,9 +12024,9 @@ function initScorePanel_() {
     S.marks.forEach(function (k) { if (k.id === c.id) vm = k; });
     if (vm) goToMark(vm);
   }
-  /** atc-ore.36: go to a timed mark as the strip's PREV/NEXT do in the current mode (outside Edit: seek with the pre-roll; in Edit: select, exact seek when paused). */
+  /** atc-ore.36: go to a timed mark as the strip's PREV/NEXT do in the current mode (outside Edit: seek to the mark; in Edit: select, exact seek when paused). */
   function goToMark(m) {
-    if (!S.edit) { jumpTo(scoreJumpBefore(m.t, S.preroll)); return; }
+    if (!S.edit) { jumpTo(m.t); return; }
     S.selId = m.id;
     syncUi();
     S.rv.hold = null; S.rv.glide = null; // atc-hc3l: Previous/Next resume following
@@ -12052,7 +12044,7 @@ function initScorePanel_() {
     var p = scoreMarkPoint(m, geo);
     return p.x >= tv.x && p.x <= tv.x + geo.W && p.y >= tv.y && p.y <= tv.y + geo.H;
   }
-  function gotoSel() { var m = selMark(); if (m && typeof m.t === 'number') jumpTo(m.t); } // atc-ore.34: exactly the mark's t, no pre-roll
+  function gotoSel() { var m = selMark(); if (m && typeof m.t === 'number') jumpTo(m.t); } // atc-ore.34: exactly the mark's t
   $('score-goto').addEventListener('click', gotoSel);
   $('score-goto-quick').addEventListener('click', gotoSel); // atc-ore.37
   function setMarkList(open) { // atc-ore.36: the NOW cell's list; opened like the ... menu (fixed under its anchor, Escape / outside tap close it)
@@ -12060,7 +12052,7 @@ function initScorePanel_() {
     if (box.hidden === !open) return;
     box.hidden = !open; btn.setAttribute('aria-expanded', String(open));
     if (!open) return;
-    var rows = scoreMarkListRows(S.marks, scoreNowT(), markNums(), S.edit ? 0 : S.preroll);
+    var rows = scoreMarkListRows(S.marks, scoreNowT(), markNums());
     box.textContent = '';
     rows.forEach(function (r) {
       var b = document.createElement('button'), n = document.createElement('span'), tm = document.createElement('span');
@@ -12106,7 +12098,7 @@ function initScorePanel_() {
     var r = scoreNudgeMark(S.marks, m.id, dt), nm = null;
     r.marks.forEach(function (k) { if (k.id === m.id) nm = k; });
     if (r.changed) commit(r.marks, true);
-    if (nm) jumpTo(scoreJumpBefore(nm.t, S.preroll));
+    if (nm) jumpTo(nm.t);
   }
   $('score-nudge-minus').addEventListener('click', function () { adjust(-0.1); });
   $('score-nudge-plus').addEventListener('click', function () { adjust(0.1); });
@@ -12206,16 +12198,6 @@ function initScorePanel_() {
     store(LEAD_KEY, String(S.lead));
   });
 
-  var prerollEl = $('score-preroll');
-  S.preroll = scoreClampLead(recall(PREROLL_KEY)); // same 0-3 s, 0.25 s steps, 1 s default as Lead
-  prerollEl.value = String(S.preroll);
-  $('score-preroll-out').textContent = S.preroll.toFixed(2) + ' s';
-  prerollEl.addEventListener('input', function () {
-    S.preroll = scoreClampLead(prerollEl.value);
-    $('score-preroll-out').textContent = S.preroll.toFixed(2) + ' s';
-    store(PREROLL_KEY, String(S.preroll));
-  });
-
   // ---- controls ----
   zoomIn.addEventListener('click', function () { setZoom(scoreZoomStep(S.zoom, 1, fitZoom())); });
   zoomOut.addEventListener('click', function () { setZoom(scoreZoomStep(S.zoom, -1, fitZoom())); });
@@ -12291,7 +12273,7 @@ function initScorePanel_() {
 }
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
-  scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
+  scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
