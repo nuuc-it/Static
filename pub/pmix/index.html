@@ -575,7 +575,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 .score-fld input, .score-fld select { height: 36px; font-size: 14px; }
 .score-fld-wide input { width: 100%; box-sizing: border-box; }
 .score-danger { border-color: #ef4444; color: #f87171; }
-@media (max-width: 440px) { .score-ed-info > span { display: none; } .score-ed-info b { display: block; } }
+@media (max-width: 440px) { .score-ed-info > span { display: none; } .score-ed-info b { display: block; }  .score-ed-row { gap: 3px; } .score-ed-row .score-tbtn { min-width: 32px; padding: 0 4px; } .score-ed-row .score-primary { padding: 0 6px; } .score-ed-row input[type="text"] { min-width: 4.5em; } }
 .score-notebar { padding: 4px 8px; font-size: 13px; background: #fffbeb; color: #78350f; border-bottom: 1px solid #b45309; white-space: pre-wrap; }
 /* Edit mode: every mark carries a 0.5 inch hit area (sized by script) so a press on it drags instead of panning (atc-ore.5 AC 20). */
 .score-panel[data-edit="on"] .score-mark { pointer-events: auto; touch-action: none; }
@@ -1482,6 +1482,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
               <span class="score-ed-info"><b id="score-ed-num" data-testid="score-ed-num"></b><span id="score-ed-time" data-testid="score-ed-time"></span></span>
               <button id="score-nudge-minus" data-testid="score-nudge-minus" class="btn score-tbtn" title="Mark 0.1 s earlier">-0.1</button>
               <button id="score-set-now" data-testid="score-set-now" class="btn score-tbtn score-primary" title="Move the mark to the cursor">Set to now</button>
+              <button id="score-goto-quick" data-testid="score-goto-quick" class="btn score-tbtn" title="Move the cursor to this mark">Go to</button>
               <button id="score-nudge-plus" data-testid="score-nudge-plus" class="btn score-tbtn" title="Mark 0.1 s later">+0.1</button>
               <button id="score-edit-mark" data-testid="score-edit-mark" class="btn score-tbtn" aria-expanded="false" aria-label="More about this mark" title="Type, note, jump target, untime, delete">&#9662;</button>
             </div>
@@ -1520,6 +1521,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
         </div>
         <div class="score-view">
         <div id="score-corner" data-testid="score-corner" class="score-corner" hidden>
+          <button id="score-cursor-here" data-testid="score-cursor-here" class="btn score-tbtn score-resume" title="Move the cursor to this point in the score" hidden>Cursor here</button>
           <button id="score-resume-follow" data-testid="score-resume-follow" class="btn score-tbtn score-resume" hidden>Resume follow</button>
           <button id="score-edit-toggle" data-testid="score-edit-toggle" class="btn score-tbtn" aria-pressed="false" aria-label="Edit marks" title="Edit the marks that make the score follow the music">&#9998;</button>
         </div>
@@ -1534,11 +1536,11 @@ li > .schedule-cal-wrap { margin-left: 8px; }
       <div class="card transport-section">
         <div class="transport-controls">
           <button id="rewind-btn" data-testid="transport-rewind" class="btn btn-transport" title="Rewind">⏮</button>
+          <button id="return-btn" data-testid="transport-return" class="btn btn-transport" title="Back to where play last started" disabled>|◀</button>
           <button id="skip-back-btn" data-testid="transport-skip-back" class="btn btn-transport" title="Skip back 5s">-5s</button>
           <button data-testid="transport-skip-back-1" data-skip="-1" class="btn btn-transport skip-fine" title="Skip back 1s">-1s</button>
           <button data-testid="transport-skip-back-01" data-skip="-0.1" class="btn btn-transport skip-fine" title="Skip back 0.1s">-0.1s</button>
           <button id="play-btn" data-testid="transport-play" class="btn btn-transport" title="Play" data-playing="false">▶</button>
-          <button id="stop-btn" data-testid="transport-stop" class="btn btn-transport" title="Stop">⏹</button>
           <button data-testid="transport-skip-fwd-01" data-skip="0.1" class="btn btn-transport skip-fine" title="Skip forward 0.1s">+0.1s</button>
           <button data-testid="transport-skip-fwd-1" data-skip="1" class="btn btn-transport skip-fine" title="Skip forward 1s">+1s</button>
           <button id="skip-fwd-btn" data-testid="transport-skip-forward" class="btn btn-transport" title="Skip forward 5s">+5s</button>
@@ -2139,10 +2141,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.2";
+var STATIC_BUILD_VERSION_ = "1.8.3";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-11-01T03:17:15.340Z";
+var STATIC_BUILD_DATE_ = "2026-11-01T13:02:58.491Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbz-YsKzVeoehCr05zF4kF_wbKuTAhMm1RU1KSXK-W6UOKt9zg1zVTUi_TKKYnpkhSR-/exec";
@@ -3810,11 +3812,27 @@ const AudioEngine = (() => {
   // Initialization
   // =========================================
 
+  // atc-lo0s: iOS mutes Web Audio with the ring/silent switch unless the audio session is 'playback'.
+  // Absent API (every non-iOS-17 browser) is a no-op; ui.audioSession is logged once per page session.
+  let audioSessionLogged = false;
+  function setAudioSessionPlayback_() {
+    let supported = false;
+    try {
+      const as = navigator.audioSession;
+      if (as) { supported = true; as.type = 'playback'; }
+    } catch (e) { /* ignore */ }
+    if (!audioSessionLogged) {
+      audioSessionLogged = true;
+      try { logActivity_('audioSession', { supported: supported, type: supported ? String(navigator.audioSession.type) : '' }); } catch (e) { /* ignore */ }
+    }
+  }
+
   /**
    * Initializes the AudioContext (requires user gesture).
    * @returns {Promise<boolean>} True if successful
    */
   async function init() {
+    setAudioSessionPlayback_();
     if (audioContext && audioContext.state !== 'closed') {
       // Resume if suspended
       if (audioContext.state === 'suspended') {
@@ -4440,6 +4458,7 @@ const AudioEngine = (() => {
 
     // iOS/Safari: AudioContext starts suspended and resume() must be awaited
     // inside the user-gesture call chain before sources can start.
+    setAudioSessionPlayback_();
     if (audioContext.state === 'suspended') {
       await audioContext.resume();
     }
@@ -6145,9 +6164,9 @@ const UI = (() => {
 
     // Transport
     el.rewindBtn = document.getElementById('rewind-btn');
+    el.returnBtn = document.getElementById('return-btn');
     el.skipBackBtn = document.getElementById('skip-back-btn');
     el.playBtn = document.getElementById('play-btn');
-    el.stopBtn = document.getElementById('stop-btn');
     el.skipFwdBtn = document.getElementById('skip-fwd-btn');
     el.currentTime = document.getElementById('current-time');
     el.seekBar = document.getElementById('seek-bar');
@@ -7215,13 +7234,16 @@ const UI = (() => {
     el.playBtn.title = playing ? 'Pause' : 'Play';
   }
 
+  var playReturnT_ = null; // atc-blkd: R, null before the first Play press
   function setupTransportControls() {
-    el.playBtn.addEventListener('click', async () => {
+    async function togglePlay() {
       if (state.isPlaying) {
         playLog_.end('pause', AudioEngine.getCurrentTime());
         AudioEngine.pause();
         setPlayingState(false);
       } else {
+        playReturnT_ = AudioEngine.getPlayhead(); // atc-blkd: R = where this Play press starts
+        el.returnBtn.disabled = false;
         await speedDebouncer.flush();   // commit any pending speed target first (atc-di0 AC 3)
         await syncStretch();            // every loaded track needs a buffer at this rate (AC 5)
         await AudioEngine.play();
@@ -7229,12 +7251,13 @@ const UI = (() => {
         playLog_.start([...state.selectedFileIds], state.playbackSpeed);
         persistPlayed();                // fire-and-forget; never delays playback (AC 7)
       }
-    });
+    }
+    el.playBtn.addEventListener('click', togglePlay);
 
-    el.stopBtn.addEventListener('click', () => {
-      playLog_.end('stop', AudioEngine.getCurrentTime());
-      AudioEngine.stop();
-      setPlayingState(false);
+    // atc-blkd: Return seeks to R, the audio time at which the last user Play press started playback (internal restarts and seeks do not move it).
+    el.returnBtn.addEventListener('click', () => {
+      if (playReturnT_ === null) return;
+      AudioEngine.seek(playReturnT_);
     });
 
     el.rewindBtn.addEventListener('click', () => {
@@ -8752,6 +8775,15 @@ function scoreAnchorView(mark, geo) {
     y: scoreClamp(p.y - (geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay) * geo.H, 0, geo.maxY)
   };
 }
+/** atc-ore.37: the timed mark nearest (in view px) to the page-view point (px, py), or null when none. geo as for scoreAnchorView. */
+function scoreMarkNearPoint(marks, geo, px, py) {
+  var best = null, bd = Infinity;
+  scoreTimed(marks).forEach(function (k) {
+    var p = scoreMarkPoint(k, geo), d = (p.x - px) * (p.x - px) + (p.y - py) * (p.y - py);
+    if (d < bd) { bd = d; best = k; }
+  });
+  return best;
+}
 var SCORE_LEAD_DEFAULT = 1;
 /** Where the view should be at track time t. geo = {W, H, maxX, maxY, pages:[{left, top, w, h, ptW, ptH}]} in px.
  *  opt = {lead (wall-clock s before the next line start, default 1), speed (default 1)}. Returns {x, y, n, v, state}:
@@ -10117,8 +10149,54 @@ function scoreSaveState(marks, shared, pdfId, offsets, view, view0) {
   var forThis = !!shared && shared.pdfId === pdfId;
   if (!marks.length && !(forThis && shared.marks.length)) return 'none';
   if (forThis && offsets !== undefined && !scoreSameOffsets(offsets, shared.offsets)) return 'unsaved'; // atc-ore.8: unsaved offsets
-  if (forThis && view !== undefined && !scoreSameView(view, shared.view || view0)) return 'unsaved'; // atc-tty9.23: a changed ribbon height or offset
+  if (forThis && view !== undefined && scoreViewHeight_(view) !== scoreViewHeight_(shared.view || view0)) return 'unsaved'; // atc-tty9.23: a changed ribbon height; atc-ore.38: the vertical offset (a pan) alone is not a change, it rides along on a Save
   return forThis && scoreSameMarks(marks, shared.marks) ? 'saved' : 'unsaved';
+}
+function scoreViewHeight_(v) { return v && v.heightIn > 0 ? v.heightIn : 0; }
+var SCORE_DIFF_KINDS_ = ['added', 'removed', 'retimed', 'moved', 'relabeled', 'retyped'];
+/** atc-ore.38: what a Save would change, marks matched by id. Returns {counts, names}; a mark changed in several ways counts once in each.
+ *  Marks equal by value (a migrated copy with other ids) are no change. names: [{id, name, what[]}] label-first as the strip names marks (#n = reading-order number). */
+function scoreSaveDiffDetail_(marks, sharedMarks) {
+  var c = { added: 0, removed: 0, retimed: 0, moved: 0, relabeled: 0, retyped: 0 }, names = [];
+  if (scoreSameMarks(marks, sharedMarks || [])) return { counts: c, names: names };
+  var cur = scorePlainMarks(marks), old = scorePlainMarks(sharedMarks || []), nc = scoreMarkNumbers(cur), no = scoreMarkNumbers(old), byId = {};
+  old.forEach(function (k) { byId[k.id] = k; });
+  function nm(k, nums, i) { return scoreMarkLabel(k, nums[k.id] ? '#' + nums[k.id] : '#' + (i + 1)); }
+  function same(a, b, fs) { return fs.every(function (f) { return a[f] === b[f]; }); }
+  cur.forEach(function (k, i) {
+    var o = byId[k.id], what = [];
+    if (!o) what.push('added');
+    else {
+      delete byId[k.id];
+      if (k.t !== o.t) what.push('retimed');
+      if (!same(k, o, ['page', 'x', 'y'])) what.push('moved');
+      if (!same(k, o, ['measure', 'note', 'label', 'targetMarkId'])) what.push('relabeled');
+      if (k.kind !== o.kind) what.push('retyped');
+    }
+    what.forEach(function (w) { c[w]++; });
+    if (what.length) names.push({ id: k.id, name: nm(k, nc, i), what: what });
+  });
+  old.forEach(function (k, i) { if (byId[k.id]) { c.removed++; names.push({ id: k.id, name: nm(k, no, i), what: ['removed'] }); } });
+  return { counts: c, names: names };
+}
+/** atc-ore.38 AC 2: {added, removed, retimed, moved, relabeled, retyped, offsets, height}. height: the ribbon heightIn differs (offY never counts). */
+function scoreSaveDiff(marks, sharedMarks, offsets, sharedOffsets, view, sharedView) {
+  var d = scoreSaveDiffDetail_(marks, sharedMarks).counts;
+  d.offsets = !scoreSameOffsets(offsets, sharedOffsets);
+  d.height = scoreViewHeight_(view) !== scoreViewHeight_(sharedView);
+  return d;
+}
+/** atc-ore.38 AC 3: 'Unsaved: 2 added, 3 retimed, 1 moved, ribbon height'; 'Unsaved changes' when no counted change explains the state. */
+function scoreSaveSummary(d) {
+  var parts = [];
+  SCORE_DIFF_KINDS_.forEach(function (k) { if (d[k]) parts.push(d[k] + ' ' + k); });
+  if (d.offsets) parts.push('offsets');
+  if (d.height) parts.push('ribbon height');
+  return parts.length ? 'Unsaved: ' + parts.join(', ') : 'Unsaved changes';
+}
+/** atc-ore.38 AC 3: the changed marks by name, e.g. '12 (retimed, moved)', at most 10. */
+function scoreSaveNames(marks, sharedMarks) {
+  return scoreSaveDiffDetail_(marks, sharedMarks).names.slice(0, 10).map(function (n) { return n.name + ' (' + n.what.join(', ') + ')'; });
 }
 /** The saveScore score argument: the open PDF's marks, name and modified time (atc-ore.8 AC 12 re-binds the map to it);
  *  offsets are the working ones, else carried over from the shared map. */
@@ -10247,7 +10325,7 @@ function initScorePanel_() {
   /** atc-elfg.6: the ribbon view's state in one record. Reset on a mode switch; the scrub timer of the record it replaces is cleared. */
   function ribbonReset(prev) {
     if (prev) clearTimeout(prev.scrubTimer);
-    return { layout: null, key: '', marks: null, offsets: null, sx: null, top: -1, selAt: null, scrub: null, scrubTimer: 0, drawn: null, hold: null, glide: null };
+    return { layout: null, key: '', marks: null, offsets: null, sx: null, top: -1, selAt: null, scrub: null, scrubTimer: 0, drawn: null, hold: null, glide: null, off: false };
   }
   var S = {
     lib: null, libPromise: null, wsrc: null, build: '', workerBroken: false, workerNote: '',
@@ -11090,6 +11168,7 @@ function initScorePanel_() {
     panel.setAttribute('data-offset-y', String(Math.round(S.offY)));
     renderSeekMarks();
     $('score-resume-follow').hidden = !scoreShowResume(S.followOn, has, S.edit);
+    syncCursorHere();
     $('score-corner').hidden = !ready;
     $('score-ribbon-toggle').setAttribute('aria-pressed', String(S.ribbon));
     $('score-crop-toggle').setAttribute('aria-pressed', String(S.crop));
@@ -11124,7 +11203,7 @@ function initScorePanel_() {
       $('score-nudge-minus').hidden = $('score-nudge-plus').hidden = !timedM || isEol || isNote;
       $('score-set-now').hidden = isEol || isNote; $('score-set-now').textContent = timedM ? 'Set to now' : 'Set time to now';
       $('score-clear-time').hidden = !timedM || isEol;
-      $('score-goto').disabled = !timedM || isEol || isNote; // atc-ore.34
+      $('score-goto').disabled = $('score-goto-quick').disabled = !timedM || isEol || isNote; // atc-ore.34
       $('score-measure').hidden = isEol || isJump || isNote;
       $('score-note').hidden = isEol || isJump;
       $('score-note').closest('label').hidden = isEol || isJump;
@@ -11164,6 +11243,12 @@ function initScorePanel_() {
     if (scoreQueuedSame(q, S.fileId, S.marks, S.offsets)) return 'queued';
     return st;
   }
+  /** atc-ore.38: what a Save would change against the shared map (nothing shared for this PDF = everything is new). */
+  function saveDiffNow() {
+    var sh = S.shared && S.shared.pdfId === S.fileId ? S.shared : null;
+    var all = scoreSaveDiffDetail_(S.marks, sh ? sh.marks : []).names;
+    return { diff: scoreSaveDiff(S.marks, sh ? sh.marks : [], S.offsets, sh ? sh.offsets : {}, currentView(), sh ? (sh.view || S.view0) : S.view0), names: scoreSaveNames(S.marks, sh ? sh.marks : []), more: all.length > 10 };
+  }
   function syncSave() {
     var st = S.fileId ? saveStateNow() : 'none';
     panel.setAttribute('data-save-state', st);
@@ -11172,7 +11257,9 @@ function initScorePanel_() {
     var sb = scoreSaveButton(st, signed, isPlayingNow(), scoreStaleShown(S.stale, S.folder, S.fileId)); // atc-ore.16 AC 12, 13
     btn.textContent = sb.text; btn.hidden = !sb.shown;
     btn.disabled = S.saving || !S.marks.length || !S.folder;
-    $('score-save-state').textContent = st === 'unsaved' ? 'Unsaved changes' : st === 'queued' ? 'Save waiting (offline)' : '';
+    var ss = $('score-save-state'), sd = null;
+    if (st === 'unsaved') { sd = saveDiffNow(); ss.textContent = scoreSaveSummary(sd.diff); ss.title = sd.names.length ? 'Changed: ' + sd.names.join('; ') + (sd.more ? '; ...' : '') : ''; } // atc-ore.38 AC 3
+    else { ss.textContent = st === 'queued' ? 'Save waiting (offline)' : ''; ss.removeAttribute('title'); }
     var sh = S.shared;
     $('score-use-saved').hidden = !(sh && sharedUse().applies && sh.marks.length && st === 'unsaved' && !S.readOnly && !isPlayingNow());
     $('score-keep-mine').hidden = !scoreStaleShown(S.stale, S.folder, S.fileId);
@@ -11201,6 +11288,12 @@ function initScorePanel_() {
   function handleSaveOutcome(fid, out, score, basedOn) {
     var here = S.folder === fid, open = here && score.pdfId === S.fileId; // the one open-PDF test (atc-ore.28 AC 1)
     if (out.kind === 'ok') {
+      if (here && open) { // atc-ore.38 AC 4: what this save changed, against the map it replaced
+        try {
+          var ps = S.shared && S.shared.pdfId === score.pdfId ? S.shared : null, pd = scoreSaveDiff(score.marks, ps ? ps.marks : [], score.offsets, ps ? ps.offsets : {}, score.view || null, ps ? (ps.view || S.view0) : S.view0);
+          if (typeof logActivity_ === 'function') logActivity_('scoreSave', pd);
+        } catch (e) { /* telemetry only */ }
+      }
       var drop = here ? scoreDropKey(S.shared, out.result, S.pdfs, S.carriedKey) : ''; // AC 13: only a successful save releases the old PDF's device marks
       adoptShared(fid, out.result);
       var nb = here ? scoreRebaseAfterSave(S.fileId, score, out.result) : null; // atc-ore.24: only the open PDF's save re-baselines, through the one writer
@@ -11346,13 +11439,16 @@ function initScorePanel_() {
     S.rv = ribbonReset(S.rv); // atc-elfg.6: one record for the ribbon view state; the scrub timer is cleared with it
     S.pan = null; // a pan record from either mode is stale after a switch (its scroll baseline belongs to the other view)
     if (on) { S.easeStart = -1; S.offY = (S.viewOff || 0) * ptScale(); } else S.snapPending = true; // back to the normal page view at the current mark
+    syncCursorHere();
   }
   /** atc-qb45: paused in the ribbon, a sideways scroll of dx px moves the view (clamped to its ends); the time under the playhead line shows live and the audio seeks on ribbonScrubEnd. */
+  /** atc-ore.37: the track time under the 40% cursor line when the ribbon view is scrolled to vs (the scrub's mapping, also Cursor here's). */
+  function ribbonTimeAtSx(vs, W) { return scoreRibbonTimeAt(S.marks, vs + SCORE_RIBBON_ANCHOR_X * W, S.rv.layout); }
   function ribbonScrubBy(dx) {
     if (!S.ribbonShown || S.edit || isPlayingNow() || !S.rv.layout) return false;
     var L = S.rv.layout, geo = pageGeo(true), base = S.rv.scrub ? S.rv.scrub.vs : (S.rv.sx || 0);
     var X = L.markX, off = SCORE_RIBBON_ANCHOR_X * geo.W; // atc-elfg.1: the virtual scroll reaches the first and last mark (the view itself stays inside the ribbon)
-    var vs = X && X.length ? scoreClamp(base + dx, X[0] - off, X[X.length - 1] - off) : 0, t = scoreRibbonTimeAt(S.marks, vs + off, L);
+    var vs = X && X.length ? scoreClamp(base + dx, X[0] - off, X[X.length - 1] - off) : 0, t = ribbonTimeAtSx(vs, geo.W);
     S.rv.scrub = { vs: vs, sx: scoreClamp(vs, 0, Math.max(0, L.width - geo.W)), t: t };
     var c = scoreClockTime(Math.max(0, t), rate()), ct = document.getElementById('current-time'), sb = document.getElementById('seek-bar');
     if (ct) ct.textContent = Math.floor(c / 60) + ':' + ('0' + Math.floor(c % 60)).slice(-2);
@@ -11374,6 +11470,17 @@ function initScorePanel_() {
     if (S.edit && S.ribbonShown && S.rv.sx !== null) { S.rv.sx = Math.max(0, S.rv.sx + dx); return true; } // drawRibbon clamps
     return false;
   }
+  /** atc-ore.37: Cursor here shows in paused Edit when the view is off the cursor (ribbon: held sx differs from follow sx by > 8 px; page view: Follow paused). */
+  function syncCursorHere() {
+    var on = S.edit && isReady() && !isPlayingNow() && (S.ribbonShown ? !!S.rv.off : scoreShowResume(S.followOn, scoreTimed(S.marks).length > 0, S.edit)), b = $('score-cursor-here');
+    if (b.hidden === on) b.hidden = !on;
+  }
+  $('score-cursor-here').addEventListener('click', function () {
+    if (S.ribbonShown) { if (S.rv.layout && S.rv.sx !== null) jumpTo(ribbonTimeAtSx(S.rv.sx, pageGeo(true).W)); return; } // the view stays; the cursor lands at the 40% line
+    var geo = pageGeo(), k = scoreMarkNearPoint(S.marks, geo, scroller.scrollLeft + SCORE_ANCHOR_X * geo.W, scroller.scrollTop + SCORE_ANCHOR_Y * geo.H);
+    if (!k) return;
+    jumpTo(k.t); resumeFollow();
+  });
   function ribbonFollowGo() { // atc-hc3l: glide the held view back to the cursor, then follow
     if (S.rv.hold) S.rv.glide = { from: S.rv.hold.sx, t0: performance.now() };
   }
@@ -11488,6 +11595,8 @@ function initScorePanel_() {
     var inp = { L: L, geo: geo, marks: S.marks, t: t, edit: S.edit, playing: pl, selId: S.selId, selAt: S.rv.selAt, prevSx: S.rv.sx, hold: S.rv.hold, scrub: S.rv.scrub, dpr: dpr, offY: S.offY, gen: S.renderGen + '|' + S.pubGen + '|' + S.noteId };
     var view = scoreRibbonFrame(inp);
     S.rv.selAt = view.selAt; S.rv.sx = view.sx;
+    var off = S.edit && !pl && Math.abs(view.sx - view.followSx) > 8; // atc-ore.37
+    if (off !== !!S.rv.off) { S.rv.off = off; syncCursorHere(); }
     var fb = $('score-ribbon-follow'), fbShow = !!S.rv.hold && !S.rv.glide; // atc-hc3l: the Follow button shows while the view is held off the cursor
     if (fb.hidden === fbShow) fb.hidden = !fbShow;
     if (fbShow) { fb.style.left = Math.round(geo.W - 90) + 'px'; fb.style.top = Math.round(geo.H - 52) + 'px'; }
@@ -11883,6 +11992,10 @@ function initScorePanel_() {
     S.stale = null; S.saveMsg = '';
     S.offsets = sh.offsets ? JSON.parse(JSON.stringify(sh.offsets)) : {};
     S.base = scoreBaseOf(sh, { applies: true }); S.basedOn = sh.updatedAt || null; // atc-ore.24: the copy now equals the shared map
+    // atc-ore.38 AC 5: the saved ribbon view comes back too (height input and its device value, vertical offset), so the state is 'saved'
+    S.ribbonIn = sh.view && sh.view.heightIn > 0 ? sh.view.heightIn : 0; $('score-ribbon-height').value = S.ribbonIn ? String(S.ribbonIn) : ''; store(ribbonHKey(), S.ribbonIn ? String(S.ribbonIn) : '');
+    S.viewOff = sh.view ? Number(sh.view.offY) || 0 : 0; if (S.ribbonShown) S.offY = S.viewOff * ptScale(); S.rv.key = '';
+    S.view0 = scoreViewOf(S.ribbonIn, S.viewOff);
     commit(marksFromShared(sh.marks), false);
   });
   $('score-offset-tool').addEventListener('click', function () {
@@ -11942,7 +12055,9 @@ function initScorePanel_() {
     var p = scoreMarkPoint(m, geo);
     return p.x >= tv.x && p.x <= tv.x + geo.W && p.y >= tv.y && p.y <= tv.y + geo.H;
   }
-  $('score-goto').addEventListener('click', function () { var m = selMark(); if (m && typeof m.t === 'number') jumpTo(m.t); }); // atc-ore.34: exactly the mark's t, no pre-roll
+  function gotoSel() { var m = selMark(); if (m && typeof m.t === 'number') jumpTo(m.t); } // atc-ore.34: exactly the mark's t, no pre-roll
+  $('score-goto').addEventListener('click', gotoSel);
+  $('score-goto-quick').addEventListener('click', gotoSel); // atc-ore.37
   function setMarkList(open) { // atc-ore.36: the NOW cell's list; opened like the ... menu (fixed under its anchor, Escape / outside tap close it)
     var box = $('score-mark-list'), btn = $('score-pos-now');
     if (box.hidden === !open) return;
@@ -12180,9 +12295,9 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreJumpBefore, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
+  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreStepTargets, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreViewStep, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreViewOf, scoreSameView, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
-  isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
+  isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
 </script>
 
