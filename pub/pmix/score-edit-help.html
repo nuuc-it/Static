@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2026 Stuart Donaldson. All rights reserved.
+     Proprietary and confidential; see LICENSE. -->
+<!-- Score mark-up help (bd atc-tty9.43). Editing is rare, so it lives on its own page, linked from help.html. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How to mark up a score</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+    :root {
+      --bg: #0b0d10; --surface-1: #161a20; --surface-2: #1d2229; --border: #262c35; --border-strong: #3a4452;
+      --text: #f5f7fa; --text-2: #c0c8d4; --text-3: #8a93a1;
+      --green: oklch(0.72 0.16 155); --blue: oklch(0.72 0.14 240); --amber: oklch(0.78 0.14 70);
+      --radius: 10px; --spacing: 16px;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      line-height: 1.5; color: var(--text-2); background: var(--bg); overflow-x: hidden;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: var(--spacing); padding-bottom: 40px; }
+    header { text-align: center; padding: 8px 0 4px; }
+    h1 { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .sub { font-size: 14px; color: var(--text-3); }
+    .intro { margin: 16px 0 0; }
+    .intro p + p { margin-top: 8px; }
+    .intro strong, .step strong { color: var(--text); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px;
+      border-radius: var(--radius); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none;
+      border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+    }
+    .btn-primary { background: var(--green); border-color: var(--green); color: #06130c; }
+    .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .address {
+      margin-top: 16px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: var(--spacing);
+    }
+    .address .label { font-size: 13px; color: var(--text-3); }
+    .address code {
+      display: block; margin: 4px 0 10px; font-size: 14px; color: var(--text); overflow-wrap: anywhere;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .step { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--spacing); margin-top: 16px; }
+    .step h2 { font-size: 17px; color: var(--text); margin-bottom: 8px; }
+    .step p, .step ol { font-size: 15px; }
+    .step .lead { margin-bottom: 10px; }
+    .step .btn { width: 100%; margin-bottom: 12px; }
+    .step ol { margin-left: 22px; }
+    .step ol li + li { margin-top: 6px; }
+    .step .alt { margin-top: 12px; font-size: 14px; color: var(--text-3); }
+    .step .alt + ol { margin-top: 6px; }
+    .path { color: var(--text); font-weight: 600; }
+    .tips { margin-top: 20px; }
+    .tips h2 { font-size: 16px; color: var(--text); margin-bottom: 6px; }
+    .tips ul { margin-left: 20px; font-size: 15px; }
+    .tips li + li { margin-top: 4px; }
+    .actions { margin: 20px 0 0; }
+    .actions .btn { width: 100%; }
+    footer { margin-top: 20px; font-size: 12px; color: var(--text-3); text-align: center; }
+    @media print { .btn { display: none; } }
+  </style>
+</head>
+<body>
+<main class="wrap" data-testid="score-edit-help-page">
+  <header>
+    <h1>Mark up a score</h1>
+    <p class="sub">How to make a score follow the music</p>
+  </header>
+
+  <section class="intro">
+    <p>A score follows the music because of <strong>marks</strong>: numbered points on the page, each tied to a time in the recording. Editing is only needed when a score has no marks or they need fixing. Saving for everyone needs a signed-in editor; anyone else&#39;s edits stay on their own device.</p>
+  </section>
+
+  <section class="step" data-testid="score-edit-help-section-edit">
+    <h2>Start editing</h2>
+    <ol>
+      <li>Open the score (music-note button) and tap the pencil (<strong>&#9998;</strong>) at the upper right of the score. The edit bar appears above it.</li>
+      <li>Tap <strong>Done</strong> when finished.</li>
+      <li>Made a mistake? <strong>Undo</strong> steps back. The <strong>&#8943;</strong> menu holds <strong>Clear all</strong> (deletes every mark), <strong>Set track offset</strong> and the <strong>Reaction</strong> slider.</li>
+      <li>The strip under the bar shows <strong>PREV</strong>, <strong>NOW</strong> and <strong>NEXT</strong>: the marks either side of the playhead, named by their measure label (or <strong>#number</strong>), with the time to each. Tap PREV or NEXT to go there, or tap the time in the middle to pick any timed mark from a list (Escape or a tap outside closes it).</li>
+    </ol>
+  </section>
+
+  <section class="step" data-testid="score-edit-help-section-marks">
+    <h2>Add marks</h2>
+    <p class="lead">Choose what a tap adds, then tap the score where it goes.</p>
+    <ol>
+      <li><strong>+ Timed:</strong> a mark at the playhead&#39;s time. Play the music and tap at the start of each line or bar; the mark lands a little before your tap (the Reaction setting).</li>
+      <li><strong>+ Untimed:</strong> a mark with no time yet. Time it later with <strong>Set to now</strong>.</li>
+      <li><strong>+ EOL:</strong> an end-of-line mark. The sideways Ribbon cuts the line there.</li>
+      <li><strong>+ Note:</strong> a text note. Singers see it when they tap it.</li>
+      <li><strong>+ Jump:</strong> a repeat or skip. It points to a timed mark; with Edit off, tapping it goes to that mark.</li>
+    </ol>
+    <p class="alt">Untimed, EOL, note and jump marks never affect Follow or Prev/Next.</p>
+  </section>
+
+  <section class="step" data-testid="score-edit-help-section-popup">
+    <h2>The mark editor</h2>
+    <p class="lead">Tap a mark to select it. The editor under the strip shows its measure label, which you can type right there, with <strong>-0.1</strong>, <strong>Set to now</strong> and <strong>+0.1</strong>. Selecting a mark does not move the playhead. Tap the mark again, or the arrow at the right, to open the rest, including <strong>Go to</strong>, which moves the playhead to the mark.</p>
+    <ol>
+      <li><strong>Type:</strong> Mark, End of line, Jump or Note.</li>
+      <li><strong>Time:</strong> <strong>-0.1 s</strong> and <strong>+0.1 s</strong> nudge it; <strong>Set to now</strong> sets it to the playhead; <strong>Untime</strong> removes it.</li>
+      <li><strong>Measure label:</strong> a name such as 12. Each label can be used once.</li>
+      <li><strong>Note:</strong> text shown when a singer taps the mark.</li>
+      <li><strong>Delete</strong> removes the mark. Tap the arrow again to close the rest.</li>
+    </ol>
+  </section>
+
+  <section class="step" data-testid="score-edit-help-section-timing">
+    <h2>Timing and moving about</h2>
+    <ol>
+      <li><strong>Skip buttons:</strong> in Edit the transport also has -1s, +1s, -0.1s and +0.1s, beside -5s and +5s, for fine positioning.</li>
+      <li><strong>Set to now:</strong> sets the selected mark to the playhead time, then selects the next mark.</li>
+      <li><strong>Resume follow:</strong> in Edit, dragging the score pauses Follow; tap <strong>Resume follow</strong> at the upper right of the score to bring it back.</li>
+      <li><strong>PREV / NEXT:</strong> in Edit they go exactly to the mark, with no Pre-roll.</li>
+    </ol>
+  </section>
+
+  <section class="step" data-testid="score-edit-help-section-save">
+    <h2>Save, Revert and Keep mine</h2>
+    <ol>
+      <li><strong>Save</strong> sends your marks to Drive for every singer. It appears when you have unsaved edits, the music is paused and you are signed in.</li>
+      <li>If someone saved a newer version first, Save is refused. Tap <strong>Revert</strong> to take the saved marks, or <strong>Keep mine</strong> to save yours over them.</li>
+    </ol>
+  </section>
+
+  <section class="step" data-testid="score-edit-help-section-offset">
+    <h2>Set track offset</h2>
+    <p class="lead">Each voice sits at a different height below the marks. Open the <strong>&#8943;</strong> menu and tap <strong>Set track offset</strong>, choose the track, then tap where that voice&#39;s staff is under a line. Follow then keeps your focus track&#39;s staff in view. Starting playback turns the tool off.</p>
+  </section>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="help.html" data-testid="score-edit-help-back">Back to the guide</a>
+  </div>
+
+  <footer>Practice Mix &middot; score mark-up help</footer>
+</main>
+</body>
+</html>
