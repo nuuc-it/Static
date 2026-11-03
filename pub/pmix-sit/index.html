@@ -2147,10 +2147,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.4.7";
+var STATIC_BUILD_VERSION_ = "1.8.4.8";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-03T01:47:15.769Z";
+var STATIC_BUILD_DATE_ = "2026-11-03T03:04:36.282Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -9137,7 +9137,8 @@ function scoreRibbonPosAll(layout, geo, mark, strip) {
     if (sg.line !== line) return;
     var pg = scorePagePx(geo, mark.page), s = pg.w / pg.ptW;
     var px = mark.x * s - sg.srcX, py = mark.y * s - sg.srcY;
-    if (px < 0 || px > sg.srcW || py < 0 || py > sg.srcH) return;
+    var pyb = sg.panBase ? py + sg.panBase : py; // atc-ihtb: a boxed slice keeps every mark inside its box, wherever the track offset puts the view
+    if (px < 0 || px > sg.srcW || pyb < 0 || pyb > sg.srcH) return;
     out.push({ x: sg.ribbonX + px, y: sy ? SCORE_RIBBON_STRIP_Y : py, seg: si });
   });
   return out;
@@ -9198,8 +9199,8 @@ function scoreRibbonLineY(marks, layout, geo, t) {
 }
 /** The vertical pan offset in the ribbon: not tied to the page's scroll range, so any line can move either way, up to half the view height. */
 /** The vertical pan after dy. maxPan (optional): the tallest boxed slice's pan range, which widens the upper limit; the lower limit stays -viewH / 2 (atc-qucy). */
-function scoreRibbonNudge(offY, dy, viewH, maxPan) {
-  if (typeof maxPan === 'number' && isFinite(maxPan)) return scoreClamp(offY + dy, 0, Math.max(0, maxPan)); // atc-qucy, adr/0018: every line boxed: the pan never goes above the box top
+function scoreRibbonNudge(offY, dy, viewH, maxPan, minPan) {
+  if (typeof maxPan === 'number' && isFinite(maxPan)) return scoreClamp(offY + dy, typeof minPan === 'number' && isFinite(minPan) ? Math.min(0, minPan) : 0, Math.max(0, maxPan)); // atc-qucy, adr/0018: every line boxed: the pan never goes above the box top
   return scoreClamp(offY + dy, -viewH / 2, viewH / 2); // a score with an unboxed line: today's range
 }
 /** atc-qucy: the global pan's upper limit (the tallest box's pan range) when every slice is a boxed one, else null (unboxed lines keep today's range). */
@@ -9207,13 +9208,21 @@ function scoreRibbonPanLimit(layout) {
   var segs = layout && layout.segs;
   if (!segs || !segs.length) return null;
   var m = 0;
-  for (var i = 0; i < segs.length; i++) { if (segs[i].panMax === undefined) return null; if (segs[i].panMax > m) m = segs[i].panMax; }
+  for (var i = 0; i < segs.length; i++) { if (segs[i].panMax === undefined) return null; m = Math.max(m, segs[i].panMax - (segs[i].panBase || 0)); } // atc-ihtb: the track offset shifts each box's range, so the bottom of an up-shifted box is reachable
+  return m;
+}
+/** atc-ihtb: the global pan's lower limit when every slice is boxed (0, or below 0 so a down-shifted box's top is reachable), else null. */
+function scoreRibbonPanMin(layout) {
+  var segs = layout && layout.segs;
+  if (!segs || !segs.length) return null;
+  var m = 0;
+  for (var i = 0; i < segs.length; i++) { if (segs[i].panMax === undefined) return null; m = Math.min(m, -(segs[i].panBase || 0)); }
   return m;
 }
 /** atc-qucy: the pan in force: the stored pan clamped to 0..limit (an old negative or oversize value reads as clamped; the stored value is untouched, so nothing becomes unsaved). */
 function scoreRibbonPanOf(offY, layout) {
   var lim = scoreRibbonPanLimit(layout), p = Number(offY) || 0;
-  return lim === null ? p : scoreClamp(p, 0, lim);
+  return lim === null ? p : scoreClamp(p, scoreRibbonPanMin(layout), lim);
 }
 var SCORE_RIBBON_ANCHOR_X = 0.40; // the position bar's centre (atc-tty9.21)
 var SCORE_RIBBON_BAR_X0 = 0.30, SCORE_RIBBON_BAR_X1 = 0.50;
@@ -9308,7 +9317,7 @@ function scoreRibbonPaintList(view, inp, mp) {
   marks.forEach(function (k, mi) {
     mp.pos[mi].forEach(function (pos, ci) {
       drawn++;
-      var sgm = L.segs[pos.seg], dyp = sgm ? sgm.srcY - scoreRibbonSrcY(sgm, inp.offY) : 0; // atc-qucy: a notation-position mark moves with its slice's clamped pan
+      var sgm = L.segs[pos.seg], dyp = sgm && sgm.panMax !== undefined ? sgm.srcY - scoreRibbonSrcY(sgm, inp.offY) : 0; // atc-qucy: a boxed slice's notation-position mark moves with its clamped pan; an unboxed line draws unpanned (atc-ihtb)
       var px = pos.x - sx, py = strip && scoreRibbonStripMark(k) ? SCORE_RIBBON_STRIP_Y : pos.y + dyp, isSel = edit && k.id === inp.selId;
       if (edit) posMap[ci ? k.id + '@' + ci : k.id] = [Math.round(px), Math.round(py)]; // further copies: id@1, id@2
       if (isSel && !ci) selV = Math.round(px) + ',' + Math.round(py);
@@ -9330,7 +9339,7 @@ function scoreRibbonSegAt(layout, rx) {
 }
 /** A tap at ribbon x (rx) and window y (ry) -> {page, x, y, ptW, ptH} in PDF pt, or null off the ribbon.
  *  only (optional): a slice index; rx is then clamped into that slice, so a drag that began there never maps into a neighbour (atc-tty9.32). */
-function scoreRibbonHit(layout, rx, ry, geo, panY, only) {
+function scoreRibbonHit(layout, rx, ry, geo, panY, only, unboxedZero) { // atc-ihtb: unboxedZero: the default (display) pan; an unboxed line then maps as pan 0
   if (only >= 0 && layout.segs[only]) { var o = layout.segs[only]; rx = scoreClamp(rx, o.ribbonX, o.ribbonX + o.srcW - 0.001); }
   for (var i = 0; i < layout.segs.length; i++) {
     var sg = layout.segs[i];
@@ -9338,7 +9347,7 @@ function scoreRibbonHit(layout, rx, ry, geo, panY, only) {
     if (rx >= sg.ribbonX && rx < sg.ribbonX + sg.srcW) {
       if (ry >= sg.srcH) return null; // below a cropped slice
       var pg = scorePagePx(geo, sg.page), s = pg.ptW / pg.w;
-      return { seg: i, page: sg.page, x: (sg.srcX + rx - sg.ribbonX) * s, y: (scoreRibbonSrcY(sg, panY) + ry) * s, ptW: pg.ptW, ptH: pg.ptH };
+      return { seg: i, page: sg.page, x: (sg.srcX + rx - sg.ribbonX) * s, y: (scoreRibbonSrcY(sg, unboxedZero && sg.panMax === undefined ? 0 : panY) + ry) * s, ptW: pg.ptW, ptH: pg.ptH };
     }
   }
   return null;
@@ -11862,7 +11871,7 @@ function initScorePanel_() {
     var L = layout || S.rv.layout;
     if (!L) return null;
     var r = ribbonCv.getBoundingClientRect();
-    return scoreRibbonHit(L, (sx == null ? S.rv.sx : sx) + cx - r.left, cy - r.top, pageGeo(true), panY == null ? ribbonPan() : panY, only); // atc-qucy: marks are drawn with their slice's clamped pan, so a hit maps through the same pan. atc-elfg.3: a drag passes the pan, so the stored position is the PDF point under the finger
+    return scoreRibbonHit(L, (sx == null ? S.rv.sx : sx) + cx - r.left, cy - r.top, pageGeo(true), panY == null ? ribbonPan() : panY, only, panY == null); // atc-qucy: marks are drawn with their slice's clamped pan, so a hit maps through the same pan. atc-elfg.3: a drag passes the pan, so the stored position is the PDF point under the finger
   }
   /** atc-2ld9: while the strip is on (playing), the timed mark drawn under client point (cx, cy) in the ribbon's top strip, else null; pdfHitMarks() are the marks that hit by their notation position. */
   function ribbonStripHitAt(cx, cy, layout, sx) {
@@ -12028,7 +12037,7 @@ function initScorePanel_() {
   /** A vertical-only pan while playing: keep Follow, remember how far from the anchor the user wants the playing line. */
   function nudgeOffset(dy) {
     if (S.ribbonShown) {
-      S.offY = scoreRibbonNudge(ribbonPan(), dy, pageGeo().H, scoreRibbonPanLimit(S.rv.layout)); syncUi(); return;
+      S.offY = scoreRibbonNudge(ribbonPan(), dy, pageGeo().H, scoreRibbonPanLimit(S.rv.layout), scoreRibbonPanMin(S.rv.layout)); syncUi(); return;
     } // the ribbon is not bound to the page's scroll range
     var f = followTarget();
     var y = Math.max(0, Math.min(f.geo.maxY, f.tv.y + S.offY + dy));
@@ -12556,7 +12565,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceTimed, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
+  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceTimed, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
