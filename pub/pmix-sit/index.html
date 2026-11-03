@@ -452,6 +452,12 @@ body {
 .time-section.score-marks-on { padding-top: 14px; }
 .score-seek-marks { position: absolute; left: 0; right: 0; bottom: 100%; height: 14px; pointer-events: none; }
 .score-seek-marks[hidden] { display: none; }
+.score-fix-window { position: absolute; top: 50%; height: 12px; margin-top: -6px; background: rgba(180, 83, 9, .32); border: 1px solid #b45309; border-radius: 3px; pointer-events: none; z-index: 1; } /* atc-rlep.3 J5b: the fix window on the scrub bar */
+.score-fix-est { position: absolute; top: 50%; height: 26px; margin-top: -13px; border-left: 2px dashed #b45309; pointer-events: none; z-index: 1; } /* the estimate guide: a dashed line at the estimated time */
+.score-fix-est > span { position: absolute; top: 100%; left: 0; transform: translateX(-50%); font-size: 10px; line-height: 12px; white-space: nowrap; color: #b45309; font-weight: 700; }
+.score-fix-window[hidden], .score-fix-est[hidden], .score-loop-window[hidden], .score-fix-cap[hidden] { display: none !important; }
+.score-loop-window { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-2); }
+.score-fix-cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); min-height: 18px; }
 .score-seek-marks > span { position: absolute; bottom: 1px; transform: translateX(-50%); font-size: 10px; line-height: 12px; color: var(--text-2); pointer-events: none; }
 .score-seek-marks > span[data-current="true"] { color: #fff; background: #e11d48; border-radius: 6px; padding: 0 4px; font-weight: 700; }
 .score-toolrows { display: block; }
@@ -1584,6 +1590,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
             <button id="score-skip" data-testid="score-skip" class="btn score-tbtn" title="Next target without setting a time">Skip</button>
           </div>
           <div class="score-timing-cap"><span id="score-tn-caption" data-testid="score-tn-caption"></span><span id="score-in" data-testid="score-in"></span></div>
+          <div id="score-fix-cap" data-testid="score-fix-cap" class="score-fix-cap" hidden><span id="score-fix-caption" data-testid="score-fix-caption"></span><label id="score-loop-window" data-testid="score-loop-window" class="score-loop-window" hidden><input type="checkbox" id="score-loop-window-chk" data-testid="score-loop-window-chk"> Loop window</label></div>
         </div>
         <div class="transport-controls">
           <button id="rewind-btn" data-testid="transport-rewind" class="btn btn-transport" title="Rewind">⏮</button>
@@ -1614,6 +1621,8 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <span id="current-time" data-testid="time-display" class="time-display">0:00</span>
           <div class="seek-stack">
             <div id="score-seek-marks" data-testid="score-seek-marks" class="score-seek-marks" hidden></div>
+            <div id="score-fix-window" data-testid="score-fix-window" class="score-fix-window" hidden></div>
+            <div id="score-fix-est" data-testid="score-fix-est" class="score-fix-est" hidden><span id="score-fix-est-label" data-testid="score-fix-est-label"></span></div>
             <input
               type="range"
               id="seek-bar"
@@ -2191,10 +2200,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.4.18";
+var STATIC_BUILD_VERSION_ = "1.8.4.19";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-03T12:55:49.440Z";
+var STATIC_BUILD_DATE_ = "2026-11-03T15:07:55.112Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -9928,6 +9937,45 @@ function scoreFlagTitle(need, order) {
 }
 /** The Sync chip: the counts, or "All timed" when nothing is flagged. */
 function scoreSyncChipText(need, order) { return scoreFlagTitle(need, order) || 'All timed'; }
+/** atc-rlep.3 J5b (score-editing.md section 5): m:ss.s for the window texts. */
+function scoreFixFmt_(t) { var m = Math.floor(t / 60), sec = t - m * 60; return m + ':' + (sec < 10 ? '0' : '') + sec.toFixed(1); }
+/** The fix window of mark `id`: {lo, hi, loId, hiId}. lo = time of the previous OK mark in reading order (0 when none), hi = time of the next OK mark, else the
+ *  track end, else Infinity (end unknown). States come from scoreValidate; flagged neighbours are skipped. The interval is open. null for a non-'mark' id. */
+function scoreFixWindow(marks, states, id, trackEndT) {
+  var order = scoreSyncOrder_(marks, scoreMarkNumbers(marks)), at = -1, i;
+  for (i = 0; i < order.length; i++) if (order[i].id === id) at = i;
+  if (at < 0) return null;
+  var out = { lo: 0, hi: trackEndT > 0 ? trackEndT : Infinity, loId: null, hiId: null };
+  for (i = at - 1; i >= 0; i--) if (states[order[i].id] === 'ok') { out.lo = order[i].t; out.loId = order[i].id; break; }
+  for (i = at + 1; i < order.length; i++) if (states[order[i].id] === 'ok') { out.hi = order[i].t; out.hiId = order[i].id; break; }
+  return out;
+}
+/** Whether a time is inside the open window (no window accepts anything). */
+function scoreFixAccept(t, win) { return !win || (t > win.lo && t < win.hi); }
+/** The refusal text: "m5 must be between 1:00.0 (m4) and 1:05.0 (m6)"; (start) / (end) when there is no neighbour. */
+function scoreFixMessage(win, id, nums) {
+  var nm = function (k) { return nums && nums[k] ? 'm' + nums[k] : 'jump'; };
+  var a = scoreFixFmt_(win.lo) + ' (' + (win.loId ? nm(win.loId) : 'start') + ')';
+  if (!isFinite(win.hi)) return nm(id) + ' must be after ' + a;
+  return nm(id) + ' must be between ' + a + ' and ' + scoreFixFmt_(win.hi) + ' (' + (win.hiId ? nm(win.hiId) : 'end') + ')';
+}
+/** The caption line: "Window 1:00.0 \u2013 1:05.0", plus " \u00B7 started 3 s early" after a pre-roll. */
+function scoreFixCaption(win, preRolled) {
+  return 'Window ' + scoreFixFmt_(win.lo) + ' \u2013 ' + (isFinite(win.hi) ? scoreFixFmt_(win.hi) : 'end') + (preRolled ? ' \u00B7 started 3 s early' : '');
+}
+/** The estimate label: "\u2248 1:02". */
+function scoreEstimateLabel(t) { var r = Math.round(Math.max(0, t)), m = Math.floor(r / 60), sec = r - m * 60; return '\u2248 ' + m + ':' + (sec < 10 ? '0' : '') + sec; }
+/** Pre-roll: the time to seek to (window start less 3 s of listening, never below 0) when the playhead is already past the window end; else null. */
+function scoreFixPreroll(nowT, win, speed) {
+  if (!win || !isFinite(win.hi) || !(nowT > win.hi)) return null;
+  return Math.max(0, win.lo - 3 * (speed || 1));
+}
+/** Loop window: the time to seek back to when the playhead has reached the window end or is before the pre-roll start; else null. */
+function scoreFixLoopStep(nowT, win, speed) {
+  if (!win || !isFinite(win.hi)) return null;
+  var from = Math.max(0, win.lo - 3 * (speed || 1));
+  return nowT >= win.hi || nowT < from - 0.05 ? from : null;
+}
 /** The countdown: "in N s" = (t - now) / speed for a timed target, "in ~N s" for an estimate; never negative. */
 function scoreSyncCountdown(t, now, speed, estimate) {
   var d = Math.max(0, Math.round((t - now) / (speed || 1)));
@@ -10530,6 +10578,10 @@ var SCORE_UI = {
   'score-nudge-plus': function (s) { return s.mode === 'sync' && !!s.ready && !!s.nudge; },
   'score-pin': function (s) { return s.mode === 'sync' && !!s.ready && !!s.pinned; },
   'score-sync-follow': function (s) { return s.mode === 'sync' && !!s.open; },
+  'score-fix-cap': function (s) { return s.mode === 'sync' && !!s.ready && !!s.fixWin; }, // atc-rlep.3 J5b: the window caption row, the band, the estimate guide and the Loop window toggle
+  'score-fix-window': function (s) { return s.mode === 'sync' && !!s.ready && !!s.fixWin; },
+  'score-fix-est': function (s) { return s.mode === 'sync' && !!s.ready && !!s.fixEst; },
+  'score-loop-window': function (s) { return s.mode === 'sync' && !!s.ready && !!s.fixWin; },
   'score-clear-time': function (s) { return !!s.selected && !!s.timed && s.kind !== 'eol'; },
   'score-box-all': function (s) { return !!s.boxAll; },
   'score-jump-warn': function (s, d) { return s.brokenJumps > 0 && d.edit && !!s.ready && !s.offsetMode; },
@@ -11568,6 +11620,23 @@ function initScorePanel_() {
     var nums = markNums(), vn = validNow(), fl = scoreSyncOrder_(S.marks, nums).filter(function (k) { return vn.v[k.id] !== 'ok'; }).map(function (k) { return k.id; });
     return scoreSyncTarget(S.marks, sm ? sm.id : null, scoreNowT(), S.skipped, fl, nums);
   }
+  /** atc-rlep.3 J5b: the fix window of mark `id` (scoreFixWindow over the validated states); null for a jump. */
+  function fixWinFor(id) { return scoreFixWindow(S.marks, validNow().v, id, trackEndT()); }
+  /** The window of the timing button's current target: {id, win, r}, null when there is none (Layout, no marks, a jump target). */
+  function fixNow() {
+    var r = syncTargetNow(), m = r && r.id ? markById(r.id) : null;
+    if (!m || m.kind !== 'mark') return null;
+    var w = fixWinFor(m.id);
+    return w ? { id: m.id, win: w, r: r } : null;
+  }
+  /** A target just became current (a timing tap, Skip or the chip): when the playhead is already past its window, play from 3 s before the window start; otherwise carry on. A tap on a mark never comes here. */
+  function enterTarget() {
+    S.preId = null;
+    var f = fixNow();
+    if (!f) return;
+    var to = scoreFixPreroll(scoreNowT(), f.win, rate());
+    if (to !== null) { jumpTo(to); S.preId = f.id; }
+  }
   function nudgeMark() { var m = S.nudgeId ? markById(S.nudgeId) : null; return m && typeof m.t === 'number' ? m : null; }
   function pinMark() { if (!syncOn() || S.unpinned || S.offsetMode) return null; var r = syncTargetNow(); return r && r.id ? markById(r.id) : null; }
   /** A user pan or scroll of the view unpins it (the pill and Follow button tell how to go back). */
@@ -11824,7 +11893,7 @@ function initScorePanel_() {
       ready: isReady(), open: isOpen(), mode: S.edit ? S.sub : 'play', editor: isEditor(), signed: isSignedIn_(), readOnly: !!S.readOnly,
       playing: isPlayingNow(), hasT: scoreTimed(S.marks).length > 0, ribbon: !!S.ribbon,
       selected: !!m, kind: m ? (m.kind || 'mark') : '', timed: !!m && typeof m.t === 'number', pop: !!S.pop,
-      offsetMode: !!S.offsetMode, toast: !!S.toast, brokenJumps: scoreBrokenJumps(S.marks).length, fieldMsg: !!$('score-field-msg').textContent, misplaced: !!misplacedText(), boxAll: !!S.boxAll, nudge: syncOn() && !!nudgeMark(), pinned: !!pinMark(),
+      offsetMode: !!S.offsetMode, toast: !!S.toast, brokenJumps: scoreBrokenJumps(S.marks).length, fieldMsg: !!$('score-field-msg').textContent, misplaced: !!misplacedText(), boxAll: !!S.boxAll, nudge: syncOn() && !!nudgeMark(), pinned: !!pinMark(), fixWin: !!S.fixShown, fixEst: !!S.fixEstShown,
       saveState: sv.st, diffs: sv.n, hasShared: sv.hasShared, revertable: sv.revertable, stale: sv.stale, saving: !!S.saving, msg: S.saveMsg || ''
     };
   }
@@ -11936,11 +12005,29 @@ function initScorePanel_() {
     }
     setText($('score-in'), cd);
     var vn = validNow(); setText($('score-chip-text'), scoreSyncChipText(vn.need, vn.order));
+    syncFix(m);
     var pm = pinMark();
     setText($('score-pin'), pm ? 'Pinned: ' + (markNums()[pm.id] ? 'm' + markNums()[pm.id] : 'jump') : '');
     var sfEl = $('score-sync-follow'), fp = String(!pm); if (sfEl.getAttribute('aria-pressed') !== fp) sfEl.setAttribute('aria-pressed', fp);
     var pinNow = !!pm; if (pinNow !== S.pinShown) { S.pinShown = pinNow; applyScoreUi(); }
     var nn = !!nudgeMark(); if (nn !== S.nudgeShown) { S.nudgeShown = nn; applyScoreUi(); }
+  }
+  /** atc-rlep.3 J5b: the window band, caption, Loop window and estimate guide for target m (visibility goes through SCORE_UI; this sets text and geometry only). */
+  function syncFix(m) {
+    var win = m && m.kind === 'mark' ? fixWinFor(m.id) : null, bar = $('seek-bar'), total = parseFloat(bar.max), sp = rate(), est = null;
+    if (S.fixMsgId && (!m || S.fixMsgId !== m.id)) { S.fixMsgId = null; $('score-field-msg').textContent = ''; applyScoreUi(); }
+    if (win) {
+      setText($('score-fix-caption'), scoreFixCaption(win, S.preId === m.id));
+      var a = scoreSeekFrac(win.lo, sp, total), b = isFinite(win.hi) ? scoreSeekFrac(win.hi, sp, total) : 1, w = $('score-fix-window');
+      w.style.left = 'calc(7px + (100% - 14px) * ' + a + ')'; w.style.width = 'calc((100% - 14px) * ' + Math.max(0, b - a) + ')';
+      if (typeof m.t !== 'number' && S.pages.length) {
+        var es = estimateLayout(), et = scoreMarkEstimate(es.L, es.geo, S.marks, m.id);
+        if (et !== null) { est = et; var g = $('score-fix-est'); g.style.left = 'calc(7px + (100% - 14px) * ' + scoreSeekFrac(et, sp, total) + ')'; setText($('score-fix-est-label'), scoreEstimateLabel(et)); }
+      }
+      if (S.loopWin && isPlayingNow()) { var back = scoreFixLoopStep(scoreNowT(), win, sp); if (back !== null) jumpTo(back); }
+    }
+    var cb = $('score-loop-window-chk'); if (cb.checked !== !!S.loopWin) cb.checked = !!S.loopWin;
+    if (!!win !== !!S.fixShown || (est !== null) !== !!S.fixEstShown) { S.fixShown = !!win; S.fixEstShown = est !== null; applyScoreUi(); }
   }
   // ---- Save to Drive (bd atc-ore.7 AC 9, 10, 13, 14) ----
   function pdfModifiedOf(id) { for (var i = 0; i < S.pdfs.length; i++) if (S.pdfs[i].id === id) return S.pdfs[i].modified || 0; return 0; }
@@ -12273,6 +12360,10 @@ function initScorePanel_() {
           ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 9px sans-serif'; ctx.fillText('!', px + 8, py + dy0 - 8);
         }
         if (timed) { ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(String(nums[k.id] || mi + 1), px, py + dy0); }
+        if (fst === 'order' && timed && !lbl) { // atc-rlep.3 J5b: the out-of-order time, struck through
+          var ots = fmtT(k.t), otw; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; otw = ctx.measureText(ots).width;
+          ctx.fillStyle = '#dc2626'; ctx.fillText(ots, px, py + dy0 + 20); ctx.fillRect(px - otw / 2, py + dy0 + 19.5, otw, 1);
+        }
       }
       ctx.font = 'bold 12px sans-serif';
       [k.measure, k.note ? scoreNoteShort(k.note) : ''].forEach(function (txt, j) {
@@ -12962,8 +13053,16 @@ function initScorePanel_() {
     if (!m) return;
     var setT = m.kind === 'jump' ? trackNow() : scoreNowT(); // atc-tty9.34: a jump keeps audio time, a mark its first-pass time
     var tt = scoreAddTime(setT, isPlayingNow(), S.reaction, rate());
+    var fw = m.kind === 'mark' ? fixWinFor(m.id) : null;
+    if (fw && !scoreFixAccept(tt, fw)) { // atc-rlep.3 J5b: outside the open window the mark stays as it was and the queue does not advance
+      $('score-field-msg').textContent = scoreFixMessage(fw, m.id, markNums()); S.fieldMsgId = m.id; S.fixMsgId = m.id;
+      syncUi();
+      return;
+    }
+    S.fixMsgId = null; $('score-field-msg').textContent = '';
     S.selId = null; S.lastSelId = null; S.nudgeId = m.id; S.unpinned = false; if (r.wrapped) S.skipped = [];
     commit(scoreSetMarkTime(S.marks, m.id, tt, pageSizes()).marks, true);
+    enterTarget();
   });
   $('score-skip').addEventListener('click', function () {
     var r = syncTargetNow();
@@ -12972,7 +13071,9 @@ function initScorePanel_() {
     S.skipped = S.skipped.concat([r.id]);
     S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.unpinned = false;
     syncUi();
+    enterTarget();
   });
+  $('score-loop-window-chk').addEventListener('change', function () { S.loopWin = $('score-loop-window-chk').checked; syncUi(); });
   function syncFollowGo() { // the pill and the Follow button: stop pinning, follow the cursor again
     S.unpinned = true; S.rv.hold = null; S.rv.glide = null; S.rv.sx = null; S.rv.selAt = S.selId;
     if (!S.ribbonShown) resumeFollow(); else syncUi();
@@ -12983,6 +13084,7 @@ function initScorePanel_() {
     if (!syncOn() || e.target.closest('select')) return;
     S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.skipped = []; S.unpinned = false;
     syncUi();
+    enterTarget();
   });
   $('score-edit-mark').addEventListener('click', function () { if (selMark()) { S.pop = !S.pop; syncUi(); } }); // atc-ore.33: S.pop = the mark editor is expanded
   $('score-pop-type').addEventListener('change', function () { // atc-tty9.14 AC 1, 4: one undo step per conversion
@@ -13097,7 +13199,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagTitle, scoreSyncChipText, scoreSyncFlagged, scoreSyncTarget, scoreSyncButtonText, scoreSyncCaption, scoreSyncCountdown, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
+  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagTitle, scoreFixWindow, scoreFixAccept, scoreFixMessage, scoreFixCaption, scoreEstimateLabel, scoreFixPreroll, scoreFixLoopStep, scoreSyncChipText, scoreSyncFlagged, scoreSyncTarget, scoreSyncButtonText, scoreSyncCaption, scoreSyncCountdown, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
