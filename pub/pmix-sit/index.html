@@ -455,9 +455,26 @@ body {
 .score-seek-marks > span { position: absolute; bottom: 1px; transform: translateX(-50%); font-size: 10px; line-height: 12px; color: var(--text-2); pointer-events: none; }
 .score-seek-marks > span[data-current="true"] { color: #fff; background: #e11d48; border-radius: 6px; padding: 0 4px; font-weight: 700; }
 .score-toolrows { display: block; }
-.score-panel [hidden] { display: none; }
+.score-panel [hidden], .skip-fine[hidden], #menu-mode[hidden] { display: none !important; } /* atc-rlep.1 J1c: SCORE_UI sets hidden on its ids */
 /* atc-ore.17: play mode (playing, Edit off) keeps only the previous / next mark buttons in the header */
-.score-panel[data-play="on"] .score-bar, .score-panel[data-play="on"] #score-edit-toggle { display: none; }
+/* atc-rlep.1: Play shows no edit controls; the Edit header drops the title, page and zoom controls */
+.score-panel[data-edit="on"] .score-bar #score-choose { display: none; } /* the only header control not in SCORE_UI: its own visibility is data-driven (two or more PDFs) */
+.score-subswitch { display: inline-flex; gap: 0; margin-right: auto; }
+.score-subswitch .score-tbtn { min-height: 36px; border-radius: 0; }
+.score-subswitch .score-tbtn:first-child { border-radius: 8px 0 0 8px; }
+.score-subswitch .score-tbtn:last-child { border-radius: 0 8px 8px 0; }
+.score-subswitch .score-tbtn[aria-pressed="true"] { background: #b45309; color: #fff; border-color: #b45309; font-weight: 600; }
+.score-chip { display: inline-flex; align-items: center; gap: 4px; min-width: 0; font-size: 12px; font-weight: 600; }
+.score-chip select { height: 38px; font-size: 12px; padding: 0 2px; min-width: 0; }
+.score-toast { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(30,30,30,.92); color: #fff; border-radius: 8px; font-size: 13px; }
+.score-toast { pointer-events: none; }
+.score-toast .score-tbtn { pointer-events: auto; }
+.score-toast span { flex: 1 1 auto; }
+.score-toast .score-tbtn { min-height: 32px; min-width: 32px; }
+.menu-mode { flex-direction: column; align-items: stretch; gap: 4px; }
+.menu-mode-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 4px; min-height: 44px; }
+.menu-mode-row small { display: block; color: var(--text-2); font-size: 12px; }
+.menu-mode-row input:disabled + span { opacity: .5; }
 .score-scroller { flex: 1; min-height: 0; overflow: auto; background: #3a3a3a; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .score-strip { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px; width: max-content; min-width: 100%; box-sizing: border-box; }
 .score-ribbon-anchor { position: sticky; top: 0; left: 0; width: 0; height: 0; z-index: 3; }
@@ -519,11 +536,8 @@ body {
 .score-mark.lbl .pill, .score-mark.lbl .npill { bottom: auto; top: 50%; margin: 0; transform: translate(-50%, -50%); }
 .score-mark.lbl .pill + .npill { transform: translate(calc(-50% + 30px), -50%); }
 .score-panel[data-edit="on"] .score-mark.lbl .dot { display: flex; position: absolute; left: 50%; bottom: calc(50% + 11px); transform: translateX(-50%); }
-#score-place { height: 38px; font-size: 12px; padding: 0 2px; min-width: 0; }
 /* atc-ore.33: edit bar, position strip and the docked mark editor sit above the score and push it down; nothing overlays the transport */
 .score-view { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.score-corner { position: absolute; top: 6px; right: 16px; z-index: 5; display: flex; gap: 6px; align-items: center; }
-.score-corner .score-tbtn { min-height: 36px; min-width: 40px; box-shadow: 0 1px 6px rgba(0,0,0,.5); }
 .score-editbar { flex-wrap: nowrap; gap: 8px; padding: 6px 8px; border-left: 3px solid #b45309; min-height: 48px; }
 .score-editbar .score-tbtn { min-height: 38px; flex-direction: row; white-space: nowrap; }
 .score-done { background: #b45309; color: #fff; border-color: #b45309; font-weight: 600; }
@@ -559,7 +573,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 .score-panel[data-play="on"] .score-pos-cell .nowT { font-size: 16px; }
 .score-panel[data-play="on"] .score-pos-cell.next { justify-content: flex-end; }
 .score-editor { padding: 6px 8px; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); border-left: 3px solid #b45309; display: flex; flex-direction: column; gap: 4px; }
-.score-ed-hint { color: var(--text-2); font-size: 12.5px; min-height: 34px; display: flex; align-items: center; }
+.score-editor:not([hidden]) { min-height: 46px; } /* atc-rlep.1: the old hint row kept this height, so selecting a mark does not resize the score */
 .score-ed-row { display: flex; align-items: center; gap: 4px; }
 .score-ed-row .score-tbtn { min-height: 38px; min-width: 38px; padding: 0 6px; font-size: 12px; flex: 0 0 auto; }
 .score-ed-row .score-primary { background: #b45309; color: #fff; border-color: #b45309; font-weight: 700; padding: 0 8px; }
@@ -605,8 +619,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
   border-radius: 10px; font-size: 15px; font-weight: 700; font-family: inherit;
 }
 
-.skip-fine { display: none; padding: 0 6px; font-size: 14px; } /* atc-tty9.39: fine skips show only while the score is in Edit */
-#playback-page.score-edit .skip-fine { display: inline-block; }
+.skip-fine { display: inline-block; padding: 0 6px; font-size: 14px; } /* atc-tty9.39: fine skips show only while the score is in Edit */
 
 .btn-transport:hover:not(:disabled) {
   background: var(--surface-3); color: var(--text); border-color: var(--text-3);
@@ -1438,8 +1451,13 @@ li > .schedule-cal-wrap { margin-left: 8px; }
 
       <!-- Score panel (bd atc-ore.3): PDF.js strip at the top of the playback page; replaces Drive's preview here -->
       <section id="score-panel" data-testid="score-panel" class="score-panel hidden" aria-label="Score" data-state="closed" data-zoom="1" data-pinching="false">
-        <div class="score-bar">
+        <div id="score-bar" class="score-bar">
           <button id="score-choose" data-testid="score-choose" class="btn score-btn" aria-label="Choose another PDF" title="Choose another PDF" hidden>&#9776;</button>
+          <button id="score-edit-done" data-testid="score-edit-done" class="btn score-tbtn score-done score-edit-only" title="Back to Play" hidden>&#10003; Done</button>
+          <span id="score-subswitch" class="score-subswitch score-edit-only" role="group" aria-label="Edit mode" hidden>
+            <button id="score-sub-layout" data-testid="score-sub-layout" class="btn score-tbtn" aria-pressed="true" title="Lay out lines, boxes and labels">Layout</button>
+            <button id="score-sub-sync" data-testid="score-sub-sync" class="btn score-tbtn" aria-pressed="false" title="Time the marks to the music">Sync</button>
+          </span>
           <a id="score-title" data-testid="score-title" class="score-title" target="_blank" rel="noopener" title="Open in Google Drive"></a>
           <button id="score-page-up" data-testid="score-page-up" class="btn score-btn" aria-label="Previous page" title="Previous page">&#9650;</button>
           <span id="score-page-label" data-testid="score-page-label" class="score-label"></span>
@@ -1453,13 +1471,17 @@ li > .schedule-cal-wrap { margin-left: 8px; }
         <div id="score-toolrows" class="score-toolrows" hidden>
         <!-- atc-ore.33: edit bar (Edit on) -> position strip -> docked mark editor; save/offset bars follow -->
         <div id="score-tools" data-testid="score-tools" class="score-tools score-editbar" hidden>
-          <button id="score-edit-done" data-testid="score-edit-done" class="btn score-tbtn score-done" title="Leave Edit">&#10003; Done</button>
-          <select id="score-place" data-testid="score-place" class="score-tbtn" aria-label="What a tap adds" title="What a tap on the score adds">
-            <option value="timed">+ Timed</option><option value="untimed">+ Untimed</option><option value="jump">+ Jump</option><option value="note">+ Note</option></select>
           <button id="score-undo" data-testid="score-undo" class="btn score-tbtn" title="Undo the last change" disabled>&#8630; Undo 0</button>
+          <button id="score-save" data-testid="score-save" class="btn score-tbtn score-primary" title="Save these marks to Drive for every singer">Save</button>
+          <span id="score-chip" data-testid="score-chip" class="score-chip">
+            <span id="score-chip-text" data-testid="score-chip-text"></span>
+            <select id="score-chip-add" data-testid="score-chip-add" class="score-tbtn" aria-label="What a tap adds" title="What a tap on the score adds (interim: replaced by the Layout chip)">
+              <option value="timed">Timed</option><option value="untimed">Mark</option><option value="jump">Jump</option><option value="note">Note</option></select>
+          </span>
           <span class="score-menuwrap">
             <button id="score-edit-more" data-testid="score-edit-more" class="btn score-tbtn" aria-haspopup="true" aria-expanded="false" aria-label="More edit tools" title="Clear all, track offset, reaction">&#8943;</button>
             <div id="score-more-menu" data-testid="score-more-menu" class="score-more-menu" role="menu" hidden>
+              <button id="score-revert-more" data-testid="score-revert-more" class="btn score-tbtn" role="menuitem" title="Replace this device's marks with the saved ones">Revert to saved</button>
               <button id="score-clear" data-testid="score-clear" class="btn score-tbtn" role="menuitem" title="Delete every mark on this score">Clear all</button>
               <button id="score-offset-tool" data-testid="score-offset-tool" class="btn score-tbtn" role="menuitem" aria-pressed="false" title="Set where a voice's staff sits below the marks">Set track offset</button>
               <label id="score-react" class="score-react" title="How far before the tap a new mark is placed while playing">Reaction
@@ -1478,7 +1500,6 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <div id="score-pos-bar" data-testid="score-pos-bar" class="score-pos-bar"><span class="tk l"></span><span class="tk r"></span><span id="score-pos-needle" class="nd"></span></div>
         </div>
         <div id="score-editor" data-testid="score-editor" class="score-editor" hidden>
-          <div id="score-ed-hint" data-testid="score-ed-hint" class="score-ed-hint"></div>
           <div id="score-ed-sel" data-testid="score-ed-sel" class="score-ed-sel" hidden>
             <div class="score-ed-row">
               <span id="score-ed-badge" data-testid="score-ed-badge" class="score-badge"></span>
@@ -1495,7 +1516,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
               <span id="score-sel-label" data-testid="score-sel-label" class="score-sel-label"></span>
               <label class="score-fld">Type <select id="score-pop-type" data-testid="score-pop-type" aria-label="Mark type" title="What this mark is">
                 <option value="mark">Mark</option><option value="eol">End of line</option><option value="jump">Jump</option><option value="note">Note</option></select></label>
-              <label class="score-fld score-fld-wide">Note <input id="score-note" data-testid="score-note" type="text" maxlength="500" placeholder="Note" aria-label="Note" title="Note shown when a singer taps the mark; empty clears it"></label>
+              <label id="score-note-fld" class="score-fld score-fld-wide">Note <input id="score-note" data-testid="score-note" type="text" maxlength="500" placeholder="Note" aria-label="Note" title="Note shown when a singer taps the mark; empty clears it"></label>
               <select id="score-jump-target" data-testid="score-jump-target" class="score-tbtn" aria-label="Jump target" title="The timed mark this jump goes to" hidden></select>
               <button id="score-box-all" data-testid="score-box-all" class="btn score-tbtn" title="Give every line's box this box's width and height" hidden>Size all boxes</button>
               <button id="score-goto" data-testid="score-goto" class="btn score-tbtn" title="Move the cursor to this mark">Go to</button>
@@ -1510,10 +1531,10 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <select id="score-offset-track" data-testid="score-offset-track" aria-label="Track whose staff you tap"></select>
           <span id="score-offset-msg" data-testid="score-offset-msg" class="score-sel-label" style="flex:1 1 auto">Tap where this voice's staff is under a line.</span>
         </div>
-        <div id="score-savebar" data-testid="score-savebar" class="score-tools score-selbar" hidden>
-          <button id="score-save" data-testid="score-save" class="btn score-tbtn" title="Save these marks to Drive for every singer">Save</button>
+        <div id="score-notice" data-testid="score-notice" class="score-tools score-selbar score-notice" hidden>
           <span id="score-save-state" data-testid="score-save-state" class="score-sel-label" style="flex:0 1 auto"></span>
           <button id="score-use-saved" data-testid="score-use-saved" class="btn score-tbtn" title="Replace this device's marks with the saved ones" hidden>Revert</button>
+          <button id="score-notice-save" data-testid="score-notice-save" class="btn score-tbtn" title="Save these marks to Drive for every singer" hidden>Save</button>
           <button id="score-keep-mine" data-testid="score-keep-mine" class="btn score-tbtn" title="Keep this device's marks and save over the newer file" hidden>Keep mine</button>
           <span id="score-save-msg" data-testid="score-save-msg" class="score-sel-label" role="status"></span>
         </div>
@@ -1526,11 +1547,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <span id="score-progress-text"></span>
         </div>
         <div class="score-view">
-        <div id="score-corner" data-testid="score-corner" class="score-corner" hidden>
-          <button id="score-cursor-here" data-testid="score-cursor-here" class="btn score-tbtn score-resume" title="Move the cursor to this point in the score" hidden>Cursor here</button>
-          <button id="score-resume-follow" data-testid="score-resume-follow" class="btn score-tbtn score-resume" hidden>Resume follow</button>
-          <button id="score-edit-toggle" data-testid="score-edit-toggle" class="btn score-tbtn" aria-pressed="false" aria-label="Edit marks" title="Edit the marks that make the score follow the music">&#9998;</button>
-        </div>
+        <div id="score-toast" data-testid="score-toast" class="score-toast" role="status" hidden><span>Tap a line to add a mark. Tap a mark to edit it.</span><button id="score-toast-close" data-testid="score-toast-close" class="btn score-tbtn" aria-label="Dismiss" title="Dismiss">&#10005;</button></div>
         <div id="score-scroller" data-testid="score-scroller" class="score-scroller" hidden>
           <div class="score-ribbon-anchor"><canvas id="score-ribbon" data-testid="score-ribbon" class="score-ribbon" hidden></canvas><div id="score-perf" data-testid="score-perf" class="score-perf" hidden></div><button id="score-ribbon-follow" data-testid="score-ribbon-follow" class="btn score-ribbon-follow" aria-label="Follow the cursor" title="Follow the cursor" hidden>Follow</button></div>
           <div id="score-strip" data-testid="score-strip" class="score-strip"></div>
@@ -1544,11 +1561,11 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="rewind-btn" data-testid="transport-rewind" class="btn btn-transport" title="Rewind">⏮</button>
           <button id="return-btn" data-testid="transport-return" class="btn btn-transport" title="Back to where play last started" disabled>|◀</button>
           <button id="skip-back-btn" data-testid="transport-skip-back" class="btn btn-transport" title="Skip back 5s">-5s</button>
-          <button data-testid="transport-skip-back-1" data-skip="-1" class="btn btn-transport skip-fine" title="Skip back 1s">-1s</button>
-          <button data-testid="transport-skip-back-01" data-skip="-0.1" class="btn btn-transport skip-fine" title="Skip back 0.1s">-0.1s</button>
+          <button data-testid="transport-skip-back-1" data-skip="-1" class="btn btn-transport skip-fine" title="Skip back 1s" id="skip-b1" hidden>-1s</button>
+          <button data-testid="transport-skip-back-01" data-skip="-0.1" class="btn btn-transport skip-fine" title="Skip back 0.1s" id="skip-b01" hidden>-0.1s</button>
           <button id="play-btn" data-testid="transport-play" class="btn btn-transport" title="Play" data-playing="false">▶</button>
-          <button data-testid="transport-skip-fwd-01" data-skip="0.1" class="btn btn-transport skip-fine" title="Skip forward 0.1s">+0.1s</button>
-          <button data-testid="transport-skip-fwd-1" data-skip="1" class="btn btn-transport skip-fine" title="Skip forward 1s">+1s</button>
+          <button data-testid="transport-skip-fwd-01" data-skip="0.1" class="btn btn-transport skip-fine" title="Skip forward 0.1s" id="skip-f01" hidden>+0.1s</button>
+          <button data-testid="transport-skip-fwd-1" data-skip="1" class="btn btn-transport skip-fine" title="Skip forward 1s" id="skip-f1" hidden>+1s</button>
           <button id="skip-fwd-btn" data-testid="transport-skip-forward" class="btn btn-transport" title="Skip forward 5s">+5s</button>
         </div>
 
@@ -2147,10 +2164,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.4.9";
+var STATIC_BUILD_VERSION_ = "1.8.4.10";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-03T03:50:26.667Z";
+var STATIC_BUILD_DATE_ = "2026-11-03T05:44:34.552Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -2511,8 +2528,14 @@ async function callApi(action, args, callOpts) {
     }
     throw err;
   }
+  if (action === 'getScore' && typeof body.editor === 'boolean') scoreEditorSet_(body.editor); // adr/0020: kept per device for offline use
   return body.result;
 }
+
+/** adr/0020: the last getScore `editor` answer, kept per device and target. */
+function scoreEditorKey_() { return 'pmix.' + pmixTarget() + '.v1.scoreEditor'; }
+function scoreEditorGet_() { try { var v = window.localStorage.getItem(scoreEditorKey_()); return v === null ? null : v === '1'; } catch (e) { return null; } }
+function scoreEditorSet_(v) { try { window.localStorage.setItem(scoreEditorKey_(), v ? '1' : '0'); } catch (e) { /* ignore */ } }
 
 /**
  * bd atc-gat: server-connection banner. callApi (and the getFileAsBase64 timeout) report network-level
@@ -7911,6 +7934,11 @@ const UI = (() => {
         <button id="menu-close-btn" data-testid="menu-close-btn" class="btn btn-close" aria-label="Close">&#10005;</button>
       </div>
       <div class="menu-body" data-testid="menu-body">
+        <div class="menu-row menu-mode" id="menu-mode" data-testid="menu-mode" role="radiogroup" aria-label="Mode" hidden>
+          <label class="menu-mode-row"><input type="radio" name="score-mode" value="play" id="score-mode-play" data-testid="score-mode-play"><span><b>Play</b><small>Listen and follow</small></span></label>
+          <label class="menu-mode-row"><input type="radio" name="score-mode" value="layout" id="score-mode-layout" data-testid="score-mode-layout"><span><b>Edit - Layout</b><small>Place and label marks</small></span></label>
+          <label class="menu-mode-row"><input type="radio" name="score-mode" value="sync" id="score-mode-sync" data-testid="score-mode-sync"><span><b>Edit - Sync</b><small>Time marks to the music</small></span></label>
+        </div>
         <div class="menu-row"><a class="btn menu-drive" data-testid="menu-drive" target="_blank" rel="noopener" title="Open this folder in Google Drive"><span class="menu-icon" data-testid="menu-drive-icon" aria-hidden="true">&#128194;</span> Open Drive folder</a></div>
         <div class="menu-row"><button type="button" id="menu-copy-link" data-testid="menu-copy-link" class="btn" disabled title="Copies a link to this practice setup"><span class="menu-icon" data-testid="menu-copy-icon" aria-hidden="true">&#128279;</span> Copy Link</button> <span class="menu-reason">Coming soon</span></div>
         <div class="menu-row">
@@ -10215,9 +10243,102 @@ function scoreReplyOutcome(late, r, parsed, readCache) {
   var action = scoreReplyCacheAction(late, r, parsed);
   return { action: action, map: action === 'write' ? parsed : action === 'remove' ? null : readCache() };
 }
-/** atc-ore.16 AC 12, 13: the Save button is shown only for unsaved device edits while paused and signed in. */
-function scoreSaveButton(state, signedIn, playing, stale) {
-  return { shown: state === 'unsaved' && !playing && !!signedIn && !stale, text: 'Save' }; // atc-tty9.15: after a stale reply only Keep mine and Revert show. // atc-ore.25 AC 5: signed out there is nothing the button can do, so it is hidden
+/** adr/0020: the editor Save button {shown, disabled, text, title}. Shown only to an editor (signed in); disabled with the reason as its title when
+ *  nothing differs, a save is under way, a save waits offline or the saved score is newer (stale); allowed while playing. count = changed marks (+1 offsets). */
+function scoreSaveButton(state, editor, signedIn, playing, stale, saving, count) {
+  var shown = !!editor && !!signedIn, reason = '';
+  if (stale) reason = 'The saved score is newer: choose Keep mine or Revert first';
+  else if (saving) reason = 'Saving';
+  else if (state === 'queued') reason = 'A save is waiting to be sent';
+  else if (state !== 'unsaved') reason = 'Nothing differs from the saved score';
+  return { shown: shown, disabled: !!reason, text: count > 0 && state === 'unsaved' ? 'Save \u00B7 ' + count : 'Save', title: reason || 'Save these marks to Drive for every singer' };
+}
+/** adr/0020: N differences from the saved score = changed marks (by id, removed ones too) + 1 when the track offsets differ; at least 1 once unsaved. */
+function scoreDiffCount(marks, sharedMarks, offsets, sharedOffsets) {
+  var n = scoreSaveDiffDetail_(marks, sharedMarks).names.length + (scoreSameOffsets(offsets, sharedOffsets) ? 0 : 1);
+  return Math.max(1, n);
+}
+/** adr/0020: the Play notice row's parts {diff, status}: diff (N differences + Revert [+ Save]) only in Play while paused and unsaved (a stale prompt keeps it); status (stale, queued, messages) whenever present. */
+function scoreNoticeParts(state, edit, playing, stale, queued, msg) {
+  return { diff: state === 'unsaved' && !edit && !playing && !queued, status: !!stale || !!queued || !!msg };
+}
+/** adr/0020: 'N difference(s) from the saved score'. */
+function scoreDiffText(n) { return n + (n === 1 ? ' difference' : ' differences') + ' from the saved score'; }
+/** atc-rlep.1 J1c: the ONE table of score-panel visibility. Element id -> predicate (s, d): s = the raw state object, d = values derived from it.
+ *  scoreVisibility(s) returns the ids shown; the panel's single apply step sets `hidden` on every id here and nowhere else (a unit test scans for strays).
+ *  s: ready, open, mode ('play'|'layout'|'sync'), editor, signed, readOnly, playing, hasT, ribbon, selected, kind, timed, pop, offsetMode, toast,
+ *  brokenJumps, misplaced, boxAll, saveState ('none'|'saved'|'unsaved'|'queued'), diffs, hasShared, revertable, stale, saving, msg. */
+var SCORE_UI = {
+  // headers
+  'score-bar': function (s, d) { return !d.playHeader; },
+  'score-edit-done': function (s, d) { return d.edit; },
+  'score-subswitch': function (s, d) { return d.edit; },
+  'score-title': function (s, d) { return !d.edit; },
+  'score-page-up': function (s, d) { return !d.edit; },
+  'score-page-label': function (s, d) { return !d.edit; },
+  'score-page-down': function (s, d) { return !d.edit; },
+  'score-zoom-out': function (s, d) { return !d.edit; },
+  'score-zoom-label': function (s, d) { return !d.edit; },
+  'score-zoom-in': function (s, d) { return !d.edit; },
+  // edit bar, chip, More
+  'score-toolrows': function (s) { return !!s.ready; },
+  'score-tools': function (s, d) { return d.edit && !!s.ready; },
+  'score-undo': function (s, d) { return d.edit && !!s.ready; },
+  'score-save': function (s, d) { return d.edit && !!s.ready && d.sb.shown; },
+  'score-chip': function (s, d) { return d.edit && !!s.ready; },
+  'score-chip-add': function (s, d) { return d.edit && !!s.ready && !s.offsetMode; },
+  'score-edit-more': function (s, d) { return d.edit && !!s.ready; },
+  'score-revert-more': function (s, d) { return d.canRevert; },
+  'score-offset-tool': function (s) { return !s.playing; },
+  'score-offsetbar': function (s, d) { return d.edit && !!s.offsetMode && !!s.ready && !s.playing; },
+  'score-toast': function (s) { return !!s.toast && s.mode === 'layout' && !!s.ready; },
+  // notice / status row
+  'score-notice': function (s, d) { return !!s.ready && ((d.diffRow && s.saveState === 'unsaved') || d.parts.status); },
+  'score-notice-save': function (s, d) { return d.diffRow && d.sb.shown; },
+  'score-use-saved': function (s, d) { return (d.diffRow || !!s.stale) && d.canRevert && !s.playing; },
+  'score-keep-mine': function (s) { return !!s.stale; },
+  'score-misplaced': function (s) { return !!s.misplaced; },
+  // position strip
+  'score-pos': function (s) { return !!s.hasT && !!s.ready; },
+  // mark editor row
+  'score-editor': function (s, d) { return d.edit && !!s.ready && !s.offsetMode; },
+  'score-ed-sel': function (s) { return !!s.selected; },
+  'score-ed-more': function (s) { return !!s.selected && !!s.pop; },
+  'score-measure': function (s) { return !!s.selected && s.kind === 'mark'; },
+  'score-note': function (s) { return !!s.selected && s.kind !== 'eol' && s.kind !== 'jump'; },
+  'score-note-fld': function (s) { return !!s.selected && s.kind !== 'eol' && s.kind !== 'jump'; },
+  'score-jump-label': function (s) { return !!s.selected && s.kind === 'jump'; },
+  'score-jump-target': function (s) { return !!s.selected && s.kind === 'jump'; },
+  'score-nudge-minus': function (s) { return !!s.selected && !!s.timed && s.kind !== 'eol' && s.kind !== 'note'; },
+  'score-nudge-plus': function (s) { return !!s.selected && !!s.timed && s.kind !== 'eol' && s.kind !== 'note'; },
+  'score-set-now': function (s) { return !!s.selected && s.kind !== 'eol' && s.kind !== 'note'; },
+  'score-clear-time': function (s) { return !!s.selected && !!s.timed && s.kind !== 'eol'; },
+  'score-box-all': function (s) { return !!s.boxAll; },
+  'score-jump-warn': function (s, d) { return s.brokenJumps > 0 && d.edit && !!s.ready && !s.offsetMode; },
+  // transport parts that depend on the mode, and the gear menu's Mode section
+  'skip-b1': function (s, d) { return d.edit && !!s.open; },
+  'skip-b01': function (s, d) { return d.edit && !!s.open; },
+  'skip-f01': function (s, d) { return d.edit && !!s.open; },
+  'skip-f1': function (s, d) { return d.edit && !!s.open; },
+  'menu-mode': function (s) { return !!s.open && !!s.ready; }
+};
+/** The values the predicates share, derived once from the raw state. */
+function scoreUiDerive_(s) {
+  var edit = s.mode !== 'play', saving = !!s.saving, queued = s.saveState === 'queued';
+  var sb = scoreSaveButton(s.saveState, !!s.editor, !!s.signed, !!s.playing, !!s.stale, saving, s.diffs || 0);
+  var parts = scoreNoticeParts(s.saveState, edit, !!s.playing, !!s.stale, queued, s.msg);
+  return {
+    edit: edit, sb: sb, parts: parts,
+    playHeader: !!s.playing && !edit && !!s.hasT, // the compact header while playing (atc-ore.17)
+    diffRow: parts.diff && !s.readOnly && (!!s.hasShared || (!!s.editor && !!s.signed)), // no saved score to differ from: only an editor's first Save is offered
+    canRevert: !!s.revertable && s.saveState === 'unsaved' && !s.readOnly
+  };
+}
+/** The ids shown (an array, in table order) for state s. */
+function scoreVisibility(s) {
+  var d = scoreUiDerive_(s), out = [];
+  Object.keys(SCORE_UI).forEach(function (id) { if (SCORE_UI[id](s, d)) out.push(id); });
+  return out;
 }
 /** True when the stored value is a readable object with a version this build does not know (never overwrite it). */
 function scoreMarksUnknownVersion(s) {
@@ -10559,7 +10680,7 @@ function initScorePanel_() {
     lib: null, libPromise: null, wsrc: null, build: '', workerBroken: false, workerNote: '',
     pdf: null, fileKey: '', pages: [], zoom: 1, renderGen: 0, loadGen: 0, pumping: false,
     pdfs: [], opener: null, pinch: null, raf: 0,
-    fileId: '', marks: [], undo: [], selId: null, edit: false, followOn: true, reaction: 0.25,
+    fileId: '', marks: [], undo: [], selId: null, edit: false, sub: 'layout', followOn: true, reaction: 0.25,
     disp: {}, snapPending: true, easeFrom: null, easeStart: -1, lastN: null, last: null, loop: 0, touching: false, gesture: null,
     ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, pan: null, seekDim: '',
     folder: '', shared: null, sharedP: null, stale: null, saving: false, saveMsg: '',
@@ -10576,8 +10697,10 @@ function initScorePanel_() {
   function viewOffPts() { if (S.ribbonShown) S.viewOff = Math.round(S.offY / ptScale()); return S.viewOff || 0; }
   function currentView() { return scoreViewOf(viewOffPts()); }
   var INTRO_KEY = 'pmix.' + pmixTarget() + '.v1.scoreIntroSeen';
-  var toolsEl = $('score-tools'), editorEl = $('score-editor'), cornerEl = $('score-corner'); // atc-ore.33: toolsEl is the Edit bar; the panel's data-state says whether the tools are ready
+  var toolsEl = $('score-tools'), editorEl = $('score-editor'); // atc-ore.33: toolsEl is the Edit bar; the panel's data-state says whether the tools are ready
   function isReady() { return panel.getAttribute('data-state') === 'ready'; }
+  /** adr/0020: Save is for editors: the last getScore answer (kept per device), and only while signed in. */
+  function isEditor() { return isSignedIn_() && scoreEditorGet_() === true; }
 
   function store(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function recall(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
@@ -10587,7 +10710,7 @@ function initScorePanel_() {
   S.crop = recall(CROP_KEY) === '1'; // atc-tty9.42: default off
   function isOpen() { return !panel.classList.contains('hidden'); }
   (function () { var sb = document.getElementById('seek-bar'); if (sb) sb.addEventListener('input', function () { S.hold = false; }); })(); // a seek by the singer ends a restored view's hold
-  function setState(s) { panel.setAttribute('data-state', s); toolRows.hidden = s !== 'ready'; cornerEl.hidden = s !== 'ready'; if (s !== 'ready') { toolsEl.hidden = true; editorEl.hidden = true; } }
+  function setState(s) { panel.setAttribute('data-state', s); applyScoreUi(); }
   function num(x) { return String(+Number(x).toFixed(2)); }
 
   // ---- PDF.js loader: lazy, modern/legacy build, worker with a main-thread fallback (AC 2, 13) ----
@@ -11159,7 +11282,8 @@ function initScorePanel_() {
     S.offY = 0; S.pan = null;
     resetPointers();
     panel.classList.add('hidden');
-    page_.classList.remove('score-open', 'score-edit');
+    S.edit = false; S.sub = 'layout'; S.selId = null; S.offsetMode = false; // adr/0020: the mode resets to Play on close
+    page_.classList.remove('score-open', 'score-edit', 'score-layout', 'score-sync');
     if (S.ribbonShown) setRibbonShown(false);
     perfEnd('close');
     stopLoop();
@@ -11243,7 +11367,7 @@ function initScorePanel_() {
     if (rc.carried) saveMarks();
     if ((!rc.editedMarks || sharedLocked) && !devNewer && use.applies && sh && sh.marks.length) S.marks = marksFromShared(sh.marks); // a locked map is shown, never edited
     showNote(null);
-    S.undo = []; S.selId = null; S.edit = false; S.followOn = true; S.snapPending = true; S.easeStart = -1; S.lastN = null; S.curN = -1; S.offY = 0; S.pan = null;
+    S.undo = []; S.selId = null; S.edit = false; S.sub = 'layout'; S.followOn = true; S.snapPending = true; S.easeStart = -1; S.lastN = null; S.curN = -1; S.offY = 0; S.pan = null;
     if (use.applies && sh && sh.view) { S.rv.key = ''; S.viewOff = Number(sh.view.offY) || 0; } // atc-tty9.23: the stored vertical offset
     var sl = scoreStaleAtLoad(S.stale, S.folder, S.fileId, rc.edited); // atc-ore.28 AC 1: a stale set by a flush before this load stays only while something is edited
     if (!sl.stale) { S.stale = null; S.saveMsg = sl.nothing ? scoreStaleText({ nothing: true }) : ''; }
@@ -11316,7 +11440,7 @@ function initScorePanel_() {
   var SCORE_BOX_DIRS_ = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
   function renderBox() {
     var m = shownBoxMark(), old = strip.querySelector('.score-box'), pg = m && pageIndexOf(m.page);
-    $('score-box-all').hidden = !(m && pg);
+    var ba = !!(m && pg); if (S.boxAll !== ba) { S.boxAll = ba; applyScoreUi(); }
     if (!m || !pg) { if (old) old.remove(); return; }
     var el = old;
     if (!el || el.parentNode !== pg.el) {
@@ -11372,7 +11496,11 @@ function initScorePanel_() {
     ['score-reaction', 'score-lead'].forEach(function (i) { $(i).disabled = !ready; });
     $('score-crop-toggle').disabled = !(ready && S.marks.length > 0);
     ['score-ribbon-toggle'].forEach(function (i) { $(i).disabled = !hasT; });
-    $('menu-score-reason').textContent = !ready ? 'Open a score to change these settings.' : !hasT ? 'Ribbon needs a score with timed marks.' : '';
+    var mode = S.edit ? S.sub : 'play';
+    ['play', 'layout', 'sync'].forEach(function (m) { $('score-mode-' + m).checked = m === mode; });
+    $('score-mode-layout').disabled = $('score-mode-sync').disabled = !ready || S.readOnly; // adr/0020: a read-only map cannot be edited
+    applyScoreUi();
+    $('menu-score-reason').textContent = !ready ? 'Open a score to change these settings.' : S.readOnly ? 'Editing is unavailable: this score is read-only (newer than this page, or locked).' : !hasT ? 'Ribbon needs a score with timed marks.' : '';
   }
   document.addEventListener('pmix-settings-open', function () { syncSettings(); });
   /** atc-ore.33: write textContent only when it changed (the strip updates every animation tick). */
@@ -11420,52 +11548,61 @@ function initScorePanel_() {
     menu.hidden = !open; btn.setAttribute('aria-expanded', String(open));
     if (open) { var r = btn.getBoundingClientRect(); menu.style.top = Math.round(r.bottom + 4) + 'px'; menu.style.right = Math.max(4, Math.round(window.innerWidth - r.right)) + 'px'; }
   }
+  /** The one apply step: sets `hidden` on every SCORE_UI id from the state object (nothing else sets hidden on these ids). */
+  function misplacedText() { return scoreTimed(S.marks).length > 0 && S.fileId ? scoreMisplacedText(S.shared, sharedUse(), pdfModifiedOf(S.fileId)) : ''; }
+  function boxAllShown() { var bm = shownBoxMark(); return bm && pageIndexOf(bm.page); }
+  function uiState() {
+    var m = selMark(), sv = S.saveUi || { st: 'none', n: 0, hasShared: false, revertable: false, stale: false };
+    return {
+      ready: isReady(), open: isOpen(), mode: S.edit ? S.sub : 'play', editor: isEditor(), signed: isSignedIn_(), readOnly: !!S.readOnly,
+      playing: isPlayingNow(), hasT: scoreTimed(S.marks).length > 0, ribbon: !!S.ribbon,
+      selected: !!m, kind: m ? (m.kind || 'mark') : '', timed: !!m && typeof m.t === 'number', pop: !!S.pop,
+      offsetMode: !!S.offsetMode, toast: !!S.toast, brokenJumps: scoreBrokenJumps(S.marks).length, misplaced: !!misplacedText(), boxAll: !!S.boxAll,
+      saveState: sv.st, diffs: sv.n, hasShared: sv.hasShared, revertable: sv.revertable, stale: sv.stale, saving: !!S.saving, msg: S.saveMsg || ''
+    };
+  }
+  function applyScoreUi() {
+    var shown = {};
+    scoreVisibility(uiState()).forEach(function (id) { shown[id] = true; });
+    Object.keys(SCORE_UI).forEach(function (id) { var el = $(id); if (el && el.hidden === !!shown[id]) el.hidden = !shown[id]; });
+  }
   function syncUi() {
     var av = String(viewOffPts()); if (av !== S.addrView) { S.addrView = av; notifyAddress(); } // atc-tty9.23: the link carries the vertical offset
     var has = scoreTimed(S.marks).length > 0; // Follow, previous/next and the ribbon use timed marks only
     panel.setAttribute('data-mark-count', String(S.marks.length));
     panel.setAttribute('data-edit', S.edit ? 'on' : 'off');
+    panel.setAttribute('data-sub', S.edit ? S.sub : '');
     page_.classList.toggle('score-edit', S.edit && isOpen()); // atc-tty9.39: the transport's fine skip buttons
+    page_.classList.toggle('score-layout', S.edit && S.sub === 'layout' && isOpen());
+    page_.classList.toggle('score-sync', S.edit && S.sub === 'sync' && isOpen());
+    if (!S.edit) S.pop = false; // atc-ore.33: the expanded editor persists across selections until collapsed or Edit ends
+    syncSave(); // derives S.saveUi, which the visibility table reads
+    S.boxAll = !!boxAllShown();
+    applyScoreUi(); // the one place score-panel visibility is applied (adr/0020, SCORE_UI)
     setPlayHeader(playMode() && has); // a PDF without marks has nothing to follow: it keeps its full header
     panel.setAttribute('data-follow', has ? (S.followOn ? 'on' : 'paused') : 'off');
     panel.setAttribute('data-current-mark', String(S.curN + 1));
     var ready = isReady();
-    $('score-edit-toggle').setAttribute('aria-pressed', String(S.edit));
-    $('score-edit-toggle').hidden = S.edit; // the pencil only enters Edit; Done leaves it
-    toolsEl.hidden = !(S.edit && ready);
+    $('score-sub-layout').setAttribute('aria-pressed', String(S.sub === 'layout'));
+    $('score-sub-sync').setAttribute('aria-pressed', String(S.sub === 'sync'));
+    setText($('score-chip-text'), S.sub === 'sync' ? 'Sync' : 'Layout'); // J2/J4 put the Layout / Sync chip content here
     if (!S.edit) setMoreMenu(false);
     $('score-undo').disabled = !S.undo.length; setText($('score-undo'), '\u21B6 Undo ' + S.undo.length);
     $('score-clear').disabled = !S.marks.length;
-    S.posKey = null; $('score-pos').hidden = !(has && ready); syncPos();
+    S.posKey = null; syncPos();
     syncSettings();
     panel.setAttribute('data-offset-y', String(Math.round(S.offY)));
     renderSeekMarks();
-    $('score-resume-follow').hidden = !scoreShowResume(S.followOn, has, S.edit);
-    syncCursorHere();
-    $('score-corner').hidden = !ready;
     $('score-ribbon-toggle').setAttribute('aria-pressed', String(S.ribbon));
     $('score-crop-toggle').setAttribute('aria-pressed', String(S.crop));
     var playingNow = isPlayingNow();
-    $('score-offset-tool').hidden = playingNow; $('score-offset-tool').setAttribute('aria-pressed', String(S.offsetMode));
-    $('score-offsetbar').hidden = !(S.edit && S.offsetMode && isReady() && !playingNow);
-    var flagText = has && S.fileId ? scoreMisplacedText(S.shared, sharedUse(), pdfModifiedOf(S.fileId)) : ''; // AC 5, 10, 11: the one flag
-    $('score-misplaced').hidden = !flagText; $('score-misplaced').textContent = flagText;
+    $('score-offset-tool').setAttribute('aria-pressed', String(S.offsetMode));
+    var flagText = misplacedText(); // AC 5, 10, 11: the one flag
+    $('score-misplaced').textContent = flagText;
     panel.setAttribute('data-misplaced', flagText ? 'true' : 'false');
     var m = selMark();
-    var edOn = S.edit && ready && !S.offsetMode;
-    editorEl.hidden = !edOn;
-    $('score-ed-hint').hidden = !!m;
-    $('score-ed-sel').hidden = !m;
-    if (!m) {
-      var addNames = { timed: 'timed mark', untimed: 'untimed mark', eol: 'end-of-line mark', jump: 'jump', note: 'note' };
-      setText($('score-ed-hint'), 'Tap a mark to select it. Tapping the score adds a ' + (addNames[S.place] || 'timed mark') + '.');
-      $('score-measure').hidden = $('score-note').hidden = $('score-clear-time').hidden = $('score-jump-label').hidden = $('score-jump-target').hidden = true;
-    }
     var brokenJ = scoreBrokenJumps(S.marks); // atc-tty9.10 AC 3: re-derived on every change, so edit, delete, untime, load and save are all covered
-    $('score-jump-warn').hidden = !brokenJ.length || !edOn;
     $('score-jump-warn').textContent = brokenJ.length ? (brokenJ.length === 1 ? '1 jump has no valid target and is' : brokenJ.length + ' jumps have no valid target and are') + ' disabled for singers: ' + brokenJ.map(function (k) { return '"' + k.label + '"'; }).join(', ') + '. Select it and pick a target.' : '';
-    $('score-place').hidden = S.offsetMode;
-    if (!S.edit) S.pop = false; // atc-ore.33: the expanded editor persists across selections until collapsed or Edit ends
     if (m) {
       var timedM = typeof m.t === 'number', isJump = m.kind === 'jump', isEol = m.kind === 'eol', isNote = m.kind === 'note';
       var selHead = isNote ? 'Note' : isJump ? (timedM ? 'Jump at ' + fmtT(m.t) : 'Jump') : isEol ? 'End-of-line mark' : timedM ? 'Mark ' + (markNums()[m.id] || S.marks.indexOf(m) + 1) + ' at ' + fmtT(m.t) : 'Untimed mark';
@@ -11473,15 +11610,8 @@ function initScorePanel_() {
       $('score-sel-label').textContent = scoreSelLabel(selHead, m, true); $('score-sel-label').title = selFull;
       var bd = $('score-ed-badge');
       bd.setAttribute('data-kind', m.kind || 'mark'); setText(bd, isNote ? 'NOTE' : isJump ? 'JUMP' : isEol ? 'EOL' : 'MARK');
-      $('score-nudge-minus').hidden = $('score-nudge-plus').hidden = !timedM || isEol || isNote;
-      $('score-set-now').hidden = isEol || isNote; $('score-set-now').textContent = timedM ? 'Set to now' : 'Set time to now';
-      $('score-clear-time').hidden = !timedM || isEol;
+      $('score-set-now').textContent = timedM ? 'Set to now' : 'Set time to now';
       $('score-goto').disabled = $('score-goto-quick').disabled = !timedM || isEol || isNote; // atc-ore.34
-      $('score-measure').hidden = isEol || isJump || isNote;
-      $('score-note').hidden = isEol || isJump;
-      $('score-note').closest('label').hidden = isEol || isJump;
-      $('score-jump-label').hidden = !isJump;
-      $('score-jump-target').hidden = !isJump;
       setText($('score-ed-num'), isNote ? (m.note ? scoreNoteShort(m.note) : '') : isEol ? 'End of line' : isJump ? '' : '#' + (markNums()[m.id] || S.marks.indexOf(m) + 1));
       if (isJump) {
         if (document.activeElement !== $('score-jump-label')) $('score-jump-label').value = m.label || '';
@@ -11501,11 +11631,9 @@ function initScorePanel_() {
       if (document.activeElement !== $('score-note')) $('score-note').value = m.note || '';
       if (S.fieldMsgId !== m.id) { $('score-field-msg').textContent = ''; S.fieldMsgId = m.id; }
       $('score-pop-type').value = isJump ? 'jump' : isEol ? 'eol' : isNote ? 'note' : 'mark';
-      $('score-ed-more').hidden = !S.pop;
       $('score-edit-mark').setAttribute('aria-expanded', String(!!S.pop));
       syncEdInfo();
     }
-    syncSave();
     paintMarks();
     renderBox();
   }
@@ -11523,23 +11651,26 @@ function initScorePanel_() {
     var all = scoreSaveDiffDetail_(S.marks, sh ? sh.marks : []).names;
     return { diff: scoreSaveDiff(S.marks, sh ? sh.marks : [], S.offsets, sh ? sh.offsets : {}), names: scoreSaveNames(S.marks, sh ? sh.marks : []), more: all.length > 10 };
   }
+  /** Text and enabled state of the Save controls; derives S.saveUi (what the visibility table needs) - it hides nothing itself. */
   function syncSave() {
     var st = S.fileId ? saveStateNow() : 'none';
     panel.setAttribute('data-save-state', st);
-    var bar = $('score-savebar');
-        var signed = isSignedIn_(), btn = $('score-save');
-    var sb = scoreSaveButton(st, signed, isPlayingNow(), scoreStaleShown(S.stale, S.folder, S.fileId)); // atc-ore.16 AC 12, 13
-    btn.textContent = sb.text; btn.hidden = !sb.shown;
-    btn.disabled = S.saving || !S.marks.length || !S.folder;
-    var ss = $('score-save-state'), sd = null;
-    if (st === 'unsaved') { sd = saveDiffNow(); ss.textContent = scoreSaveSummary(sd.diff); ss.title = sd.names.length ? 'Changed: ' + sd.names.join('; ') + (sd.more ? '; ...' : '') : ''; } // atc-ore.38 AC 3
-    else { ss.textContent = st === 'queued' ? 'Save waiting (offline)' : ''; ss.removeAttribute('title'); }
-    var sh = S.shared;
-    $('score-use-saved').hidden = !(sh && sharedUse().applies && sh.marks.length && st === 'unsaved' && !S.readOnly && !isPlayingNow());
-    $('score-keep-mine').hidden = !scoreStaleShown(S.stale, S.folder, S.fileId);
+    var signed = isSignedIn_(), editor = isEditor();
+    var sh = S.shared, shBoxed = S.shared && S.shared.pdfId === S.fileId ? sharedBoxed() : null;
+    var stale = scoreStaleShown(S.stale, S.folder, S.fileId), playing = isPlayingNow();
+    var n = st === 'unsaved' ? scoreDiffCount(S.marks, shBoxed ? shBoxed.marks : [], S.offsets, shBoxed ? shBoxed.offsets : {}) : 0;
+    S.saveUi = { st: st, n: n, hasShared: !!shBoxed, stale: !!stale, revertable: !!(sh && sharedUse().applies && sh.marks.length) };
+    var sb = scoreSaveButton(st, editor, signed, playing, stale, S.saving, n); // adr/0020 AC 12, 14
+    var btn = $('score-save');
+    btn.textContent = sb.text; btn.disabled = sb.disabled || !S.marks.length || !S.folder; btn.title = sb.title;
+    var parts = scoreNoticeParts(st, S.edit, playing, stale, st === 'queued', S.saveMsg), ss = $('score-save-state');
+    if (st === 'unsaved') { var sd = saveDiffNow(); ss.setAttribute('data-summary', scoreSaveSummary(sd.diff)); ss.title = sd.names.length ? 'Changed: ' + sd.names.join('; ') + (sd.more ? '; ...' : '') : ''; }
+    else { ss.removeAttribute('data-summary'); ss.removeAttribute('title'); }
+    var diffRow = parts.diff && !S.readOnly && (!!shBoxed || (editor && signed));
+    setText(ss, diffRow ? scoreDiffText(n) : st === 'queued' ? 'Save waiting (offline)' : '');
+    $('score-revert-more').disabled = playing;
+    var ns = $('score-notice-save'); ns.disabled = btn.disabled; ns.title = sb.title; ns.textContent = 'Save';
     $('score-save-msg').textContent = S.saveMsg;
-    // atc-tty9.12: Save and Revert live in the not-editing view (Edit -> Done, then they show when the device marks differ from the saved map)
-    bar.hidden = S.edit || !isReady() || (btn.hidden && $('score-use-saved').hidden && $('score-keep-mine').hidden && !$('score-save-state').textContent && !S.saveMsg);
   }
   async function sendSave(fid, score, basedOn) {
     try { return { kind: 'ok', result: await callApi('saveScore', { folderId: fid, score: score, basedOn: basedOn }) }; }
@@ -11583,6 +11714,7 @@ function initScorePanel_() {
       renderConnectionBanner_(true);
       if (here) S.saveMsg = 'You are offline. Your save is queued and will be sent when the connection returns.';
     } else {
+      if (out.code === 'not_editor') scoreEditorSet_(false); // adr/0020: a refusal means this device is not an editor
       var cur = out.code === 'stale' ? scoreSharedParse(out.current) : null;
       if (cur) cur = Object.assign({}, cur, { marks: boxed(cur.marks) }); // adr/0018: compared like with like
       var plan = { apply: false, stale: true, nothing: false };
@@ -11665,7 +11797,6 @@ function initScorePanel_() {
     S.easeStart = performance.now();
     syncUi();
   }
-  $('score-resume-follow').addEventListener('click', resumeFollow);
   /** atc-tty9.42: a crop depends on the marks, so redo the layout when it differs from what is shown (after marks load, or a toggle). */
   function applyCrop() {
     var stale = S.pages.some(function (p) {
@@ -11710,7 +11841,6 @@ function initScorePanel_() {
     S.rv = ribbonReset(S.rv); // atc-elfg.6: one record for the ribbon view state; the scrub timer is cleared with it
     S.pan = null; // a pan record from either mode is stale after a switch (its scroll baseline belongs to the other view)
     if (on) { S.easeStart = -1; S.offY = (S.viewOff || 0) * ptScale(); } else S.snapPending = true; // back to the normal page view at the current mark
-    syncCursorHere();
   }
   /** atc-qb45: paused in the ribbon, a sideways scroll of dx px moves the view (clamped to its ends); the time under the playhead line shows live and the audio seeks on ribbonScrubEnd. */
   /** atc-ore.37: the track time under the 40% cursor line when the ribbon view is scrolled to vs (the scrub's mapping, also Cursor here's). */
@@ -11741,17 +11871,6 @@ function initScorePanel_() {
     if (S.edit && S.ribbonShown && S.rv.sx !== null) { S.rv.sx = Math.max(0, S.rv.sx + dx); return true; } // drawRibbon clamps
     return false;
   }
-  /** atc-ore.37: Cursor here shows in paused Edit when the view is off the cursor (ribbon: held sx differs from follow sx by > 8 px; page view: Follow paused). */
-  function syncCursorHere() {
-    var on = S.edit && isReady() && !isPlayingNow() && (S.ribbonShown ? !!S.rv.off : scoreShowResume(S.followOn, scoreTimed(S.marks).length > 0, S.edit)), b = $('score-cursor-here');
-    if (b.hidden === on) b.hidden = !on;
-  }
-  $('score-cursor-here').addEventListener('click', function () {
-    if (S.ribbonShown) { if (S.rv.layout && S.rv.sx !== null) jumpTo(ribbonTimeAtSx(S.rv.sx, pageGeo(true).W)); return; } // the view stays; the cursor lands at the 40% line
-    var geo = pageGeo(), k = scoreMarkNearPoint(S.marks, geo, scroller.scrollLeft + SCORE_ANCHOR_X * geo.W, scroller.scrollTop + SCORE_ANCHOR_Y * geo.H);
-    if (!k) return;
-    jumpTo(k.t); resumeFollow();
-  });
   function ribbonFollowGo() { // atc-hc3l: glide the held view back to the cursor, then follow
     if (S.rv.hold) S.rv.glide = { from: S.rv.hold.sx, t0: performance.now() };
   }
@@ -11868,7 +11987,7 @@ function initScorePanel_() {
     var view = scoreRibbonFrame(inp);
     S.rv.selAt = view.selAt; S.rv.sx = view.sx;
     var off = S.edit && !pl && Math.abs(view.sx - view.followSx) > 8; // atc-ore.37
-    if (off !== !!S.rv.off) { S.rv.off = off; syncCursorHere(); }
+    if (off !== !!S.rv.off) { S.rv.off = off; }
     var fb = $('score-ribbon-follow'), fbShow = !!S.rv.hold && !S.rv.glide; // atc-hc3l: the Follow button shows while the view is held off the cursor
     if (fb.hidden === fbShow) fb.hidden = !fbShow;
     if (fbShow) { fb.style.left = Math.round(geo.W - 90) + 'px'; fb.style.top = Math.round(geo.H - 52) + 'px'; }
@@ -12288,6 +12407,7 @@ function initScorePanel_() {
 
   // Edit chrome.
   $('score-save').addEventListener('click', saveToDrive);
+  $('score-notice-save').addEventListener('click', saveToDrive);
   $('score-keep-mine').addEventListener('click', function () {
     var kb = scoreKeepMineBase(S.stale, S.base, S.folder, S.fileId, sharedUse()); // atc-ore.28 AC 1: the token is the stale reply's own cur
     S.stale = null; S.saveMsg = '';
@@ -12295,7 +12415,9 @@ function initScorePanel_() {
     syncUi();
     if (kb) saveToDrive(); // atc-tty9.25: the choice saves at once, based on the newer map; a second stale reply shows the banner again
   }); // the user's explicit choice: save now, based on the newer map
-  $('score-use-saved').addEventListener('click', function () {
+  $('score-use-saved').addEventListener('click', revertToSaved);
+  $('score-revert-more').addEventListener('click', function () { setMoreMenu(false); revertToSaved(); });
+  function revertToSaved() {
     var sh = S.shared;
     if (!sh || !sharedUse().applies || S.readOnly) return;
     // AC 14: the only way the shared map replaces device marks, and only after a confirm naming both counts.
@@ -12307,7 +12429,7 @@ function initScorePanel_() {
     S.viewOff = sh.view ? Number(sh.view.offY) || 0 : 0; if (S.ribbonShown) S.offY = S.viewOff * ptScale(); S.rv.key = '';
     S.migH = sh.view && sh.view.heightIn > 0 ? sh.view.heightIn : 0;
     commit(marksFromShared(sh.marks), false);
-  });
+  }
   $('score-box-all').addEventListener('click', function () { // adr/0018: every boxed line takes the selected box's size; one undo step
     if (!shownBoxMark()) return;
     commit(scoreApplyBoxSize(S.marks, S.selId, pageSizes()));
@@ -12325,14 +12447,30 @@ function initScorePanel_() {
     syncUi();
   });
   $('score-offset-track').addEventListener('change', function () { S.offsetTrack = this.value; });
-  function toggleEdit() {
-    S.edit = !S.edit; S.rv.selAt = null;
-    if (!S.edit) { S.selId = null; S.offsetMode = false; }
+  var TOAST_KEY = 'pmix.' + pmixTarget() + '.v1.scoreEditHintSeen';
+  /** adr/0020: the one way to change mode. m = 'play' | 'layout' | 'sync'; Edit needs a ready, editable score. */
+  function setMode(m) {
+    if (m !== 'play' && m !== 'layout' && m !== 'sync') return;
+    if (m !== 'play' && (S.readOnly || !isReady())) return;
+    var wasEdit = S.edit, wasSub = S.sub;
+    S.edit = m !== 'play'; if (S.edit) S.sub = m; S.rv.selAt = null;
+    if (!S.edit) { S.selId = null; S.offsetMode = false; S.toast = false; }
+    S.toast = S.edit && S.sub === 'layout' && (S.toast || (!wasEdit || wasSub !== 'layout') && recall(TOAST_KEY) !== '1');
+    if (S.toast) store(TOAST_KEY, '1'); // once per device: showing counts as seen
     if (playMode() && !S.followOn) resumeFollow(); // leaving Edit while playing is play mode: Follow is always on
     else syncUi();
   }
-  $('score-edit-toggle').addEventListener('click', toggleEdit);
-  $('score-edit-done').addEventListener('click', function () { if (S.edit) toggleEdit(); });
+  window.pmixSetScoreMode_ = setMode;
+  $('score-edit-done').addEventListener('click', function () { setMode('play'); });
+  $('score-sub-layout').addEventListener('click', function () { setMode('layout'); });
+  $('score-sub-sync').addEventListener('click', function () { setMode('sync'); });
+  $('score-toast-close').addEventListener('click', function () { S.toast = false; syncUi(); });
+  ['play', 'layout', 'sync'].forEach(function (m) {
+    $('score-mode-' + m).addEventListener('click', function () {
+      setMode(m);
+      if (typeof window.pmixCloseSettings_ === 'function') window.pmixCloseSettings_();
+    });
+  });
   $('score-edit-more').addEventListener('click', function () { setMoreMenu($('score-more-menu').hidden); });
   document.addEventListener('pointerdown', function (e) { // outside tap closes the ... menu
     var menu = $('score-more-menu');
@@ -12423,7 +12561,7 @@ function initScorePanel_() {
   }
   $('score-nudge-minus').addEventListener('click', function () { adjust(-0.1); });
   $('score-nudge-plus').addEventListener('click', function () { adjust(0.1); });
-  $('score-place').addEventListener('change', function () { S.place = $('score-place').value; });
+  $('score-chip-add').addEventListener('change', function () { S.place = $('score-chip-add').value; });
   $('score-clear-time').addEventListener('click', function () {
     var m = selMark();
     if (m) commit(scoreClearTime(S.marks, m.id), true);
@@ -12596,7 +12734,7 @@ function initScorePanel_() {
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
-  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
+  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
 </script>
@@ -13060,6 +13198,7 @@ function initSettingsMenu() {
     opener = null;
   }
   document.querySelectorAll('.btn-menu').forEach((b) => b.addEventListener('click', () => open(b)));
+  window.pmixCloseSettings_ = close; // the score panel's Mode rows close the menu after choosing
   document.getElementById('menu-close-btn').addEventListener('click', close);
   document.getElementById('menu-overlay').addEventListener('click', close);
   document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || modal.classList.contains('hidden')) return; e.stopImmediatePropagation(); close(); }); // the score panel's Escape handler must not also fire
