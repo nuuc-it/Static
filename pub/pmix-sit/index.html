@@ -2204,10 +2204,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.4.23";
+var STATIC_BUILD_VERSION_ = "1.8.4.24";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-03T17:42:26.340Z";
+var STATIC_BUILD_DATE_ = "2026-11-03T18:53:46.617Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -10409,13 +10409,26 @@ function scoreBoxHit(box, x, y, tolPt) {
   return x > box.x && x < box.x + box.w && y > box.y && y < box.y + box.h ? 'move' : null;
 }
 
-// adr/0017: v2 device values live under their own key; a v1 value (pmix-score-marks-v1:, a 1.7.2 page on this origin) is read,
-// migrated and left in place for that page.
-var SCORE_MARKS_PREFIX = 'pmix-score-marks-v2:';
+// adr/0022 K2: every score device key carries the build target (pmix.<target>.<name>), like scoreEditorKey_. The legacy unprefixed
+// keys (pmix-score-*, written by PROD 1.8.4 and by TEST until K2) are read only by a build that is not TEST (scoreLegacyKeys_).
+// adr/0017: a v1 marks value (pmix-score-marks-v1:, a 1.7.2 page on this origin) is read, migrated and left in place for that page.
 var SCORE_MARKS_PREFIX_V1 = 'pmix-score-marks-v1:';
-function scoreMarksKey(fileId) { return SCORE_MARKS_PREFIX + fileId; }
-/** The v1 key a v2 device key falls back to ('' for any other key). */
-function scoreMarksKeyV1(key) { return String(key).indexOf(SCORE_MARKS_PREFIX) === 0 ? SCORE_MARKS_PREFIX_V1 + String(key).slice(SCORE_MARKS_PREFIX.length) : ''; }
+function scoreTarget_() { try { return typeof pmixTarget === 'function' ? pmixTarget() : 'local'; } catch (e) { return 'local'; } }
+function scoreKey_(name, target) { return 'pmix.' + (target || scoreTarget_()) + '.' + name; }
+function scoreMarksKey(fileId, target) { return scoreKey_('score-marks-v2:' + fileId, target); }
+function scoreQueueKey_(target) { return scoreKey_('score-queue-v2', target); }
+/** atc-rlep.10.2: the Ribbon setting. v2 so a device that stored '0' under v1 starts with the ribbon on; the v1 key is never read. */
+function scoreRibbonKey_(target) { return 'pmix.' + (target || scoreTarget_()) + '.v2.scoreRibbon'; }
+/** The legacy unprefixed keys a prefixed score key falls back to, in reading order. TEST never reads legacy keys; the rest (PROD, unbuilt) do. */
+function scoreLegacyKeys_(key, target) {
+  var t = target || scoreTarget_(), pre = 'pmix.' + t + '.', k = String(key);
+  if (t === 'test' || k.indexOf(pre) !== 0) return [];
+  var name = k.slice(pre.length);
+  if (name.indexOf('score-marks-v2:') === 0) return ['pmix-' + name, SCORE_MARKS_PREFIX_V1 + name.slice('score-marks-v2:'.length)];
+  if (name.indexOf('score-shared-v1:') === 0) return ['pmix-' + name];
+  if (name === 'score-queue-v2') return ['pmix-score-queue-v2', 'pmix-score-queue-v1'];
+  return [];
+}
 function scoreSerializeMarks(marks, offsets, folderId) {
   var o = {
     v: 2,
@@ -10704,10 +10717,7 @@ function scoreUndoPop(stack) {
 function scoreClearPrompt(n) { return 'Clear all ' + n + (n === 1 ? ' mark' : ' marks') + '? You can undo this.'; }
 
 // ---- Shared score map, client half (bd atc-ore.7) ----
-var SCORE_SHARED_PREFIX = 'pmix-score-shared-v1:';
-var SCORE_QUEUE_KEY = 'pmix-score-queue-v2';    // adr/0017: v2 saves; a 1.7.2 page on this origin flushes only its own v1 key
-var SCORE_QUEUE_KEY_V1 = 'pmix-score-queue-v1'; // read, migrated and emptied into the v2 key
-function scoreSharedKey(folderId) { return SCORE_SHARED_PREFIX + folderId; }
+function scoreSharedKey(folderId, target) { return scoreKey_('score-shared-v1:' + folderId, target); }
 function scoreCount(n) { return n + (n === 1 ? ' mark' : ' marks'); }
 /** Marks as the server stores them (adr/0017 v2): {id, kind, page, x, y, t?, ...}, numbers rounded, sorted. */
 function scorePlainMarks(marks) {
@@ -10910,7 +10920,10 @@ function scoreQueueParse(raw) {
     if (!Array.isArray(q)) return [];
     return q.filter(function (e) { return e && typeof e.folderId === 'string' && e.score; }).map(function (e) { // adr/0017: a v1 save migrates; basedOn and queuedAt are kept
       var sc = e.score.version === 1 ? scoreUpgradeMap(e.score) : e.score;
-      return sc === e.score ? e : { folderId: e.folderId, score: sc, basedOn: e.basedOn, queuedAt: e.queuedAt };
+      if (sc === e.score) return e;
+      var out = { folderId: e.folderId, score: sc, basedOn: e.basedOn, queuedAt: e.queuedAt };
+      if (e.target) out.target = e.target;
+      return out;
     });
   } catch (e) { return []; }
 }
@@ -10948,14 +10961,24 @@ function scoreKeepMineBase(stale, base, folder, fileId, use) { return scoreStale
 /** atc-ore.28 AC 4: the carried key a load remembers (carried or released); it is dropped only by a successful save, through scoreDropKey. */
 function scoreCarriedKeyAfterLoad(ck, rc) { return ck && (rc.carried || rc.release) ? ck : ''; }
 function scoreQueueRemove(queue, folderId) { return queue.filter(function (e) { return e.folderId !== folderId; }); }
+/** adr/0022 K2: a page flushes only the queued saves of its own target (an entry records it). */
+function scoreQueueOwn(q, target) { var t = target || scoreTarget_(); return q.filter(function (e) { return e.target === t; }); }
+/** This target's queue; a non-TEST build also takes in the legacy queues (their entries are stamped with its target). */
 function scoreQueueRead_() {
-  try { return scoreQueueMerge(scoreQueueParse(window.localStorage.getItem(SCORE_QUEUE_KEY)), scoreQueueParse(window.localStorage.getItem(SCORE_QUEUE_KEY_V1))); } catch (e) { return []; }
+  try {
+    var t = scoreTarget_(), key = scoreQueueKey_(t), q = scoreQueueParse(window.localStorage.getItem(key));
+    scoreLegacyKeys_(key, t).forEach(function (lk) {
+      q = scoreQueueMerge(q, scoreQueueParse(window.localStorage.getItem(lk)).map(function (e) { return Object.assign({}, e, { target: t }); }));
+    });
+    return scoreQueueOwn(q, t);
+  } catch (e) { return []; }
 }
-/** Writes the whole queue (v1 entries read through scoreQueueRead_ are in it) to the v2 key and empties the v1 key. */
+/** Writes the whole queue (legacy entries read through scoreQueueRead_ are in it) to this target's key and empties the legacy keys: they must not flush twice. */
 function scoreQueueWrite_(q) {
   try {
-    if (q.length) window.localStorage.setItem(SCORE_QUEUE_KEY, JSON.stringify(q)); else window.localStorage.removeItem(SCORE_QUEUE_KEY);
-    window.localStorage.removeItem(SCORE_QUEUE_KEY_V1);
+    var key = scoreQueueKey_();
+    if (q.length) window.localStorage.setItem(key, JSON.stringify(q)); else window.localStorage.removeItem(key);
+    scoreLegacyKeys_(key).forEach(function (lk) { window.localStorage.removeItem(lk); });
   } catch (e) { /* ignore */ }
 }
 
@@ -11028,7 +11051,7 @@ function initScorePanel_() {
   };
   var LEAD_KEY = 'pmix.' + pmixTarget() + '.v1.scoreLead';
   var REACT_KEY = 'pmix.' + pmixTarget() + '.v1.scoreReaction';
-  var RIBBON_KEY = 'pmix.' + pmixTarget() + '.v1.scoreRibbon';
+  var RIBBON_KEY = scoreRibbonKey_(pmixTarget());
   var CROP_KEY = 'pmix.' + pmixTarget() + '.v1.scoreCrop';
   /** atc-tty9.23: the ribbon's vertical offset in PDF points. S.viewOff is the remembered value; it follows S.offY only while the ribbon is
    *  drawn, so page-mode panning and Follow resets never change the saved view. */
@@ -11043,8 +11066,15 @@ function initScorePanel_() {
 
   function store(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function recall(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
-  /** A device-marks key: its v2 value, else the v1 value a 1.7.2 page left (migrated when parsed; adr/0017). */
-  function recallMarks(k) { var v = recall(k), k1 = scoreMarksKeyV1(k); return v === null && k1 ? recall(k1) : v; }
+  /** adr/0022 K2: a score device key's value; when absent, a non-TEST build takes the legacy unprefixed value (v2, then the 1.7.2 v1 marks; migrated when parsed, adr/0017), writes it under the prefixed key and leaves the legacy key. */
+  function recallScore(k) {
+    var v = recall(k), lk = v === null ? scoreLegacyKeys_(k) : [];
+    for (var i = 0; i < lk.length && v === null; i++) { v = recall(lk[i]); if (v !== null) store(k, v); }
+    return v;
+  }
+  function recallMarks(k) { return recallScore(k); }
+  /** Removes a score device key and its legacy twins (a legacy value left behind would be migrated back on the next read). */
+  function forgetScore(k) { try { window.localStorage.removeItem(k); scoreLegacyKeys_(k).forEach(function (lk) { window.localStorage.removeItem(lk); }); } catch (e) { /* ignore */ } }
   S.ribbon = recall(RIBBON_KEY) !== '0'; // default on
   S.crop = recall(CROP_KEY) === '1'; // atc-tty9.42: default off
   function isOpen() { return !panel.classList.contains('hidden'); }
@@ -11355,7 +11385,7 @@ function initScorePanel_() {
   function fetchShared() {
     var fid = S.folder;
     if (!fid) return Promise.resolve(null);
-    if (!isAllowedFolder_(fid)) return Promise.resolve(scoreSharedParse(recall(scoreSharedKey(fid))));
+    if (!isAllowedFolder_(fid)) return Promise.resolve(scoreSharedParse(recallScore(scoreSharedKey(fid))));
     var chk = checkP[fid]; delete checkP[fid];
     if (chk && Date.now() - chk.at < CHECK_REUSE_MS_) return chk.p.then(function (x) { // atc-ore.25 AC 3: the folder check's reply is this visit's getScore; a failed one is asked again
       return x.failed ? requestShared(fid).then(function (y) { return y.map; }) : x.map; // an adopt since the check would have dropped checkP, so this reply is current (and needs no storage)
@@ -11372,8 +11402,8 @@ function initScorePanel_() {
   /** atc-ore.24 AC 3: the one place a getScore reply touches the cache; a reply older than the last adoptShared is ignored. */
   function applyScoreReply(fid, seq0, r) {
     if (r !== undefined && !scoreLateReply(seq0, appliedSeq[fid])) newerMap[fid] = scoreSharedNewer(r);
-    var o = scoreReplyOutcome(scoreLateReply(seq0, appliedSeq[fid]), r, r == null ? null : scoreSharedParse(r), function () { return scoreSharedParse(recall(scoreSharedKey(fid))); });
-    if (o.action === 'remove') { try { window.localStorage.removeItem(scoreSharedKey(fid)); } catch (e) { /* ignore */ } }
+    var o = scoreReplyOutcome(scoreLateReply(seq0, appliedSeq[fid]), r, r == null ? null : scoreSharedParse(r), function () { return scoreSharedParse(recallScore(scoreSharedKey(fid))); });
+    if (o.action === 'remove') forgetScore(scoreSharedKey(fid));
     else if (o.action === 'write') store(scoreSharedKey(fid), JSON.stringify(o.map));
     if (o.action !== 'none') appliedSeq[fid] = seq0;
     return o.map;
@@ -11521,7 +11551,7 @@ function initScorePanel_() {
     if (btn) { btn.setAttribute('data-plain-title', btn.title); btn.setAttribute('data-plain-label', btn.getAttribute('aria-label') || ''); } // the media render has just set the plain ones
     var list = scoreVisiblePdfs(pdfs);
     if (avail.folder !== fid) { avail.folder = fid; avail.ok = false; avail.resolved = ''; }
-    var sc = fid ? scoreSharedParse(recall(scoreSharedKey(fid))) : null;
+    var sc = fid ? scoreSharedParse(recallScore(scoreSharedKey(fid))) : null;
     avail.ok = scoreAvailable(list, sc);
     paintScoreButton();
     if (!fid || !list.length || avail.fetched === fid || !isAllowedFolder_(fid)) {
@@ -12159,14 +12189,14 @@ function initScorePanel_() {
       adoptShared(fid, out.result);
       var nb = here ? scoreRebaseAfterSave(S.fileId, score, out.result) : null; // atc-ore.24: only the open PDF's save re-baselines, through the one writer
       if (nb) { S.base = nb; S.basedOn = nb.at; if (!S.readOnly && recallMarks(scoreMarksKey(S.fileId))) saveMarks(); }
-      if (drop) { try { window.localStorage.removeItem(drop); if (scoreMarksKeyV1(drop)) window.localStorage.removeItem(scoreMarksKeyV1(drop)); } catch (e) { /* ignore */ } } // its v1 twin held the same carried marks
+      if (drop) forgetScore(drop); // its legacy twins held the same carried marks
       if (here) {
         S.stale = null; S.saveMsg = 'Saved ' + scoreCount(out.result.marks.length);
         if (scoreBrokenJumps(S.marks).length) S.saveMsg += '. Some jumps have no valid target and are disabled for singers.'; // atc-tty9.27: this one stays, it needs reading
         else { S.okMsg = S.saveMsg; clearTimeout(S.okTimer); S.okTimer = setTimeout(clearOkMsg, 4000); }
       }
     } else if (out.kind === 'offline') {
-      scoreQueueWrite_(scoreQueueAdd(scoreQueueRead_(), { folderId: fid, score: score, basedOn: basedOn, queuedAt: new Date().toISOString() }));
+      scoreQueueWrite_(scoreQueueAdd(scoreQueueRead_(), { folderId: fid, score: score, basedOn: basedOn, queuedAt: new Date().toISOString(), target: scoreTarget_() }));
       renderConnectionBanner_(true);
       if (here) S.saveMsg = 'You are offline. Your save is queued and will be sent when the connection returns.';
     } else {
@@ -13264,9 +13294,9 @@ function initScorePanel_() {
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagTitle, scoreFixWindow, scoreFixAccept, scoreFixMessage, scoreFixCaption, scoreEstimateLabel, scoreFixPreroll, scoreFixLoopStep, scoreSyncChipText, scoreSyncFlagged, scoreSyncTarget, scoreSyncButtonText, scoreSyncCaption, scoreSyncCountdown, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
-  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreJumpList, scoreJumpWarning, scorePlayMarks, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
+  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreJumpList, scoreJumpWarning, scorePlayMarks, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreCarryAllowed, scoreSavedFor, scoreLinkNote, scoreLinkText, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
-  scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
+  scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome, scoreKey_, scoreLegacyKeys_, scoreQueueKey_, scoreQueueOwn, scoreRibbonKey_ };
 </script>
 
 <script>
