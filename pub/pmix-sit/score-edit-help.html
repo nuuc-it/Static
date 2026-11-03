@@ -98,12 +98,14 @@
 
   <section class="step" data-testid="score-edit-help-section-box">
     <h2>The line box</h2>
-    <p class="lead">The first timed mark of each line carries a <strong>box</strong>: the part of the page the sideways Ribbon shows for that line. Select a line&#39;s first mark in Edit (page view) and its box appears with a handle on each corner and side.</p>
+    <p class="lead">The first timed mark of each line carries a <strong>box</strong>: the part of the page the sideways Ribbon shows for that line. Select a line&#39;s first mark in Edit (page view, not the Ribbon) and its box appears with a handle on each corner and side. In the Ribbon, each line shows only its box, starting at the top of the box.</p>
     <ol>
-      <li>Drag a handle to resize the box, or drag inside it to move it. Each is one Undo step.</li>
+      <li>Drag a handle to resize the box, or drag inside it (away from a mark) to move it. A box cannot leave the page or cut out its own marks. Each drag is one Undo step. A drag never adds a mark; wait a moment after a drag before you tap to add one.</li>
       <li>Dragging the mark moves only the mark, and it stops at the edge of its box. The first mark can sit right on the first note.</li>
-      <li>A new line starts with the size of the previous line&#39;s box. Tap <strong>Size all</strong> to give every line the selected box&#39;s width and height.</li>
-      <li>Tap inside a line&#39;s box to add a timed mark to that line, wherever in the box you tap; it lines up with the first mark.</li>
+      <li>A new line starts with the size of the previous line&#39;s box. Open the mark editor (tap the selected mark again) and tap <strong>Size all boxes</strong> to give every line the selected box&#39;s width and height; each line keeps its top-left corner. One Undo step.</li>
+      <li>Tap inside a line&#39;s box to add a timed mark to that line, wherever in the box you tap; it lines up with the first mark. A tap on a handle adds nothing.</li>
+      <li>Scores marked before boxes existed get their boxes worked out automatically when opened; adjust any that look wrong.</li>
+      <li>In the Ribbon, scrolling up or down moves the view within the box and stops at its top and bottom, so a tall line can be scrolled to your part. A box shorter than the Ribbon does not scroll.</li>
     </ol>
   </section>
 
