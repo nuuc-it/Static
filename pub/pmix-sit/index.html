@@ -2169,10 +2169,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.4.13";
+var STATIC_BUILD_VERSION_ = "1.8.4.14";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-03T09:38:24.672Z";
+var STATIC_BUILD_DATE_ = "2026-11-03T09:59:26.843Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8977,25 +8977,27 @@ var SCORE_RIBBON_JUMP_PAD_PT = 18; // atc-tty9.35: a taken jump's span ends this
 function scoreRibbonLayout(marks, geo, opt) {
   var all = marks || [];
   var eols = all.filter(function (k) { return k && k.kind === 'eol'; });
-  var plain = all.filter(function (k) { return k && k.kind !== 'eol' && !(typeof k.t === 'number' && (k.kind === undefined || k.kind === 'mark')); }); // untimed marks, notes, jumps
+  var plain = all.filter(function (k) { return k && k.kind && k.kind !== 'eol' && k.kind !== 'mark'; }); // notes and jumps (an untimed mark is a line member, atc-rlep.2)
   marks = scoreTimed(marks);
-  var d = scoreDeriveLines(marks), dAll = scoreDeriveLines(all); // atc-rlep.1: slices are the timed lines (J3 adds untimed ones); a box comes from the full line, whose start may have no time
+  var dAll = scoreDeriveLines(all), tIdx = []; // atc-rlep.2: every line is a slice, timed or not; only timed marks are knots. tIdx[i] = index in all of timed mark i
+  all.forEach(function (k, i) { if (k && (k.kind === undefined || k.kind === 'mark') && typeof k.t === 'number') tIdx.push(i); });
+  var lineOfT = tIdx.map(function (ai) { return dAll.lineOf[ai]; });
+  var isT = function (k) { return !!k && (k.kind === undefined || k.kind === 'mark') && typeof k.t === 'number'; };
   var ay = geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay;
-  var starts = d.lines.map(function (ln) { return marks[ln.first]; });
+  var starts = dAll.lines.map(function (ln) { return all[ln.first]; });
   var lineLeft = [], lineEol = [], lineBox = [], plainOwner = plain.map(function (k) { return scoreLineFor(starts, k); });
-  d.lines.forEach(function (ln, li) {
-    var f = marks[ln.first], last = marks[ln.members[ln.members.length - 1]];
-    var left = Math.min.apply(null, ln.members.map(function (mi) { return marks[mi].x; }));
-    plainOwner.forEach(function (own, pi) { // an untimed mark, note or jump belongs to the nearest line start in y on its page (as scoreRibbonPos): keep it inside the crop
+  dAll.lines.forEach(function (ln, li) {
+    var f = all[ln.first], last = all[ln.members[ln.members.length - 1]];
+    var left = Math.min.apply(null, ln.members.map(function (mi) { return all[mi].x; }));
+    plainOwner.forEach(function (own, pi) { // a note or jump belongs to the nearest line start in y on its page (as scoreRibbonPos): keep it inside the crop
       if (own !== li) return;
       var k = plain[pi];
       if (typeof k.x === 'number' && k.x < left) left = k.x;
     });
-    var ai = all.indexOf(f), al = ai >= 0 ? dAll.lineOf[ai] : -1;
-    lineLeft[li] = left; lineBox[li] = al >= 0 ? scoreLineBox(all, dAll.lines[al]) : null; // adr/0018: a boxed line's right edge takes the EOL's role; its EOL mark is ignored
+    lineLeft[li] = left; lineBox[li] = scoreLineBox(all, ln); // adr/0018: a boxed line's right edge takes the EOL's role; its EOL mark is ignored
     lineEol[li] = lineBox[li] ? lineBox[li].x + lineBox[li].w : scoreEolFor(eols, f, last, starts);
   });
-  var order = d.lines.map(function (ln, li) { return li; }), rank = [];
+  var order = dAll.lines.map(function (ln, li) { return li; }), rank = [];
   order.sort(function (a, b) { return starts[a].page - starts[b].page || starts[a].y - starts[b].y || a - b; });
   order.forEach(function (li, r) { rank[li] = r; });
   // atc-tty9.35: unroll the timed jumps with a valid target into spans (a span is a cut of one line, with the audio-time offset dd of its marks)
@@ -9005,7 +9007,7 @@ function scoreRibbonLayout(marks, geo, opt) {
     var g = scoreJumpTarget(all, j), jl = scoreLineFor(starts, j), ti = -1; // the line on the jump's page nearest in y (ties: the upper), as for untimed marks
     if (!g) return;
     marks.forEach(function (k, i) { if (k.id === g.id) ti = i; });
-    if (jl >= 0 && ti >= 0) jumps.push({ t: j.t, x: j.x, jl: jl, tl: d.lineOf[ti], tx: g.x, tt: g.t });
+    if (jl >= 0 && ti >= 0) jumps.push({ t: j.t, x: j.x, jl: jl, tl: lineOfT[ti], tx: g.x, tt: g.t });
   });
   jumps = jumps.map(function (j, i) { j.i = i; return j; }).sort(function (a, b) { return a.t - b.t || a.i - b.i; });
   var spans = [], taken = [], cur = { r: 0, from: null, kfrom: null }, win = null; // win = {d, tt, jt}: the replayed window of the last back jump (its marks play at t + d; marks timed outside it use plain audio time, atc-tty9.34)
@@ -9026,9 +9028,10 @@ function scoreRibbonLayout(marks, geo, opt) {
   var unrolled = taken.length > 0;
   if (unrolled) emit(order.length - 1, null);
   else order.forEach(function (li) { spans.push({ li: li, from: null, kfrom: null, cut: lineEol[li], jcut: null, jx: null, win: null }); });
+  var late = []; // atc-rlep.2: slices whose line start has no time take their track offset at the estimated start time, once the knots are final
   var segs = spans.map(function (sp) {
-    var li = sp.li, ln = d.lines[li], f = marks[ln.first], pg = scorePagePx(geo, f.page), s = pg.w / pg.ptW;
-    var dy = opt ? scoreOffsetDyAt(opt.offsets, opt.trackId, f.t) : 0, cut = sp.cut;
+    var li = sp.li, ln = dAll.lines[li], f = all[ln.first], pg = scorePagePx(geo, f.page), s = pg.w / pg.ptW;
+    var dy = opt && isT(f) ? scoreOffsetDyAt(opt.offsets, opt.trackId, f.t) : 0, cut = sp.cut;
     var bx = lineBox[li], srcX, srcW, sg;
     if (bx) { // adr/0018: the slice is the line's stanza box (the track offset still shifts it)
       srcX = (sp.from === null ? bx.x : Math.max(bx.x, sp.from - SCORE_RIBBON_PAD_PT)) * s;
@@ -9040,6 +9043,7 @@ function scoreRibbonLayout(marks, geo, opt) {
     sg = { line: li, page: f.page, y: f.y, srcX: srcX, srcY: f.y * s + dy * pg.h - ay * geo.H, srcW: srcW, srcH: geo.H, ribbonX: 0 };
     }
     if (unrolled && sp.win) { sg.d = sp.win.d; sg.tt = sp.win.tt; sg.jt = sp.win.jt; } // the replay window: marks timed tt..jt play at t + d
+    if (opt && !isT(f)) late.push({ sg: sg, h: pg.h });
     return sg;
   });
   var lineY = [];
@@ -9049,11 +9053,13 @@ function scoreRibbonLayout(marks, geo, opt) {
   var K, markX, segIdx, endKnot = null;
   if (!unrolled) {
     K = []; markX = []; segIdx = [];
+    var lastOf = {}; // the timed member of each line furthest right: its EOL knot follows it
+    marks.forEach(function (k, i) { var lj = lineOfT[i]; if (lastOf[lj] === undefined || k.x >= marks[lastOf[lj]].x) lastOf[lj] = i; });
     marks.forEach(function (k, i) {
-      var li = d.lineOf[i], ln = d.lines[li], si = segOf[li], sg = segs[si], pg = scorePagePx(geo, k.page), s = pg.w / pg.ptW;
+      var li = lineOfT[i], ln = dAll.lines[li], si = segOf[li], sg = segs[si], pg = scorePagePx(geo, k.page), s = pg.w / pg.ptW;
       K.push(k); segIdx.push(si);
-      markX.push(sg.ribbonX + scoreTimingX(k.x, i === ln.first ? 'start' : null) * s - sg.srcX);
-      if (i === ln.members[ln.members.length - 1] && lineEol[li] !== null && i + 1 < marks.length) { // the line's EOL knot, at the next line's first time
+      markX.push(sg.ribbonX + scoreTimingX(k.x, tIdx[i] === ln.first ? 'start' : null) * s - sg.srcX);
+      if (i === lastOf[li] && lineEol[li] !== null && i + 1 < marks.length) { // the line's EOL knot, at the next timed mark's time
         K.push({ t: marks[i + 1].t, page: k.page, id: null, eol: true }); // atc-elfg.7: re-timed below, in proportion to distance
         segIdx.push(si);
         markX.push(Math.max(markX[markX.length - 1], sg.ribbonX + scoreTimingX(lineEol[li], 'eol') * s - sg.srcX));
@@ -9063,30 +9069,34 @@ function scoreRibbonLayout(marks, geo, opt) {
       if (kn.eol && i > 0 && i + 1 < K.length) kn.t = scoreRibbonEolT(K[i - 1].t, markX[i - 1], K[i + 1].t, markX[i + 1], markX[i]);
     });
     if (marks.length) { // atc-elfg.10: the time-last mark's line EOL (no later mark to time it against) is the end knot
-      var ln0 = d.lines[d.lineOf[marks.length - 1]], si0 = segOf[d.lineOf[marks.length - 1]], sg0 = segs[si0];
-      if (lineEol[d.lineOf[marks.length - 1]] !== null && ln0.members[ln0.members.length - 1] === marks.length - 1) {
+      var li0 = lineOfT[marks.length - 1], si0 = segOf[li0], sg0 = segs[si0];
+      if (lineEol[li0] !== null && lastOf[li0] === marks.length - 1) {
         var pg0 = scorePagePx(geo, sg0.page);
-        endKnot = { x: sg0.ribbonX + scoreTimingX(lineEol[d.lineOf[marks.length - 1]], 'eol') * pg0.w / pg0.ptW - sg0.srcX, si: si0, page: sg0.page };
+        endKnot = { x: sg0.ribbonX + scoreTimingX(lineEol[li0], 'eol') * pg0.w / pg0.ptW - sg0.srcX, si: si0, page: sg0.page };
       }
     }
   } else { // knots (audio time, unrolled x): every timed mark of every span (t + the span's offset), and each taken forward jump at its cut
     K = [];
     spans.forEach(function (sp, si) {
-      var sg = segs[si], ln = d.lines[sp.li];
+      var sg = segs[si], ln = dAll.lines[sp.li];
       ln.members.forEach(function (mi) {
-        var k = marks[mi], pg = scorePagePx(geo, k.page);
+        var k = all[mi], pg = scorePagePx(geo, k.page);
+        if (!isT(k)) return; // an untimed member is drawn in the slice but is never a knot
         if ((sp.kfrom !== null && k.x < sp.kfrom) || (sp.jx !== null && k.x > sp.jx)) return; // marks right of the jump are drawn in the crop but are not knots
         K.push({ t: sp.win && k.t >= sp.win.tt && k.t <= sp.win.jt ? k.t + sp.win.d : k.t, page: k.page, id: k.id, ux: sg.ribbonX + scoreTimingX(k.x, mi === ln.first ? 'start' : null) * pg.w / pg.ptW - sg.srcX, si: si });
       });
     });
     var knotted = {};
     K.forEach(function (kn) { knotted[kn.si] = true; });
-    spans.forEach(function (sp, si) { // atc-elfg.3: a span cut by its EOL ends at the EOL knot, timed at the next span's first knot
-      if (sp.jcut !== null || lineEol[sp.li] === null || !knotted[si] || !knotted[si + 1]) return;
-      var mine = K.filter(function (kn) { return kn.si === si; }), nextT = Math.min.apply(null, K.filter(function (kn) { return kn.si === si + 1; }).map(function (kn) { return kn.t; }));
+    spans.forEach(function (sp, si) { // atc-elfg.3: a span cut by its EOL ends at the EOL knot, timed at the next knotted span's first knot (untimed spans between carry no knot)
+      if (sp.jcut !== null || lineEol[sp.li] === null || !knotted[si]) return;
+      var sn = -1;
+      for (var q = si + 1; q < spans.length && sn < 0; q++) if (knotted[q]) sn = q;
+      if (sn < 0) return;
+      var mine = K.filter(function (kn) { return kn.si === si; }), nextT = Math.min.apply(null, K.filter(function (kn) { return kn.si === sn; }).map(function (kn) { return kn.t; }));
       var lastT = Math.max.apply(null, mine.map(function (kn) { return kn.t; })), lastX = Math.max.apply(null, mine.map(function (kn) { return kn.ux; }));
       var sg = segs[si], pg = scorePagePx(geo, sg.page);
-      var nextX = K.filter(function (kn) { return kn.si === si + 1 && kn.t === nextT; })[0].ux, eolX = Math.max(lastX, sg.ribbonX + scoreTimingX(lineEol[sp.li], 'eol') * pg.w / pg.ptW - sg.srcX);
+      var nextX = K.filter(function (kn) { return kn.si === sn && kn.t === nextT; })[0].ux, eolX = Math.max(lastX, sg.ribbonX + scoreTimingX(lineEol[sp.li], 'eol') * pg.w / pg.ptW - sg.srcX);
       if (nextT >= lastT) K.push({ t: scoreRibbonEolT(lastT, lastX, nextT, nextX, eolX), page: sg.page, id: null, eol: true, ux: eolX, si: si }); // atc-elfg.7: timed in proportion to distance
     });
     taken.forEach(function (j) { // a back jump's knot is the target's (same audio time), so the playhead runs on without a step; a span with no knot gets the jump's
@@ -9103,11 +9113,33 @@ function scoreRibbonLayout(marks, geo, opt) {
       endKnot = { x: lsg.ribbonX + scoreTimingX(lineEol[lsp.li], 'eol') * lpg.w / lpg.ptW - lsg.srcX, si: lk.si, page: lsg.page };
     }
   }
-  if (endKnot && K.length > 1 && endKnot.x > markX[K.length - 1]) { // atc-elfg.10: play on to the last line's EOL at the last forward span's speed (clamped to the track length)
-    var en = K.length - 1, ev = 0;
+  var knotSegs = function () { var o = {}; segIdx.forEach(function (q) { o[q] = true; }); return o; };
+  var someKnotted = function (ks, a, b) { for (var q = Math.min(a, b) + 1; q < Math.max(a, b); q++) if (ks[q]) return true; return false; }; // atc-rlep.2: a knotless (untimed) slice is crossed, not held
+  var forwardSpeed = function (en) { // the last forward span's speed before knot en (0 when none)
+    var ks = knotSegs(), ev = 0;
     for (var ej = en - 1; ej >= 0 && !(ev > 0); ej--) {
-      if (K[ej + 1].t > K[ej].t && markX[ej + 1] > markX[ej] && Math.abs(segIdx[ej + 1] - segIdx[ej]) <= 1) ev = (markX[ej + 1] - markX[ej]) / (K[ej + 1].t - K[ej].t);
+      if (K[ej + 1].t > K[ej].t && markX[ej + 1] > markX[ej] && !someKnotted(ks, segIdx[ej], segIdx[ej + 1])) ev = (markX[ej + 1] - markX[ej]) / (K[ej + 1].t - K[ej].t);
     }
+    return ev;
+  };
+  // atc-rlep.2: untimed slices after the last knot's slice: the end knot is the track end (endT) at the ribbon's right edge, else extrapolated at the last span speed
+  var nK0 = K.length, lastSi = nK0 ? Math.max.apply(null, segIdx) : -1;
+  if (nK0 && segIdx[nK0 - 1] === lastSi && lastSi < segs.length - 1 && !K[nK0 - 1].jump && !K[nK0 - 1].eol) {
+    endKnot = null; // the EOL of the last timed line is timed against this end knot instead
+    var lkn = K[nK0 - 1], lastX = markX[nK0 - 1], endK = null, endTn = opt ? Number(opt.endT) : 0, endPg = segs[segs.length - 1].page;
+    if (endTn > lkn.t) endK = { t: endTn, page: endPg, id: null, end: true };
+    else { var ev0 = forwardSpeed(nK0 - 1); if (ev0 > 0) endK = { t: lkn.t + (x - lastX) / ev0, page: endPg, id: null, end: true }; }
+    if (endK) {
+      var lsg2 = segs[lastSi], eli = lsg2.line;
+      if (lineEol[eli] !== null && (!unrolled || spans[lastSi].jcut === null)) {
+        var lpg2 = scorePagePx(geo, lsg2.page), eX = Math.max(lastX, lsg2.ribbonX + scoreTimingX(lineEol[eli], 'eol') * lpg2.w / lpg2.ptW - lsg2.srcX);
+        K.push({ t: scoreRibbonEolT(lkn.t, lastX, endK.t, x, eX), page: lsg2.page, id: null, eol: true }); markX.push(eX); segIdx.push(lastSi);
+      }
+      K.push(endK); markX.push(x); segIdx.push(segs.length - 1);
+    }
+  }
+  if (endKnot && K.length > 1 && endKnot.x > markX[K.length - 1]) { // atc-elfg.10: play on to the last line's EOL at the last forward span's speed (clamped to the track length)
+    var en = K.length - 1, ev = forwardSpeed(en);
     if (ev > 0) {
       var eT = K[en].t + (endKnot.x - markX[en]) / ev;
       if (opt && Number(opt.endT) > K[en].t) eT = Math.min(eT, Number(opt.endT));
@@ -9115,12 +9147,17 @@ function scoreRibbonLayout(marks, geo, opt) {
       markX.push(endKnot.x); segIdx.push(endKnot.si);
     }
   }
-  // atc-tty9.20: span i (knot i to i+1) is a hold at a repeat/skip; the span speed is 0 there and for a zero-length span
-  var hold = [], sp = [], markV = [];
+  if (K.length && segs.length && segIdx.indexOf(0) < 0 && K[0].t > 0) { K.unshift({ t: 0, page: segs[0].page, id: null, start: true }); markX.unshift(0); segIdx.unshift(0); } // untimed slices before the first knot
+  if (!K.length && segs.length && opt && Number(opt.endT) > 0) { // no timed mark: the whole ribbon runs from t 0 to the track end
+    K = [{ t: 0, page: segs[0].page, id: null, start: true }, { t: Number(opt.endT), page: segs[segs.length - 1].page, id: null, end: true }];
+    markX = [0, x]; segIdx = [0, segs.length - 1];
+  }
+  // atc-tty9.20: span i (knot i to i+1) is a hold at a repeat/skip (back, or over a slice with a knot); the span speed is 0 there and for a zero-length span
+  var hold = [], sp = [], markV = [], ksH = knotSegs();
   K.forEach(function (k, i) {
     if (i + 1 >= K.length) return;
     var h = K[i + 1].t - k.t;
-    hold[i] = markX[i + 1] < markX[i] || Math.abs(segIdx[i + 1] - segIdx[i]) > 1;
+    hold[i] = markX[i + 1] < markX[i] || someKnotted(ksH, segIdx[i], segIdx[i + 1]);
     sp[i] = hold[i] || !(h > 0) ? 0 : (markX[i + 1] - markX[i]) / h;
   });
   K.forEach(function (k, i) { // monotone end/interior slopes (weighted harmonic mean of the two span speeds, 0 at a stop or hold)
@@ -9132,7 +9169,12 @@ function scoreRibbonLayout(marks, geo, opt) {
     var w1 = 2 * h1 + h0, w2 = h1 + 2 * h0;
     markV[i] = (w1 + w2) / (w1 / d0 + w2 / d1);
   });
-  return { segs: segs, width: x, timed: K, markX: markX, markV: markV, hold: hold, segIdx: segIdx, lineY: lineY, starts: starts.map(function (o) { return { page: o.page, y: o.y }; }), W: geo.W, H: geo.H };
+  var Lr = { segs: segs, width: x, timed: K, markX: markX, markV: markV, hold: hold, segIdx: segIdx, lineY: lineY, starts: starts.map(function (o) { return { page: o.page, y: o.y }; }), W: geo.W, H: geo.H };
+  late.forEach(function (o) { // a slice whose line start has no time: the track offset at its estimated start time (dy moves srcY only, so the knots do not depend on it)
+    var dd = scoreOffsetDyAt(opt.offsets, opt.trackId, scoreRibbonTimeAt(null, o.sg.ribbonX, Lr)) * o.h;
+    o.sg.srcY += dd; if (o.sg.panBase !== undefined) o.sg.panBase += dd;
+  });
+  return Lr;
 }
 /** atc-tty9.9: the x (pt) where an EOL mark cuts a line, or null. The EOL belongs to the line on its page whose start is nearest in y
  *  (within SCORE_SAME_LINE_PT) and lies right of the line's last mark; the nearest such EOL in y, then the leftmost, wins. */
@@ -9227,6 +9269,17 @@ function scoreRibbonTimeAt(marks, rx, layout) {
   }
   return K[best].t;
 }
+/** atc-rlep.2: the estimated track time of mark `id`, timed or not: its ribbon x (as scoreRibbonPos draws it) read through the knots along reading order.
+ *  null when the layout has fewer than 2 knots or the mark is not on the ribbon. */
+function scoreMarkEstimate(layout, geo, marks, id) {
+  var mk = null;
+  (marks || []).forEach(function (k) { if (k && k.id === id) mk = k; });
+  if (!mk || !layout || !layout.timed || layout.timed.length < 2) return null;
+  var pos = scoreRibbonPos(layout, geo, mk);
+  return pos ? scoreRibbonTimeAt(marks, pos.x, layout) : null;
+}
+/** atc-rlep.2: the scroll that pins mark x (markRx) in view: the follow scroll, or further right when the mark would sit right of 65 percent of the view; never below 0. */
+function scoreRibbonPinScroll(followScroll, markRx, viewW) { return Math.max(0, followScroll, markRx - 0.65 * viewW); }
 /** atc-b3aa: the ribbon y (view px) of the first timed mark of the line being played at track time t, or null when there is none.
  *  The line is the slice of the knot at or before t (after a back jump, the copy being played). */
 function scoreRibbonLineY(marks, layout, geo, t) {
@@ -9235,11 +9288,16 @@ function scoreRibbonLineY(marks, layout, geo, t) {
   var si = layout.segIdx[n], sg = layout.segs[si], first = null;
   if (!sg) return null;
   for (var i = 0; i < K.length && !first; i++) {
-    if (layout.segIdx[i] !== si || K[i].jump) continue;
+    if (layout.segIdx[i] !== si || K[i].jump || K[i].id === null) continue;
     var m = marks.filter(function (q) { return q.id === K[i].id; })[0];
     if (m && typeof m.t === 'number' && (m.kind === undefined || m.kind === 'mark')) first = m;
   }
-  if (!first) return null;
+  if (!first) { // atc-rlep.2: a slice with no timed mark: its line start (untimed) y
+    var st = layout.starts && layout.starts[sg.line];
+    if (!st || marks.some(function (q) { return q && q.kind !== 'eol' && q.kind !== 'jump' && q.kind !== 'note' && typeof q.t === 'number' && scoreLineFor(layout.starts, q) === sg.line; })) return null;
+    var pgs = scorePagePx(geo, st.page);
+    return st.y * (pgs.w / pgs.ptW) - sg.srcY;
+  }
   var pg = scorePagePx(geo, first.page);
   return first.y * (pg.w / pg.ptW) - sg.srcY;
 }
@@ -11354,6 +11412,8 @@ function initScorePanel_() {
   }
   function trackName(id) { var t = trackInfo().tracks; for (var i = 0; i < t.length; i++) if (t[i].id === id) return t[i].name; return ''; }
   function trackNow() { return scoreRound2(scoreTrackTime(clockNow(), rate())); }
+  /** atc-rlep.2: the track length in track time (the loaded audio's own length), 0 when unknown; the ribbon's end knot for untimed lines after the last timed mark. */
+  function trackEndT() { try { var d = scoreRound2(AudioEngine.getTotalDuration() * rate()); return d > 0 && isFinite(d) ? d : 0; } catch (e) { return 0; } }
   /** atc-tty9.34: the score time of the playhead (first-pass time inside a back jump's replay window); Set to now on a mark and Prev/Next use it. */
   function scoreNowT() { return scoreRound2(scoreJumpClock(S.marks, trackNow())); }
   /** Move the playhead to track time t (kept playing or paused as it was) and snap the view. */
@@ -11940,9 +12000,9 @@ function initScorePanel_() {
     var dg = S.gesture && S.gesture.drag;
     if (dg && dg.started && dg.layout) return dg.layout; // a mark drag draws through the layout frozen at its start, so the slice does not slide under the finger
     var tid = focusTrackId();
-    var key = [geo.W, geo.H, S.zoom, tid, geo.pages.map(function (q) { return q.w + 'x' + q.h; }).join()].join('|');
+    var endT = trackEndT(), key = [geo.W, geo.H, S.zoom, tid, endT, geo.pages.map(function (q) { return q.w + 'x' + q.h; }).join()].join('|');
     if (!S.rv.layout || key !== S.rv.key || S.rv.marks !== S.marks || S.rv.offsets !== S.offsets) {
-      S.rv.layout = scoreRibbonLayout(S.marks, geo, { offsets: S.offsets, trackId: tid }); // the pan (S.offY) is added at draw and hit time
+      S.rv.layout = scoreRibbonLayout(S.marks, geo, { offsets: S.offsets, trackId: tid, endT: endT }); // the pan (S.offY) is added at draw and hit time
       S.ribbonBuilds++;
       panel.setAttribute('data-ribbon-builds', String(S.ribbonBuilds)); // test seam: layout rebuilds
       panel.setAttribute('data-ribbon-width', String(Math.round(S.rv.layout.width))); // test seam: the ribbon's length (an EOL mark shortens its line; a timed jump adds a copy per repeated slice)
@@ -12800,7 +12860,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
+  scoreDeriveLines, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreMarksKeyV1, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome };
