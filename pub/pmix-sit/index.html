@@ -575,6 +575,8 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 .score-panel[data-play="on"] .score-pos-cell .nowT { font-size: 16px; }
 .score-panel[data-play="on"] .score-pos-cell.next { justify-content: flex-end; }
 .score-editor { padding: 6px 8px; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); border-left: 3px solid #b45309; display: flex; flex-direction: column; gap: 4px; }
+.score-sheet { flex: 0 0 auto; padding: 6px 8px; background: var(--surface-2); border-top: 1px solid var(--border-strong); border-left: 3px solid #b45309; overflow: auto; max-height: 38%; }
+.score-panel[data-sub="layout"] .score-editor { min-height: 0; }
 .score-editor:not([hidden]) { min-height: 46px; } /* atc-rlep.1: the old hint row kept this height, so selecting a mark does not resize the score */
 .score-ed-row { display: flex; align-items: center; gap: 4px; }
 .score-ed-row .score-tbtn { min-height: 38px; min-width: 38px; padding: 0 6px; font-size: 12px; flex: 0 0 auto; }
@@ -1477,8 +1479,8 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="score-save" data-testid="score-save" class="btn score-tbtn score-primary" title="Save these marks to Drive for every singer">Save</button>
           <span id="score-chip" data-testid="score-chip" class="score-chip">
             <span id="score-chip-text" data-testid="score-chip-text"></span>
-            <select id="score-chip-add" data-testid="score-chip-add" class="score-tbtn" aria-label="What a tap adds" title="What a tap on the score adds (interim: replaced by the Layout chip)">
-              <option value="timed">Timed</option><option value="untimed">Mark</option><option value="jump">Jump</option><option value="note">Note</option></select>
+            <select id="score-chip-add" data-testid="score-chip-add" class="score-tbtn" aria-label="What a tap adds" title="What a tap on the score adds">
+              <option value="mark">Mark</option><option value="jump">Jump</option><option value="note">Note</option></select>
           </span>
           <span class="score-menuwrap">
             <button id="score-edit-more" data-testid="score-edit-more" class="btn score-tbtn" aria-haspopup="true" aria-expanded="false" aria-label="More edit tools" title="Clear all, track offset, reaction">&#8943;</button>
@@ -1507,7 +1509,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
               <span id="score-ed-badge" data-testid="score-ed-badge" class="score-badge"></span>
               <input id="score-measure" data-testid="score-measure" type="text" maxlength="32" placeholder="Measure" aria-label="Measure label" title="Measure label, unique in the score; empty clears it">
               <input id="score-jump-label" data-testid="score-jump-label" type="text" maxlength="64" placeholder="Jump label" aria-label="Jump label" title="Text shown on the jump (1-64 characters)" hidden>
-              <span class="score-ed-info"><b id="score-ed-num" data-testid="score-ed-num"></b><span id="score-ed-time" data-testid="score-ed-time"></span></span>
+              <span id="score-ed-info" data-testid="score-ed-info" class="score-ed-info"><b id="score-ed-num" data-testid="score-ed-num"></b><span id="score-ed-time" data-testid="score-ed-time"></span></span>
               <button id="score-nudge-minus" data-testid="score-nudge-minus" class="btn score-tbtn" title="Mark 0.1 s earlier">-0.1</button>
               <button id="score-set-now" data-testid="score-set-now" class="btn score-tbtn score-primary" title="Move the mark to the cursor">Set to now</button>
               <button id="score-goto-quick" data-testid="score-goto-quick" class="btn score-tbtn" title="Move the cursor to this mark">Go to</button>
@@ -1522,7 +1524,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
               <select id="score-jump-target" data-testid="score-jump-target" class="score-tbtn" aria-label="Jump target" title="The timed mark this jump goes to" hidden></select>
               <button id="score-box-all" data-testid="score-box-all" class="btn score-tbtn" title="Give every line's box this box's width and height" hidden>Size all boxes</button>
               <button id="score-goto" data-testid="score-goto" class="btn score-tbtn" title="Move the cursor to this mark">Go to</button>
-              <button id="score-clear-time" data-testid="score-clear-time" class="btn score-tbtn" title="Take the time off this mark">Untime</button>
+              <button id="score-clear-time" data-testid="score-clear-time" class="btn score-tbtn" title="Take the time off this mark">Clear time</button>
               <button id="score-delete" data-testid="score-delete" class="btn score-tbtn score-danger" title="Delete this mark">Delete</button>
             </div>
           </div>
@@ -1555,6 +1557,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <div id="score-strip" data-testid="score-strip" class="score-strip"></div>
         </div>
         </div>
+        <div id="score-sheet" data-testid="score-sheet" class="score-sheet" hidden></div>
       </section>
 
       <!-- Transport Controls -->
@@ -2166,10 +2169,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.4.11";
+var STATIC_BUILD_VERSION_ = "1.8.4.12";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-03T07:17:05.582Z";
+var STATIC_BUILD_DATE_ = "2026-11-03T08:53:44.622Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -9929,7 +9932,7 @@ function scoreSetJump(marks, id, patch) {
  *  mark other than itself; refused when none); anything -> EOL drops time, measure, note, label and target; jump -> mark drops label and target
  *  (an untimed mark); anything -> note (atc-tty9.26) drops time, measure, label and target and keeps an existing note text (else "Note"); note -> mark
  *  keeps the note text as an untimed mark; note -> EOL drops the note. Deleting-style: jumps that targeted a mark that stops being a timed mark are left to scoreBrokenJumps. Returns {marks} or {error}. */
-function scoreSetKind(marks, id, kind) {
+function scoreSetKind(marks, id, kind, sizes) { // sizes: per-page {w, h} in pt (as pageSizes()); without them a retyped mark starts a line with no box
   var list = scoreCopyMarks(marks), k = null;
   list.forEach(function (q) { if (q.id === id) k = q; });
   if (!k) return { error: 'Select a mark first.' };
@@ -9955,8 +9958,8 @@ function scoreSetKind(marks, id, kind) {
   if (kind === 'eol') { k.kind = 'eol'; delete k.t; delete k.measure; delete k.note; return { marks: scoreSorted(scoreAlignEols(list)) }; }
   k.kind = 'mark';
   if (cur !== 'mark') { // atc-rlep.1: a mark made by retyping is placed as on add (no page size here: a new line is boxed by the next migration)
-    var rest = list.filter(function (q) { return q !== k; });
-    scorePlaceMark(rest, k, 0, 0);
+    var rest = list.filter(function (q) { return q !== k; }), psz = sizes && sizes[k.page - 1];
+    scorePlaceMark(rest, k, psz ? psz.w : 0, psz ? psz.h : 0);
   }
   return { marks: scoreSorted(list) };
 }
@@ -10296,7 +10299,7 @@ var SCORE_UI = {
   'score-undo': function (s, d) { return d.edit && !!s.ready; },
   'score-save': function (s, d) { return d.edit && !!s.ready && d.sb.shown; },
   'score-chip': function (s, d) { return d.edit && !!s.ready; },
-  'score-chip-add': function (s, d) { return d.edit && !!s.ready && !s.offsetMode; },
+  'score-chip-add': function (s, d) { return d.edit && !!s.ready && !s.offsetMode && s.mode === 'layout'; }, // the Layout chip 'Tap adds' (Mark | Jump | Note)
   'score-edit-more': function (s, d) { return d.edit && !!s.ready; },
   'score-revert-more': function (s, d) { return d.canRevert; },
   'score-offset-tool': function (s) { return !s.playing; },
@@ -10313,17 +10316,23 @@ var SCORE_UI = {
   // the whole transport card: hidden in Layout (it pauses audio; the page view needs no transport)
   'transport-section': function (s) { return !(s.open && s.mode === 'layout'); },
   // mark editor row
-  'score-editor': function (s, d) { return d.edit && !!s.ready && !s.offsetMode; },
+  // Sync keeps the timing row; Layout has the bottom sheet instead (the row there appears only for a warning or a field message)
+  'score-editor': function (s, d) { return d.edit && !!s.ready && !s.offsetMode && (s.mode === 'sync' || s.brokenJumps > 0 || !!s.fieldMsg); },
+  'score-sheet': function (s, d) { return s.mode === 'layout' && !!s.ready && !s.offsetMode && !!s.selected; },
   'score-ed-sel': function (s) { return !!s.selected; },
-  'score-ed-more': function (s) { return !!s.selected && !!s.pop; },
+  'score-ed-info': function (s) { return !!s.selected && s.mode === 'sync'; },
+  'score-edit-mark': function (s) { return !!s.selected && s.mode === 'sync'; },
+  'score-goto': function (s) { return !!s.selected && s.mode === 'sync'; },
+  'score-goto-quick': function (s) { return !!s.selected && s.mode === 'sync'; },
+  'score-ed-more': function (s) { return !!s.selected && (!!s.pop || s.mode === 'layout'); },
   'score-measure': function (s) { return !!s.selected && s.kind === 'mark'; },
   'score-note': function (s) { return !!s.selected && s.kind !== 'eol' && s.kind !== 'jump'; },
   'score-note-fld': function (s) { return !!s.selected && s.kind !== 'eol' && s.kind !== 'jump'; },
   'score-jump-label': function (s) { return !!s.selected && s.kind === 'jump'; },
   'score-jump-target': function (s) { return !!s.selected && s.kind === 'jump'; },
-  'score-nudge-minus': function (s) { return !!s.selected && !!s.timed && s.kind !== 'eol' && s.kind !== 'note'; },
-  'score-nudge-plus': function (s) { return !!s.selected && !!s.timed && s.kind !== 'eol' && s.kind !== 'note'; },
-  'score-set-now': function (s) { return !!s.selected && s.kind !== 'eol' && s.kind !== 'note'; },
+  'score-nudge-minus': function (s) { return !!s.selected && s.mode === 'sync' && !!s.timed && s.kind !== 'eol' && s.kind !== 'note'; },
+  'score-nudge-plus': function (s) { return !!s.selected && s.mode === 'sync' && !!s.timed && s.kind !== 'eol' && s.kind !== 'note'; },
+  'score-set-now': function (s) { return !!s.selected && s.mode === 'sync' && s.kind !== 'eol' && s.kind !== 'note'; },
   'score-clear-time': function (s) { return !!s.selected && !!s.timed && s.kind !== 'eol'; },
   'score-box-all': function (s) { return !!s.boxAll; },
   'score-jump-warn': function (s, d) { return s.brokenJumps > 0 && d.edit && !!s.ready && !s.offsetMode; },
@@ -10704,7 +10713,7 @@ function initScorePanel_() {
     disp: {}, snapPending: true, easeFrom: null, easeStart: -1, lastN: null, last: null, loop: 0, touching: false, gesture: null,
     ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, pan: null, seekDim: '',
     folder: '', shared: null, sharedP: null, stale: null, saving: false, saveMsg: '',
-    carriedKey: '', focusId: null, offsets: {}, offsetMode: false, place: 'timed', noteId: null, fieldMsgId: null, offsetTrack: '', orphan: {},
+    carriedKey: '', focusId: null, offsets: {}, offsetMode: false, place: 'mark', noteId: null, fieldMsgId: null, offsetTrack: '', orphan: {},
     ribbon: true, ribbonShown: false, rv: ribbonReset(null), ribbonBuilds: 0
   };
   var LEAD_KEY = 'pmix.' + pmixTarget() + '.v1.scoreLead';
@@ -11450,9 +11459,9 @@ function initScorePanel_() {
   }
   /** adr/0018: the selected mark when its stanza box is shown (non-ribbon Edit, a line start with a box), else null. */
   function shownBoxMark() {
-    if (!S.edit || S.ribbonShown || S.offsetMode || !S.selId) return null;
+    if (!S.edit || S.sub !== 'layout' || S.ribbonShown || S.offsetMode || !S.selId) return null; // handles only in Layout (timed or not, atc-zng0)
     var idx = markIndex()[S.selId], m = idx === undefined ? null : S.marks[idx];
-    if (!m || !m.box || m.kind === 'eol' || m.kind === 'jump' || m.kind === 'note' || typeof m.t !== 'number') return null;
+    if (!m || !m.box || m.kind === 'eol' || m.kind === 'jump' || m.kind === 'note') return null;
     var d = scoreDeriveLines(S.marks), li = d.lineOf[idx];
     return li >= 0 && d.lines[li].first === idx ? m : null;
   }
@@ -11496,7 +11505,7 @@ function initScorePanel_() {
       if (!S.edit) { el.style.width = ''; el.style.height = ''; }
       var dot = el.querySelector('.dot'), mtEl = el.querySelector('.mt'), tm = idx >= 0 && typeof S.marks[idx].t === 'number';
       if (dot) dot.textContent = tm ? String(markNums()[S.marks[idx].id] || idx + 1) : '';
-      if (mtEl) mtEl.textContent = tm ? fmtT(S.marks[idx].t) : '';
+      if (mtEl) mtEl.textContent = tm && !(S.edit && S.sub === 'layout') ? fmtT(S.marks[idx].t) : ''; // Layout hides times
     });
     positionMarks();
   }
@@ -11589,7 +11598,7 @@ function initScorePanel_() {
       ready: isReady(), open: isOpen(), mode: S.edit ? S.sub : 'play', editor: isEditor(), signed: isSignedIn_(), readOnly: !!S.readOnly,
       playing: isPlayingNow(), hasT: scoreTimed(S.marks).length > 0, ribbon: !!S.ribbon,
       selected: !!m, kind: m ? (m.kind || 'mark') : '', timed: !!m && typeof m.t === 'number', pop: !!S.pop,
-      offsetMode: !!S.offsetMode, toast: !!S.toast, brokenJumps: scoreBrokenJumps(S.marks).length, misplaced: !!misplacedText(), boxAll: !!S.boxAll,
+      offsetMode: !!S.offsetMode, toast: !!S.toast, brokenJumps: scoreBrokenJumps(S.marks).length, fieldMsg: !!$('score-field-msg').textContent, misplaced: !!misplacedText(), boxAll: !!S.boxAll,
       saveState: sv.st, diffs: sv.n, hasShared: sv.hasShared, revertable: sv.revertable, stale: sv.stale, saving: !!S.saving, msg: S.saveMsg || ''
     };
   }
@@ -11608,6 +11617,8 @@ function initScorePanel_() {
     page_.classList.toggle('score-layout', S.edit && S.sub === 'layout' && isOpen());
     page_.classList.toggle('score-sync', S.edit && S.sub === 'sync' && isOpen());
     if (!S.edit) S.pop = false; // atc-ore.33: the expanded editor persists across selections until collapsed or Edit ends
+    var sheetHost = S.edit && S.sub === 'layout' ? $('score-sheet') : editorEl; // the mark fields live in the Layout bottom sheet, else in the Sync row
+    if ($('score-ed-sel').parentNode !== sheetHost) sheetHost.insertBefore($('score-ed-sel'), sheetHost.firstChild);
     syncSave(); // derives S.saveUi, which the visibility table reads
     S.boxAll = !!boxAllShown();
     applyScoreUi(); // the one place score-panel visibility is applied (adr/0020, SCORE_UI)
@@ -11617,7 +11628,7 @@ function initScorePanel_() {
     var ready = isReady();
     $('score-sub-layout').setAttribute('aria-pressed', String(S.sub === 'layout'));
     $('score-sub-sync').setAttribute('aria-pressed', String(S.sub === 'sync'));
-    setText($('score-chip-text'), S.sub === 'sync' ? 'Sync' : 'Layout'); // J2/J4 put the Layout / Sync chip content here
+    setText($('score-chip-text'), S.sub === 'sync' ? 'Sync' : 'Tap adds'); // the Layout chip is 'Tap adds' + the select; J4 puts the Sync queue summary here
     if (!S.edit) setMoreMenu(false);
     $('score-undo').disabled = !S.undo.length; setText($('score-undo'), '\u21B6 Undo ' + S.undo.length);
     $('score-clear').disabled = !S.marks.length;
@@ -11637,7 +11648,8 @@ function initScorePanel_() {
     $('score-jump-warn').textContent = brokenJ.length ? (brokenJ.length === 1 ? '1 jump has no valid target and is' : brokenJ.length + ' jumps have no valid target and are') + ' disabled for singers: ' + brokenJ.map(function (k) { return '"' + k.label + '"'; }).join(', ') + '. Select it and pick a target.' : '';
     if (m) {
       var timedM = typeof m.t === 'number', isJump = m.kind === 'jump', isEol = m.kind === 'eol', isNote = m.kind === 'note';
-      var selHead = isNote ? 'Note' : isJump ? (timedM ? 'Jump at ' + fmtT(m.t) : 'Jump') : isEol ? 'End-of-line mark' : timedM ? 'Mark ' + (markNums()[m.id] || S.marks.indexOf(m) + 1) + ' at ' + fmtT(m.t) : 'Untimed mark';
+      var inLayout = S.edit && S.sub === 'layout';
+      var selHead = isNote ? 'Note' : isJump ? (timedM && !inLayout ? 'Jump at ' + fmtT(m.t) : 'Jump') : isEol ? 'End-of-line mark' : timedM ? 'Mark ' + (markNums()[m.id] || S.marks.indexOf(m) + 1) + (inLayout ? '' : ' at ' + fmtT(m.t)) : 'Untimed mark';
       var selFull = scoreSelLabel(selHead, m, false); // atc-tty9.36: type, time, measure label, note
       $('score-sel-label').textContent = scoreSelLabel(selHead, m, true); $('score-sel-label').title = selFull;
       var bd = $('score-ed-badge');
@@ -12289,18 +12301,20 @@ function initScorePanel_() {
     }
     if (S.offsetMode) { setOffsetAt(hit); return; }
     var sh1 = ribbonStripHitAt(cx, cy), onMark = sh1 ? sh1.mark : scoreHitMark(pdfHitMarks(), hit.page, hit.x, hit.y);
-    if (onMark && onMark.id === S.selId) { S.pop = !S.pop; syncUi(); return; } // atc-ore.33: tapping the already-selected mark again toggles its expanded editor; atc-ore.34: no seek (Go to does that)
+    if (onMark && onMark.id === S.selId) { if (S.sub === 'sync') { S.pop = !S.pop; syncUi(); } return; } // atc-ore.33: Sync: tapping the selected mark again toggles its expanded row; Layout's sheet is always open; atc-ore.34: no seek
     if (onMark) { // atc-ore.34: a tap only selects (atc-tty9.18); it never seeks (the editor's Go to does)
       S.selId = onMark.id; syncUi(); showSelAtNow();
       return;
     }
+    if (S.sub === 'sync') { if (S.selId) { S.selId = null; S.rv.selAt = null; syncUi(); } return; } // adr/0020 Sync: a tap on empty clears the selection; nothing is added
     var tbm = !S.ribbonShown ? shownBoxMark() : null;
     if (tbm && tbm.page === hit.page) { var tbd = scoreBoxHit(tbm.box, hit.x, hit.y, boxTolPt(hit.page)); if (tbd && tbd !== 'move') return; } // adr/0018: a tap on a box handle does nothing
     if (mayAdd === false) return; // atc-taqj: a bounce, drag remnant or second contact never adds
+    if (S.selId) { S.selId = null; S.rv.selAt = null; syncUi(); return; } // Layout: a tap on empty score closes the sheet (provisional); the next one adds
     if (isPlayingNow()) return; // atc-tty9.28: no new marks while the track plays
     if (S.place === 'jump') {
       var aj = scoreAddJump(S.marks, { page: hit.page, x: hit.x, y: hit.y });
-      if (aj.error) { $('score-field-msg').textContent = aj.error; S.fieldMsgId = S.selId; return; }
+      if (aj.error) { $('score-field-msg').textContent = aj.error; S.fieldMsgId = S.selId; syncUi(); return; }
       S.selId = aj.mark.id;
       commit(aj.marks, true);
       return;
@@ -12311,15 +12325,9 @@ function initScorePanel_() {
       commit(an.marks, true);
       return;
     }
-    if (S.place !== 'timed') {
-      var pl = scoreAddPlain(S.marks, { kind: S.place === 'eol' ? 'eol' : 'mark', page: hit.page, x: hit.x, y: hit.y, ptW: hit.ptW, ptH: hit.ptH }); // atc-rlep.1: placed into a line now
-      S.selId = pl.mark.id;
-      commit(pl.marks, true);
-      return;
-    }
-    var add = scoreAddMark(S.marks, { t: scoreAddTime(trackNow(), isPlayingNow(), S.reaction, rate()), page: hit.page, x: scoreRound2(hit.x), y: scoreRound2(hit.y), ptW: hit.ptW, ptH: hit.ptH });
-    S.selId = add.mark.id;
-    commit(add.marks, true);
+    var pl = scoreAddPlain(S.marks, { kind: 'mark', page: hit.page, x: hit.x, y: hit.y, ptW: hit.ptW, ptH: hit.ptH }); // atc-rlep.1: placed into a line now, no time
+    S.selId = pl.mark.id;
+    commit(pl.marks, true);
   }
   function resetPointers() { S.ptrs = 0; S.touching = false; S.gesture = null; }
   scroller.addEventListener('pointerdown', function (e) {
@@ -12334,7 +12342,7 @@ function initScorePanel_() {
       return;
     }
     var g = { offY0: S.offY, id: e.pointerId, x0: e.clientX, y0: e.clientY, sl0: scroller.scrollLeft, st0: scroller.scrollTop, dx: 0, dy: 0, t0: performance.now(), moved: 0, drag: null, primary: e.isPrimary, quietUntil: S.noAddUntil || 0 };
-    if (S.edit && !S.offsetMode) { // AC 20: any mark within 0.5 inch, playing or paused, no prior tap needed
+    if (S.edit && S.sub === 'layout' && !S.offsetMode) { // AC 20: any mark within 0.5 inch, no prior tap needed; marks and boxes drag only in Layout
       var hit = S.ribbonShown ? ribbonHitAt(e.clientX, e.clientY) : pageAtPoint(e.clientX, e.clientY), sh2 = S.ribbonShown ? ribbonStripHitAt(e.clientX, e.clientY) : null, k = sh2 ? sh2.mark : hit && scoreHitMark(pdfHitMarks(), hit.page, hit.x, hit.y);
       var bm = !S.ribbonShown && hit ? shownBoxMark() : null, bdir = bm && bm.page === hit.page ? scoreBoxHit(bm.box, hit.x, hit.y, boxTolPt(hit.page)) : null; // adr/0018: a handle of the selected box, then a mark, then the box interior
       var boxDrag = bdir ? { box: bdir, id: bm.id, page: bm.page, box0: { x: bm.box.x, y: bm.box.y, w: bm.box.w, h: bm.box.h }, lim: scoreBoxLimits(S.marks, bm.id, hit.ptW, hit.ptH), px0: hit.x, py0: hit.y, started: false } : null;
@@ -12343,6 +12351,8 @@ function initScorePanel_() {
       else if (boxDrag) g.drag = boxDrag;
       if (g.drag && e.pointerType === 'mouse') { // atc-b0rt: a box or mark press is ours; a leftover selection must not turn it into a native drag (pointercancel)
         try { var sl = window.getSelection(); if (sl && sl.rangeCount) sl.removeAllRanges(); } catch (x) { /* ignore */ }
+        var fa = document.activeElement; // atc-xpxc: preventDefault would keep a focused note / measure input focused
+        if (fa && fa !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(fa.tagName) && typeof fa.blur === 'function') fa.blur();
         e.preventDefault();
       }
     }
@@ -12423,6 +12433,16 @@ function initScorePanel_() {
   document.addEventListener('pointerup', outsideEnd);
   document.addEventListener('pointercancel', outsideEnd);
   scroller.addEventListener('wheel', function (e) {
+    if (S.edit && (e.ctrlKey || e.metaKey) && !S.ribbonShown) { // Edit has no zoom buttons: ctrl / cmd + wheel (and a trackpad pinch) zooms the page view, one step per 150 ms
+      e.preventDefault();
+      var zn = performance.now();
+      if (zn - (S.zoomWheelAt || 0) >= 150 && e.deltaY) {
+        S.zoomWheelAt = zn;
+        var zr = scroller.getBoundingClientRect();
+        setZoom(scoreZoomStep(S.zoom, e.deltaY < 0 ? 1 : -1, fitZoom()), { x: e.clientX - zr.left, y: e.clientY - zr.top });
+      }
+      return;
+    }
     if (S.ribbonShown && e.ctrlKey) return; // trackpad pinch (ctrl + wheel) stays the browser's
     if (S.ribbonShown) { // the ribbon owns the wheel: vertical sets the offset, sideways does nothing, and nothing chains to the document
       e.preventDefault();
@@ -12497,6 +12517,7 @@ function initScorePanel_() {
     if (S.toast) store(TOAST_KEY, '1'); // once per device: showing counts as seen
     if (playMode() && !S.followOn) resumeFollow(); // leaving Edit while playing is play mode: Follow is always on
     else syncUi();
+    if (isOpen()) { if (S.resizeTimer) { clearTimeout(S.resizeTimer); S.resizeTimer = 0; } onResize(); } // the transport shows or hides with the mode: refit now, not 120 ms later under the user's first touch (BX3b/BX6/BX8)
   }
   window.pmixSetScoreMode_ = setMode;
   $('score-edit-done').addEventListener('click', function () { setMode('play'); });
@@ -12662,7 +12683,7 @@ function initScorePanel_() {
   $('score-pop-type').addEventListener('change', function () { // atc-tty9.14 AC 1, 4: one undo step per conversion
     var m = selMark();
     if (!m) return;
-    var r = scoreSetKind(S.marks, m.id, $('score-pop-type').value);
+    var r = scoreSetKind(S.marks, m.id, $('score-pop-type').value, pageSizes()); // atc-5dp9: the real page size, so a new line start gets its box
     $('score-field-msg').textContent = r.error || ''; S.fieldMsgId = m.id;
     if (r.error) { syncUi(); return; }
     if (!scoreSameMarks(r.marks, S.marks)) commit(r.marks, true); else syncUi();
