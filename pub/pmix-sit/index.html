@@ -2204,10 +2204,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.5.1";
+var STATIC_BUILD_VERSION_ = "1.8.5.2";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-04T02:33:14.700Z";
+var STATIC_BUILD_DATE_ = "2026-11-04T05:40:59.689Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8849,7 +8849,18 @@ function scoreTimed(marks) {
 /** track time t = clock x speed; the clock is what the audio engine reports. */
 function scoreTrackTime(clock, speed) { return clock * speed; }
 function scoreClockTime(t, speed) { return t / speed; }
-function scoreEase(ms) { var k = scoreClamp(ms / SCORE_EASE_MS, 0, 1); return k * k * (3 - 2 * k); }
+function scoreEase(ms, dur) { var k = scoreClamp(ms / (dur > 0 ? dur : SCORE_EASE_MS), 0, 1); return k * k * (3 - 2 * k); }
+/** atc-rlep.14: page-view anchor: the playing line is vertically centred. */
+var SCORE_PAGE_CENTER_Y = 0.5;
+/** atc-rlep.14: the scroll position that centres a box (top, height) in a view of height viewH over content of height contentH, clamped at the top and bottom. */
+function scoreCenterTarget(top, h, viewH, contentH) {
+  return scoreClamp(top + h / 2 - viewH / 2, 0, Math.max(0, contentH - viewH));
+}
+/** atc-rlep.14: length (ms) of the page-view scroll to the next line = 2 x the lead-in (S.lead, seconds); 300 ms minimum when the lead is 0 or absent. */
+var SCORE_FOLLOW_MIN_MS = 300;
+function scoreFollowMs(lead) { lead = Number(lead); return Math.max(SCORE_FOLLOW_MIN_MS, lead > 0 ? lead * 2000 : 0); }
+/** atc-rlep.14: a manual hold ends when the playing mark (its y in scroll px) is no longer inside the visible area. */
+function scoreHoldReleased(markY, scrollTop, viewH) { return !(markY >= scrollTop && markY <= scrollTop + viewH); }
 
 /** Index of the last mark with time <= t (marks sorted by time), -1 before the first. */
 function scoreIndexAt(marks, t) {
@@ -8884,7 +8895,7 @@ function scoreAnchorView(mark, geo) {
   var p = scoreMarkPoint(mark, geo);
   return {
     x: scoreClamp(p.x - (geo.ax === undefined ? SCORE_ANCHOR_X : geo.ax) * geo.W, 0, geo.maxX),
-    y: scoreClamp(p.y - (geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay) * geo.H, 0, geo.maxY)
+    y: geo.center ? scoreCenterTarget(p.y, 0, geo.H, geo.H + geo.maxY) : scoreClamp(p.y - (geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay) * geo.H, 0, geo.maxY)
   };
 }
 /** atc-ore.37: the timed mark nearest (in view px) to the page-view point (px, py), or null when none. geo as for scoreAnchorView. */
@@ -9174,15 +9185,19 @@ function scoreRibbonLayout(marks, geo, opt) {
   if (nK0 && segIdx[nK0 - 1] === lastSi && lastSi < segs.length - 1 && !K[nK0 - 1].jump && !K[nK0 - 1].eol) {
     endKnot = null; // the EOL of the last timed line is timed against this end knot instead
     var lkn = K[nK0 - 1], lastX = markX[nK0 - 1], endK = null, endTn = opt ? Number(opt.endT) : 0, endPg = segs[segs.length - 1].page;
-    if (endTn > lkn.t) endK = { t: endTn, page: endPg, id: null, end: true };
-    else { var ev0 = forwardSpeed(nK0 - 1); if (ev0 > 0) endK = { t: lkn.t + (x - lastX) / ev0, page: endPg, id: null, end: true }; }
+    var endX = x, ev0 = forwardSpeed(nK0 - 1);
+    // owner 2026-11-03 (atc-rlep.19): past the last timed mark the playhead keeps the last forward span's speed, stopped at the ribbon end or the track end, whichever comes first (a TIME press does not change the speed ahead)
+    if (ev0 > 0) {
+      endK = { t: lkn.t + (x - lastX) / ev0, page: endPg, id: null, end: true };
+      if (endTn > lkn.t && endTn < endK.t) { endK.t = endTn; endX = lastX + ev0 * (endTn - lkn.t); }
+    } else if (endTn > lkn.t) endK = { t: endTn, page: endPg, id: null, end: true };
     if (endK) {
       var lsg2 = segs[lastSi], eli = lsg2.line;
       if (lineEol[eli] !== null && (!unrolled || spans[lastSi].jcut === null)) {
-        var lpg2 = scorePagePx(geo, lsg2.page), eX = Math.max(lastX, lsg2.ribbonX + scoreTimingX(lineEol[eli], 'eol') * lpg2.w / lpg2.ptW - lsg2.srcX);
-        K.push({ t: scoreRibbonEolT(lkn.t, lastX, endK.t, x, eX), page: lsg2.page, id: null, eol: true }); markX.push(eX); segIdx.push(lastSi);
+        var lpg2 = scorePagePx(geo, lsg2.page), eX = Math.min(endX, Math.max(lastX, lsg2.ribbonX + scoreTimingX(lineEol[eli], 'eol') * lpg2.w / lpg2.ptW - lsg2.srcX));
+        K.push({ t: scoreRibbonEolT(lkn.t, lastX, endK.t, endX, eX), page: lsg2.page, id: null, eol: true }); markX.push(eX); segIdx.push(lastSi);
       }
-      K.push(endK); markX.push(x); segIdx.push(segs.length - 1);
+      K.push(endK); markX.push(endX); segIdx.push(segs.length - 1);
     }
   }
   if (endKnot && K.length > 1 && endKnot.x > markX[K.length - 1]) { // atc-elfg.10: play on to the last line's EOL at the last forward span's speed (clamped to the track length)
@@ -11089,7 +11104,7 @@ function initScorePanel_() {
     pdfs: [], opener: null, pinch: null, raf: 0,
     fileId: '', marks: [], undo: [], selId: null, edit: false, sub: 'layout', followOn: true, reaction: 0.25,
     disp: {}, snapPending: true, easeFrom: null, easeStart: -1, lastN: null, last: null, loop: 0, touching: false, gesture: null,
-    ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, pan: null, seekDim: '',
+    ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, holdY: null, easeMs: 0, pan: null, seekDim: '',
     folder: '', shared: null, sharedP: null, stale: null, saving: false, saveMsg: '',
     carriedKey: '', focusId: null, offsets: {}, offsetMode: false, place: 'mark', noteId: null, fieldMsgId: null, offsetTrack: '', orphan: {},
     ribbon: true, ribbonShown: false, rv: ribbonReset(null), ribbonBuilds: 0
@@ -12350,9 +12365,9 @@ function initScorePanel_() {
   }
   function resumeFollow() {
     S.followOn = true;
-    S.offY = 0; S.pan = null;
+    S.offY = 0; S.holdY = null; S.pan = null;
     S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop };
-    S.easeStart = performance.now();
+    S.easeStart = performance.now(); S.easeMs = scoreFollowMs(S.lead);
     syncUi();
   }
   /** atc-tty9.42: a crop depends on the marks, so redo the layout when it differs from what is shown (after marks load, or a toggle). */
@@ -12367,10 +12382,18 @@ function initScorePanel_() {
   $('score-ribbon-toggle').addEventListener('change', function () { S.ribbon = this.checked; store(RIBBON_KEY, S.ribbon ? '1' : '0'); syncUi(); });
 
   // Frame loop: audio clock -> target view -> scroll position of the already-drawn pages (AC 10).
+  /** owner 2026-11-03 (Gap B): the view height. Syncing while playing it is frozen at its value when playback (or Sync) began, so a toolbar or message appearing under the score (the scroller shrinks) cannot shift the ribbon lines or the page centring. */
+  function viewH() {
+    var h = scroller.clientHeight;
+    if (S.edit && isPlayingNow()) { if (S.frozenH === null || S.frozenH === undefined) S.frozenH = h; return S.frozenH; }
+    S.frozenH = null;
+    return h;
+  }
   function pageGeo(forRibbon) { // the ribbon always works on the uncropped page (atc-tty9.42)
+    var vh = viewH();
     return {
-      W: scroller.clientWidth, H: scroller.clientHeight,
-      maxX: Math.max(0, scroller.scrollWidth - scroller.clientWidth), maxY: Math.max(0, scroller.scrollHeight - scroller.clientHeight),
+      W: scroller.clientWidth, H: vh,
+      maxX: Math.max(0, scroller.scrollWidth - scroller.clientWidth), maxY: Math.max(0, scroller.scrollHeight - vh),
       pages: S.pages.map(function (p) { return forRibbon ? { left: p.el.offsetLeft, top: p.el.offsetTop, w: p.cssW, h: p.baseH, ptW: p.w, ptH: p.h } : { left: p.el.offsetLeft, top: p.el.offsetTop, w: p.cssW, h: p.cssH, ptW: p.cw, ptH: p.h, x0: p.x0 }; })
     };
   }
@@ -12561,7 +12584,7 @@ function initScorePanel_() {
       if (gp >= 1) { S.rv.hold = null; S.rv.glide = null; } else S.rv.hold = { sx: scoreRibbonGlide(S.rv.glide.from, fsx, gp) };
     }
     var pinRx, pm = pinMark();
-    if (pm && !S.rv.scrub) { // atc-rlep.2 J4: Sync pinned: the view shows the target (scoreRibbonFrame applies the 65 percent rule)
+    if (pm && !S.rv.scrub && !pl) { // atc-rlep.15: playing, only the playhead moves the view (no pin); atc-rlep.2 J4: Sync pinned: the view shows the target (scoreRibbonFrame applies the 65 percent rule)
       S.rv.hold = null; S.rv.glide = null;
       var pp0 = scoreRibbonPos(L, geo, pm, scoreRibbonScroll(scoreRibbonX(S.marks, t, L), L, geo.W) + SCORE_RIBBON_ANCHOR_X * geo.W, true);
       if (pp0) pinRx = pp0.x;
@@ -12705,7 +12728,7 @@ function initScorePanel_() {
     if (playing !== S.playing) {
       S.playing = playing; paintMarks();
       if (S.edit && !playing && !S.ribbonShown) pauseFollow(); // atc-tty9.28: pausing in Edit leaves the page where it is (no snap to the playhead)
-      if (playing) S.offsetMode = false; // atc-ore.16 AC 17: starting playback turns offset mode off
+      if (playing) { S.offsetMode = false; S.offY = 0; S.holdY = null; } // atc-ore.16 AC 17: starting playback turns offset mode off; atc-rlep.14: Play ends a manual hold
       if ((playMode() || (S.edit && (playing || S.ribbon))) && !S.followOn) resumeFollow(); // starting to play puts Follow back (atc-ore.17 AC 2); Edit too, page view and ribbon (atc-tty9.17, atc-tty9.33); pausing in Edit with the page view must not undo the pauseFollow above
       syncUi();
     }
@@ -12721,7 +12744,7 @@ function initScorePanel_() {
         return;
       }
     }
-    if (!rb && syncOn() && pinMark()) { // atc-rlep.2 J4: Sync pinned (page view): the target line at the anchor, the mark at about 65 percent of the width
+    if (!rb && syncOn() && !playing && pinMark()) { // atc-rlep.15: not while playing // atc-rlep.2 J4: Sync pinned (page view): the target line at the anchor, the mark at about 65 percent of the width
       var pgeo = pageGeo(), pt = scoreJumpClock(playMarks(), scoreTrackTime(dispT, rate())), pn = scoreIndexAt(scoreTimed(playMarks()), pt);
       if (pn !== S.curN) { S.curN = pn; syncUi(); }
       drawPageBar(scoreTimed(playMarks()).length ? scorePageBar(playMarks(), pt, { pageW: pageWOf }) : null);
@@ -12770,26 +12793,37 @@ function initScorePanel_() {
         S.pan.h = true; // play mode: the view eases back once the touch ends (atc-ore.17 AC 2)
       }
       if (S.pan.h && Math.abs(sx - S.pan.lastX) > 0.5) { S.pan.lastX = sx; S.pan.idle = now; }
-      if (Math.abs(sy - S.pan.last) > 0.5) { S.pan.last = sy; S.pan.idle = now; S.offY = scoreOffsetFor(sy, tv.y); syncUi(); }
+      if (Math.abs(sy - S.pan.last) > 0.5) { S.pan.last = sy; S.pan.idle = now; S.offY = scoreOffsetFor(sy, tv.y); if (playing) { S.holdY = sy; S.easeStart = -1; } syncUi(); } // atc-rlep.14: a manual vertical move holds the position
       if (now - S.pan.idle < 150) { S.lastN = tv.v; return; }
-      if (S.pan.h) { S.easeFrom = { x: sx, y: sy }; S.easeStart = now; }
+      if (S.pan.h) { S.easeFrom = { x: sx, y: sy }; S.easeStart = now; S.easeMs = 0; }
       S.pan = null;
     }
-    var vw = scoreApplyOffset(tv, S.offY, geo);
+    // atc-rlep.14: a manual vertical move holds the absolute scroll position. It ends when the playing mark leaves the visible area
+    // (ease back to centre), on a seek, on Play after a pause and on Resume (those clear S.offY, which ends the hold).
+    if (S.snapPending) { S.holdY = null; S.offY = 0; }
+    if (S.holdY !== null && S.offY === 0) S.holdY = null;
+    if (S.holdY !== null) {
+      var hm = tv.n >= 0 ? scoreTimed(playMarks())[tv.n] : null, hpg = hm ? scorePagePx(geo, hm.page) : null;
+      if (!hm || scoreHoldReleased(hpg.top + hm.y * hpg.h / hpg.ptH, S.holdY, geo.H)) {
+        S.holdY = null; S.offY = 0; syncUi();
+        S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = now; S.easeMs = scoreFollowMs(S.lead);
+      } else S.offY = scoreOffsetFor(S.holdY, tv.y) || 1e-6;
+    }
+    var vw = S.holdY !== null ? { x: tv.x, y: S.holdY } : scoreApplyOffset(tv, S.offY, geo);
     if (S.snapPending) { setView(vw.x, vw.y); S.easeStart = -1; }
     else {
-      if (S.lastN !== null && tv.v !== S.lastN && playing) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = now; }
+      if (S.lastN !== null && tv.v !== S.lastN && playing && S.holdY === null) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = now; S.easeMs = scoreFollowMs(S.lead); } // smooth scroll over 2 x lead-in
       if (S.easeStart >= 0) {
-        var k = scoreEase(now - S.easeStart);
+        var dur = S.easeMs || SCORE_EASE_MS, k = scoreEase(now - S.easeStart, dur);
         setView(scoreLerp(S.easeFrom.x, vw.x, k), scoreLerp(S.easeFrom.y, vw.y, k));
-        if (now - S.easeStart >= SCORE_EASE_MS) S.easeStart = -1;
+        if (now - S.easeStart >= dur) S.easeStart = -1;
       } else setView(vw.x, vw.y);
     }
     S.lastN = tv.v; S.snapPending = false;
   }
   /** Follow's target at track time t: the shared marks plus the focus track's offset (atc-ore.8 AC 3), before the user's own vertical offset. */
   function followView(geo, t) {
-    return scoreFollowView(playMarks(), t, geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() }, S.offsets, focusTrackId());
+    return scoreFollowView(playMarks(), t, (S.edit && S.sub === 'layout') ? geo : Object.assign({}, geo, { center: true }), { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() }, S.offsets, focusTrackId());
   }
   function followTarget() {
     var geo = pageGeo();
@@ -12801,8 +12835,8 @@ function initScorePanel_() {
       S.offY = scoreRibbonNudge(ribbonPan(), dy, pageGeo().H, scoreRibbonPanLimit(S.rv.layout), scoreRibbonPanMin(S.rv.layout)); syncUi(); return;
     } // the ribbon is not bound to the page's scroll range
     var f = followTarget();
-    var y = Math.max(0, Math.min(f.geo.maxY, f.tv.y + S.offY + dy));
-    S.offY = scoreOffsetFor(y, f.tv.y);
+    var y = Math.max(0, Math.min(f.geo.maxY, (S.holdY !== null ? S.holdY : scroller.scrollTop) + dy));
+    S.offY = scoreOffsetFor(y, f.tv.y); S.holdY = y; S.easeStart = -1; // atc-rlep.14: hold where the user put it; a move cancels a running scroll
     syncUi();
   }
   function startLoop() { if (!S.loop) S.loop = requestAnimationFrame(tick); }
@@ -13254,7 +13288,7 @@ function initScorePanel_() {
     var setT = m.kind === 'jump' ? trackNow() : scoreNowT(); // atc-tty9.34: a jump keeps audio time, a mark its first-pass time
     var tt = scoreAddTime(setT, isPlayingNow(), S.reaction, rate());
     var fw = m.kind === 'mark' ? fixWinFor(m.id) : null;
-    if (fw && !scoreFixAccept(tt, fw)) { // atc-rlep.3 J5b: outside the open window the mark stays as it was and the queue does not advance
+    if (fw && r.mode !== 'retime' && !scoreFixAccept(tt, fw)) { // owner 2026-11-03 (atc-rlep.20): a Retime target (already validly timed) accepts a time outside its window; scoreValidate then flags the conflicts // atc-rlep.3 J5b: outside the open window the mark stays as it was and the queue does not advance
       $('score-field-msg').textContent = scoreFixMessage(fw, m.id, markNums(), S.marks); S.fieldMsgId = m.id; S.fixMsgId = m.id;
       syncUi();
       return;
@@ -13388,7 +13422,7 @@ function initScorePanel_() {
     strip.style.transform = ''; strip.style.transformOrigin = '';
     panel.setAttribute('data-pinching', 'false');
     setZoom(p.z, { x: p.mx, y: p.my });
-    if (playMode() && S.followOn) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = performance.now(); } // play mode: back to the Follow target
+    if (playMode() && S.followOn) { var pf = followTarget(); S.holdY = scroller.scrollTop; S.offY = scoreOffsetFor(S.holdY, pf.tv.y) || 1e-6; S.easeStart = -1; syncUi(); } // atc-rlep.14: play mode: a pinch is a manual move, the view holds until the playing mark leaves it
   }
   scroller.addEventListener('touchend', endPinch);
   scroller.addEventListener('touchcancel', endPinch);
@@ -13398,7 +13432,7 @@ function initScorePanel_() {
 }
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
-  scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
+  scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreCenterTarget, scoreFollowMs, scoreHoldReleased, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreRibbonPoint, scoreRibbonXOfPoint, scorePagePointAt, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagTitle, scoreFixWindow, scoreFixAccept, scoreFixMessage, scoreFixCaption, scoreEstimateLabel, scoreFixPreroll, scoreFixLoopStep, scoreSyncChipText, scoreSyncFlagged, scoreSyncTarget, scoreSyncButtonText, scoreSyncCaption, scoreSyncCountdown, scoreMarkName, scoreMarkNum, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreJumpList, scoreJumpWarning, scorePlayMarks, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreCarryAllowed, scoreSavedFor, scoreLinkNote, scoreLinkText, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
