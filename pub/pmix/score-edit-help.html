@@ -71,68 +71,84 @@
   </header>
 
   <section class="intro">
-    <p>A score follows the music because of <strong>marks</strong>: numbered points on the page, each tied to a time in the recording. Editing is only needed when a score has no marks or they need fixing. Saving for everyone needs a signed-in editor; anyone else&#39;s edits stay on their own device.</p>
+    <p>A score follows the music because of <strong>marks</strong>: points on the page, each tied to a time in the recording. Editing is only needed when a score has no marks or they need fixing. Saving for everyone needs a signed-in editor; anyone else&#39;s edits stay on their own device.</p>
+    <p>The score has two modes: <strong>Play</strong> (listen and follow) and <strong>Edit</strong>, which has two parts, <strong>Layout</strong> (place and label marks) and <strong>Sync</strong> (time marks to the music). Lay out every line first, then time the marks.</p>
   </section>
 
   <section class="step" data-testid="score-edit-help-section-edit">
     <h2>Start editing</h2>
     <ol>
-      <li>Open the score (music-note button) and tap the pencil (<strong>&#9998;</strong>) at the upper right of the score. The edit bar appears above it.</li>
-      <li>Tap <strong>Done</strong> when finished.</li>
-      <li>Made a mistake? <strong>Undo</strong> steps back. The <strong>&#8943;</strong> menu holds <strong>Clear all</strong> (deletes every mark), <strong>Set track offset</strong> and the <strong>Reaction</strong> slider.</li>
-      <li>The strip under the bar shows <strong>PREV</strong>, <strong>NOW</strong> and <strong>NEXT</strong>: the marks either side of the playhead, named by their measure label (or <strong>#number</strong>), with the time to each. Tap PREV or NEXT to go to exactly the mark it shows (in Edit it also selects that mark), or tap the time in the middle to pick any timed mark from a list (Escape or a tap outside closes it).</li>
+      <li>Open the score (music-note button), tap the <strong>gear</strong> and choose <strong>Edit - Layout</strong> or <strong>Edit - Sync</strong> under Mode. Play shows no edit controls.</li>
+      <li>In Edit the header has <strong>Done</strong> (back to Play), a <strong>Layout | Sync</strong> switch, the gear and close.</li>
+      <li>Under the header, <strong>Undo</strong> steps back. <strong>Save</strong> appears for editors. <strong>More</strong> holds <strong>Revert to saved</strong>, <strong>Clear all</strong>, <strong>Set track offset</strong> and the <strong>Reaction</strong> slider.</li>
+      <li>Zoom is by pinch (on a computer, ctrl or cmd and the wheel).</li>
     </ol>
   </section>
 
   <section class="step" data-testid="score-edit-help-section-marks">
-    <h2>Add marks</h2>
-    <p class="lead">Choose what a tap adds, then tap the score where it goes.</p>
+    <h2>Layout: add marks</h2>
+    <p class="lead">Layout shows the page view with no transport and no times. The chip says what a tap adds: <strong>Mark</strong>, <strong>Jump</strong> or <strong>Note</strong>. Tap empty score to add one.</p>
     <ol>
-      <li><strong>+ Timed:</strong> a mark at the playhead&#39;s time. Play the music and tap at the start of each line or bar; the mark lands a little before your tap (the Reaction setting).</li>
-      <li><strong>+ Untimed:</strong> a mark with no time yet. Time it later with <strong>Set to now</strong>.</li>
-      <li><strong>+ EOL:</strong> an end-of-line mark. The sideways Ribbon cuts the line there.</li>
-      <li><strong>+ Note:</strong> a text note. Singers see it when they tap it.</li>
-      <li><strong>+ Jump:</strong> a repeat or skip. It points to a timed mark; with Edit off, tapping it goes to that mark.</li>
+      <li><strong>Mark:</strong> a point where a line or bar starts. It is placed into the nearest line, or starts a new line with its own box. It has no time until you time it in Sync.</li>
+      <li><strong>Note:</strong> a text note. Singers see it when they tap it.</li>
+      <li><strong>Jump:</strong> a repeat or skip. It points to a mark; in Play, tapping it goes to that mark. A jump can point to a mark that has no time yet; it plays once that mark is timed.</li>
+      <li>While a mark is selected, the first tap on empty score only closes its sheet; the next tap adds.</li>
     </ol>
-    <p class="alt">Untimed, EOL, note and jump marks never affect Follow or Prev/Next.</p>
+  </section>
+
+  <section class="step" data-testid="score-edit-help-section-box">
+    <h2>The line box</h2>
+    <p class="lead">The first mark of each line carries a <strong>box</strong>: the part of the page the sideways Ribbon shows for that line. Select a line&#39;s first mark in Layout and its box appears with a handle on each corner and side.</p>
+    <ol>
+      <li>Drag a handle to resize the box, or drag inside it (away from a mark) to move it. A box cannot leave the page or cut out its own marks. Each drag is one Undo step. A drag never adds a mark; wait a moment after a drag before you tap to add one.</li>
+      <li>Dragging a mark moves only the mark, and it stops at the edge of its box.</li>
+      <li>A new line starts with the size of the previous line&#39;s box. Select a mark and tap <strong>Size all boxes</strong> to give every line the selected box&#39;s width and height; each line keeps its top-left corner. One Undo step.</li>
+      <li>Tap inside a line&#39;s box to add a mark to that line; it lines up with the first mark. A tap on a handle adds nothing.</li>
+      <li>Every line shows on the Ribbon, timed or not. A line with no times is crossed at the speed of the lines around it.</li>
+    </ol>
   </section>
 
   <section class="step" data-testid="score-edit-help-section-popup">
     <h2>The mark editor</h2>
-    <p class="lead">Tap a mark to select it. The editor under the strip shows its measure label, which you can type right there, with <strong>-0.1</strong>, <strong>Set to now</strong> and <strong>+0.1</strong>. Selecting a mark does not move the playhead. Tap the mark again, or the arrow at the right, to open the rest, including <strong>Go to</strong>, which moves the playhead to the mark.</p>
+    <p class="lead">In Layout, tap a mark to select it. A sheet at the bottom shows its fields. Tap empty score to close it.</p>
     <ol>
+      <li><strong>Label:</strong> a name such as 12. Each label can be used once. A jump has a label and a target.</li>
       <li><strong>Type:</strong> Mark, End of line, Jump or Note.</li>
-      <li><strong>Time:</strong> <strong>-0.1 s</strong> and <strong>+0.1 s</strong> nudge it; <strong>Set to now</strong> sets it to the playhead; <strong>Untime</strong> removes it.</li>
-      <li><strong>Measure label:</strong> a name such as 12. Each label can be used once.</li>
       <li><strong>Note:</strong> text shown when a singer taps the mark.</li>
-      <li><strong>Delete</strong> removes the mark. Tap the arrow again to close the rest.</li>
+      <li><strong>Size all boxes</strong>, <strong>Clear time</strong> and <strong>Delete</strong>.</li>
     </ol>
   </section>
 
   <section class="step" data-testid="score-edit-help-section-timing">
-    <h2>Timing and moving about</h2>
+    <h2>Sync: time the marks</h2>
+    <p class="lead">Sync uses the Ribbon or the page view (the Ribbon setting) and has the transport: -5, -1, Play, +1, +5, speed, Loop and Follow. Nothing drags in Sync; a tap selects a mark, and a tap on empty score clears the selection.</p>
     <ol>
-      <li><strong>Skip buttons:</strong> in Edit the transport also has -1s, +1s, -0.1s and +0.1s, beside -5s and +5s, for fine positioning.</li>
-      <li><strong>Return (|◀):</strong> left of -5s, it goes back to exactly where you last pressed Play, playing or paused. Handy for trying a start time again.</li>
-      <li><strong>Set to now:</strong> sets the selected mark to the playhead time, then selects the next mark.</li>
-      <li><strong>Cursor here:</strong> after you drag the score away while paused, tap <strong>Cursor here</strong> (upper right) to move the cursor to the point you are looking at. On the ribbon it is the point under the cursor line; on the page it is the nearest mark to the top-left. <strong>Go to</strong> beside Set to now does the same for the selected mark.</li>
-      <li><strong>Resume follow:</strong> in Edit, dragging the score pauses Follow; tap <strong>Resume follow</strong> at the upper right of the score to bring it back.</li>
-      <li><strong>PREV / NEXT:</strong> they go exactly to the mark.</li>
+      <li><strong>The timing button</strong> has one target. It is the selected mark; otherwise the first mark that needs a time or a fix, in reading order; otherwise, when every mark is timed, the first mark after the playhead. It reads <strong>TIME</strong>, <strong>FIX</strong> or <strong>RETIME</strong> with the mark&#39;s number. Tap it as the music reaches that mark: it sets the time to now (less the Reaction allowance while playing) and moves to the next target. It never moves the mark.</li>
+      <li><strong>-0.1 and +0.1</strong> beside the button nudge the mark just set. <strong>Skip</strong> moves to the next target without a time.</li>
+      <li><strong>Needs time</strong> marks are hollow with a flag. <strong>Out of order</strong> marks are red with a ! and a struck-through time: times must increase in reading order. Play and Follow ignore out-of-order marks until they are fixed. The chip reads, for example, <em>5 need time . 2 out of order</em>; tap it to go to the first one.</li>
+      <li><strong>The fix window</strong> is the span of time the target may take, between the marks either side of it. It shows as a band on the scrub bar with its times. A tap outside it is refused with a message and changes nothing. <strong>Loop window</strong> repeats the window.</li>
+      <li><strong>Pre-roll:</strong> when the playhead is already past the window, playback jumps to 3 s before it; otherwise it carries on.</li>
+      <li><strong>Estimate:</strong> for a mark with no time, a dashed line on the scrub bar shows where its time probably is, with a label such as 1:02. It never sets the time.</li>
+      <li><strong>Pinned:</strong> the view stays on the target. Tap the <strong>Pinned</strong> pill or <strong>Follow</strong> to go back to following the music.</li>
+      <li><strong>PREV / NOW / NEXT</strong> show the marks either side of the playhead. Tap the time in the middle to pick any timed mark from a list.</li>
+      <li>A selected mark shows its label and time with <strong>More</strong>: <strong>Go to</strong> (3 s before the mark), <strong>Clear time</strong> and <strong>Cursor here</strong>.</li>
+      <li><strong>Return (|&#9664;):</strong> in Play, left of -5s, it goes back to exactly where you last pressed Play.</li>
     </ol>
   </section>
 
   <section class="step" data-testid="score-edit-help-section-save">
     <h2>Save, Revert and Keep mine</h2>
     <ol>
-      <li><strong>Save</strong> sends your marks to Drive for every singer. It appears when you have unsaved edits, the music is paused and you are signed in.</li>
-      <li>The bar says what changed, for example <em>Unsaved: 2 added, 3 retimed, 1 moved, ribbon height</em>; on a computer, hover over it to see which marks. Scrolling the ribbon up or down does not count as a change; it is saved along with your next Save. <strong>Revert</strong> also brings back the saved Ribbon height and position.</li>
+      <li><strong>Save</strong> sends your marks to Drive for every singer. Only editors see it. It can be saved with marks still flagged; its tooltip gives the counts.</li>
+      <li>Anyone whose copy differs from the saved score sees, in Play while paused, <em>N differences from the saved score</em> with <strong>Revert</strong> (and <strong>Save</strong> for an editor).</li>
       <li>If someone saved a newer version first, Save is refused. Tap <strong>Revert</strong> to take the saved marks, or <strong>Keep mine</strong> to save yours over them.</li>
+      <li>Scrolling the Ribbon up or down does not count as a change; it is saved along with your next Save.</li>
     </ol>
   </section>
 
   <section class="step" data-testid="score-edit-help-section-offset">
     <h2>Set track offset</h2>
-    <p class="lead">Each voice sits at a different height below the marks. Open the <strong>&#8943;</strong> menu and tap <strong>Set track offset</strong>, choose the track, then tap where that voice&#39;s staff is under a line. Follow then keeps your focus track&#39;s staff in view. Starting playback turns the tool off.</p>
+    <p class="lead">Each voice sits at a different height below the marks. Open <strong>More</strong> and tap <strong>Set track offset</strong>, choose the track, then tap where that voice&#39;s staff is under a line. Follow then keeps your focus track&#39;s staff in view. Starting playback turns the tool off.</p>
   </section>
 
   <div class="actions">
