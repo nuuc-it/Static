@@ -35,6 +35,9 @@
   .menu-row button[disabled] { cursor: not-allowed; opacity: 0.55; }
   .menu-row .result { margin-top: 0; flex: 1 1 200px; }
   .menu-row.excluded { color: var(--muted); }
+  .admin-block { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 4px; }
+  .admin-block h4 { color: var(--head); margin: 6px 0; font-size: 1em; }
+  .admin-report .report-row { margin: 2px 0; word-break: break-word; }
   .doc-box { border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin: 12px 0; background: var(--panel); }
   .doc-box label { display: block; font-weight: bold; margin-bottom: 6px; }
   .doc-box input[type=text] { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; }
@@ -90,7 +93,7 @@ access on every run. Buttons that need more access than you have are disabled, w
 <script>
 // Build-time stamps — gas-static (scripts/static-pages.js) replaces these literals per env. Left null in the
 // unbuilt source, which has no backend to call.
-var STATIC_BUILD_VERSION_ = "0.1.24.2";
+var STATIC_BUILD_VERSION_ = "0.1.24.3";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -195,6 +198,7 @@ function onGoogleSignIn(credentialResponse) {
       showWho_();
       $('signinBox').classList.add('hidden');
       const p = state.pending; state.pending = null;
+      probeAdminBlocks_();
       if (p && typeof p.resume === 'function') p.resume();
       else if (p) runDocAction_(p.entry, p.input, p.resultEl, p.button);
     })
@@ -420,6 +424,7 @@ function floorReason_(floor, level) {
 function applyLevel_() {
   document.querySelectorAll('[data-item]').forEach((b) => {
     if (b.dataset.excluded === 'true') return;
+    if (b.dataset.kind === 'sheet') return;   // sheet actions take no document: the level never gates them (§5.6.1)
     const floor = b.dataset.floor;
     const blocked = docLevel_ !== null && (LEVEL_RANK_[docLevel_] || 0) < (FLOOR_RANK_[floor] || 0);
     b.disabled = blocked;
@@ -502,6 +507,89 @@ function runMenuItem_(entry, resultEl, button) {
     .then(() => { button.disabled = false; applyLevel_(); });
 }
 
+// Runs a kind:'sheet' entry: POST {action: route, assertion}, no document (§5.6.1). The route does its own admin check.
+function sheetFailure_(res) { return res && res.ok === false ? String(res.reason || res.error || '') : ''; }
+function runSheetItem_(entry, resultEl, button) {
+  resultEl.className = 'result';
+  const resume = () => runSheetItem_(entry, resultEl, button);
+  if (!state.assertion) { state.pending = { resume }; resultEl.textContent = 'Sign in to continue.'; showSignIn_(); return; }
+  button.disabled = true;
+  resultEl.textContent = 'Running…';
+  postJson(SHELL_URL, { action: entry.route, assertion: state.assertion })
+    .then((res) => {
+      if (sheetFailure_(res) === 'unauthorized') { sessionExpired_(resultEl, resume); return; }
+      if (!res || res.ok !== true) {
+        resultEl.className = 'result bad';
+        resultEl.textContent = 'Error: ' + (sheetFailure_(res) || 'unknown error');
+        return;
+      }
+      const rest = Object.assign({}, res); delete rest.ok;
+      resultEl.className = 'result ok';
+      resultEl.textContent = 'ok. ' + summarize_(rest);
+    })
+    .catch((err) => { resultEl.className = 'result bad'; resultEl.textContent = 'Error: ' + (err.message || String(err)); })
+    .then(() => { button.disabled = false; });
+}
+
+// ---- Track admin block: link / report sheet items, shown only to a caller whose signed read succeeds ----------------
+const SHEET_LINK_PREFIX_ = 'https://docs.google.com/spreadsheets/';
+function clip_(text) { text = String(text); return text.length > 600 ? text.slice(0, 600) + '…' : text; }
+function kv_(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v !== 'object') return String(v);
+  if (Array.isArray(v)) return v.map(kv_).join('; ');
+  return Object.keys(v).map((k) => k + ': ' + kv_(v[k])).join(', ');
+}
+// scalar -> text; object -> 'k: v, ...'; array -> one line per element. Returns the lines for one report value.
+function reportLines_(v) {
+  if (Array.isArray(v)) return v.length ? v.map((x) => clip_(kv_(x))) : [''];
+  return [clip_(kv_(v))];
+}
+function renderAdminReport_(el, res) {
+  el.innerHTML = '';
+  let data = res.health;
+  if (!data || typeof data !== 'object') { data = Object.assign({}, res); delete data.ok; }
+  Object.keys(data).forEach((k) => {
+    const row = document.createElement('div'); row.className = 'report-row';
+    const name = document.createElement('strong'); name.textContent = k + ': ';
+    row.appendChild(name);
+    reportLines_(data[k]).forEach((line, i) => {
+      if (i > 0) row.appendChild(document.createElement('br'));
+      row.appendChild(document.createTextNode(line));
+    });
+    el.appendChild(row);
+  });
+}
+function renderAdminLink_(el, res) {
+  el.innerHTML = '';
+  if (typeof res.url !== 'string' || res.url.indexOf(SHEET_LINK_PREFIX_) !== 0) return;   // anything else is never linked
+  const a = document.createElement('a');
+  a.setAttribute('data-admin-link', ''); a.href = res.url; a.target = '_blank'; a.rel = 'noopener';
+  a.textContent = el.dataset.caption || 'Open';
+  el.appendChild(a);
+}
+// Probes every link/report item of every admin block with a signed read; runs only while signed in.
+function probeAdminBlocks_() {
+  if (!state.assertion) return;
+  document.querySelectorAll('section[data-admin-block]').forEach((box) => {
+    if (box.dataset.probing === '1') return;
+    box.dataset.probing = '1';
+    const probes = Array.prototype.slice.call(box.querySelectorAll('[data-probe-route]'));
+    const done = () => { box.dataset.probing = '0'; };
+    Promise.all(probes.map((el) => postJson(SHELL_URL, { action: el.dataset.probeRoute, assertion: state.assertion })
+      .then((res) => {
+        const why = sheetFailure_(res);
+        if (why === 'unauthorized') { sessionExpired_(document.createElement('div'), () => probeAdminBlocks_()); return; }
+        if (why === 'forbidden') { box.remove(); return; }
+        if (!res || res.ok !== true) return;
+        if (el.dataset.show === 'report') renderAdminReport_(el, res); else renderAdminLink_(el, res);
+        if (box.isConnected) box.classList.remove('hidden');
+      })
+      .catch(() => { /* a failed probe leaves the block hidden */ })))
+      .then(done, done);
+  });
+}
+
 // ---- render ---------------------------------------------------------------------------------------------------------
 // One menu button. kind: run -> subapp_web_invoke; dialog -> feature dialog overlay; doc -> feature_doc_invoke.
 function menuRow_(it) {
@@ -511,6 +599,7 @@ function menuRow_(it) {
   button.setAttribute('data-item', it.item || '');
   button.setAttribute('data-id', it.id || '');
   button.dataset.floor = it.floor || 'VIEW';
+  if (it.kind === 'sheet') button.dataset.kind = 'sheet';
   const note = document.createElement('span'); note.className = 'muted why';
   const resultEl = document.createElement('div'); resultEl.className = 'result'; resultEl.setAttribute('role', 'status');
   if (it.excluded) {
@@ -527,11 +616,27 @@ function menuRow_(it) {
     } else if (it.kind === 'doc') {
       button.setAttribute('aria-label', 'Run ' + (it.caption || it.item));
       button.addEventListener('click', () => runDocAction_({ id: it.id, item: it.item }, input, resultEl, button));
+    } else if (it.kind === 'sheet') {
+      button.addEventListener('click', () => runSheetItem_({ id: it.id, item: it.item, route: it.route }, resultEl, button));
     } else {
       button.addEventListener('click', () => runMenuItem_({ id: it.id, item: it.item }, resultEl, button));
     }
   }
   row.appendChild(button); row.appendChild(note); row.appendChild(resultEl);
+  return row;
+}
+
+// A show:'link' or 'report' sheet item: a probe target, filled by probeAdminBlocks_().
+function probeRow_(it) {
+  const row = document.createElement('div'); row.className = 'menu-row';
+  const el = document.createElement('div');
+  el.className = it.show === 'report' ? 'admin-report' : 'admin-link';
+  if (it.show === 'report') {
+    el.setAttribute('data-admin-report', '');
+    const h = document.createElement('strong'); h.textContent = it.caption || it.item; row.appendChild(h);
+  }
+  el.dataset.probeRoute = it.route || ''; el.dataset.show = it.show; el.dataset.caption = it.caption || it.item;
+  row.appendChild(el);
   return row;
 }
 
@@ -545,11 +650,26 @@ function renderMenu_(menu) {
     if (!items.length) return;
     const box = document.createElement('section'); box.className = 'menu-group'; box.setAttribute('data-group', g.group);
     const h = document.createElement('h3'); h.textContent = g.group; box.appendChild(h);
-    items.forEach((it) => { box.appendChild(menuRow_(it)); rendered++; });
+    // A group with a link/report sheet item keeps all its sheet items in a hidden admin block until a signed read succeeds.
+    const sheets = items.filter((it) => it.kind === 'sheet' && !it.excluded);
+    const gated = sheets.some((it) => it.show === 'link' || it.show === 'report');
+    let block = null;
+    if (gated) {
+      block = document.createElement('section'); block.className = 'admin-block hidden'; block.setAttribute('data-admin-block', '');
+      const bh = document.createElement('h4'); bh.textContent = 'Admin'; block.appendChild(bh);
+    }
+    items.forEach((it) => {
+      if (block && it.kind === 'sheet' && !it.excluded) {
+        block.appendChild((it.show === 'link' || it.show === 'report') ? probeRow_(it) : menuRow_(it));
+      } else box.appendChild(menuRow_(it));
+      rendered++;
+    });
+    if (block) box.appendChild(block);
     host.appendChild(box);
   });
   $('menuEmpty').classList.toggle('hidden', rendered > 0);
   applyLevel_();
+  probeAdminBlocks_();
 }
 
 // A Shell older than about.menu: list its dialogs and doc actions as one group.
