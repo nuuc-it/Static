@@ -591,6 +591,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 .score-mark-list button.cur { background: var(--surface-1); font-weight: 700; }
 .score-mark-list .sub { color: var(--text-2); opacity: .8; font-weight: 400; margin-left: 6px; }
 .score-mark-list .tm { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.score-mark-list button.flag .tm { color: var(--color-warning); font-weight: 700; }
 .score-pos-bar { position: relative; height: 5px; background: var(--surface-2); border-top: 1px solid var(--border-strong); }
 .score-pos-bar .tk { position: absolute; top: -3px; width: 2px; height: 11px; background: #3b82f6; }
 .score-pos-bar .tk.l { left: 0; } .score-pos-bar .tk.r { right: 0; }
@@ -2204,10 +2205,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.5";
+var STATIC_BUILD_VERSION_ = "1.8.6";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-11-04T02:22:34.757Z";
+var STATIC_BUILD_DATE_ = "2026-11-04T15:04:29.394Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbz-YsKzVeoehCr05zF4kF_wbKuTAhMm1RU1KSXK-W6UOKt9zg1zVTUi_TKKYnpkhSR-/exec";
@@ -8849,7 +8850,18 @@ function scoreTimed(marks) {
 /** track time t = clock x speed; the clock is what the audio engine reports. */
 function scoreTrackTime(clock, speed) { return clock * speed; }
 function scoreClockTime(t, speed) { return t / speed; }
-function scoreEase(ms) { var k = scoreClamp(ms / SCORE_EASE_MS, 0, 1); return k * k * (3 - 2 * k); }
+function scoreEase(ms, dur) { var k = scoreClamp(ms / (dur > 0 ? dur : SCORE_EASE_MS), 0, 1); return k * k * (3 - 2 * k); }
+/** atc-rlep.14: page-view anchor: the playing line is vertically centred. */
+var SCORE_PAGE_CENTER_Y = 0.5;
+/** atc-rlep.14: the scroll position that centres a box (top, height) in a view of height viewH over content of height contentH, clamped at the top and bottom. */
+function scoreCenterTarget(top, h, viewH, contentH) {
+  return scoreClamp(top + h / 2 - viewH / 2, 0, Math.max(0, contentH - viewH));
+}
+/** atc-rlep.14: length (ms) of the page-view scroll to the next line = 2 x the lead-in (S.lead, seconds); 300 ms minimum when the lead is 0 or absent. */
+var SCORE_FOLLOW_MIN_MS = 300;
+function scoreFollowMs(lead) { lead = Number(lead); return Math.max(SCORE_FOLLOW_MIN_MS, lead > 0 ? lead * 2000 : 0); }
+/** atc-rlep.14: a manual hold ends when the playing mark (its y in scroll px) is no longer inside the visible area. */
+function scoreHoldReleased(markY, scrollTop, viewH) { return !(markY >= scrollTop && markY <= scrollTop + viewH); }
 
 /** Index of the last mark with time <= t (marks sorted by time), -1 before the first. */
 function scoreIndexAt(marks, t) {
@@ -8884,7 +8896,7 @@ function scoreAnchorView(mark, geo) {
   var p = scoreMarkPoint(mark, geo);
   return {
     x: scoreClamp(p.x - (geo.ax === undefined ? SCORE_ANCHOR_X : geo.ax) * geo.W, 0, geo.maxX),
-    y: scoreClamp(p.y - (geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay) * geo.H, 0, geo.maxY)
+    y: geo.center ? scoreCenterTarget(p.y, 0, geo.H, geo.H + geo.maxY) : scoreClamp(p.y - (geo.ay === undefined ? SCORE_ANCHOR_Y : geo.ay) * geo.H, 0, geo.maxY)
   };
 }
 /** atc-ore.37: the timed mark nearest (in view px) to the page-view point (px, py), or null when none. geo as for scoreAnchorView. */
@@ -9174,15 +9186,19 @@ function scoreRibbonLayout(marks, geo, opt) {
   if (nK0 && segIdx[nK0 - 1] === lastSi && lastSi < segs.length - 1 && !K[nK0 - 1].jump && !K[nK0 - 1].eol) {
     endKnot = null; // the EOL of the last timed line is timed against this end knot instead
     var lkn = K[nK0 - 1], lastX = markX[nK0 - 1], endK = null, endTn = opt ? Number(opt.endT) : 0, endPg = segs[segs.length - 1].page;
-    if (endTn > lkn.t) endK = { t: endTn, page: endPg, id: null, end: true };
-    else { var ev0 = forwardSpeed(nK0 - 1); if (ev0 > 0) endK = { t: lkn.t + (x - lastX) / ev0, page: endPg, id: null, end: true }; }
+    var endX = x, ev0 = forwardSpeed(nK0 - 1);
+    // owner 2026-11-03 (atc-rlep.19): past the last timed mark the playhead keeps the last forward span's speed, stopped at the ribbon end or the track end, whichever comes first (a TIME press does not change the speed ahead)
+    if (ev0 > 0) {
+      endK = { t: lkn.t + (x - lastX) / ev0, page: endPg, id: null, end: true };
+      if (endTn > lkn.t && endTn < endK.t) { endK.t = endTn; endX = lastX + ev0 * (endTn - lkn.t); }
+    } else if (endTn > lkn.t) endK = { t: endTn, page: endPg, id: null, end: true };
     if (endK) {
       var lsg2 = segs[lastSi], eli = lsg2.line;
       if (lineEol[eli] !== null && (!unrolled || spans[lastSi].jcut === null)) {
-        var lpg2 = scorePagePx(geo, lsg2.page), eX = Math.max(lastX, lsg2.ribbonX + scoreTimingX(lineEol[eli], 'eol') * lpg2.w / lpg2.ptW - lsg2.srcX);
-        K.push({ t: scoreRibbonEolT(lkn.t, lastX, endK.t, x, eX), page: lsg2.page, id: null, eol: true }); markX.push(eX); segIdx.push(lastSi);
+        var lpg2 = scorePagePx(geo, lsg2.page), eX = Math.min(endX, Math.max(lastX, lsg2.ribbonX + scoreTimingX(lineEol[eli], 'eol') * lpg2.w / lpg2.ptW - lsg2.srcX));
+        K.push({ t: scoreRibbonEolT(lkn.t, lastX, endK.t, endX, eX), page: lsg2.page, id: null, eol: true }); markX.push(eX); segIdx.push(lastSi);
       }
-      K.push(endK); markX.push(x); segIdx.push(segs.length - 1);
+      K.push(endK); markX.push(endX); segIdx.push(segs.length - 1);
     }
   }
   if (endKnot && K.length > 1 && endKnot.x > markX[K.length - 1]) { // atc-elfg.10: play on to the last line's EOL at the last forward span's speed (clamped to the track length)
@@ -9479,7 +9495,7 @@ function scoreRibbonFrame(inp) {
     rx: rx, sx: sx, playheadX: rx - sx, selAt: selAt, page: page, followSx: scoreRibbonScroll(rx, L, W), offCursor: !!hold,
     held: sx <= 0 || sx >= max || (edit && !playing) || !!hold || (n >= 0 && !!(L.hold && L.hold[n])),
     strip: strip, bar: bar, bar2: bar2, cw: cw, ch: ch, dpr: dpr,
-    key: [sx, strip ? Math.round(barX) : '', inp.offY, inp.selId, edit, strip, bar2, page, cw, ch, dpr, inp.gen].join('|')
+    key: [sx, strip ? Math.round(barX) : '', inp.offY, inp.selId, inp.ringId, edit, strip, bar2, page, cw, ch, dpr, inp.gen].join('|')
   };
 }
 /** atc-elfg.6: what one drawn ribbon frame contains, from the frame view. mp = scoreRibbonMarkPos(...).
@@ -9503,7 +9519,7 @@ function scoreRibbonPaintList(view, inp, mp) {
     mp.pos[mi].forEach(function (pos, ci) {
       drawn++;
       var sgm = L.segs[pos.seg], dyp = sgm && sgm.panMax !== undefined ? sgm.srcY - scoreRibbonSrcY(sgm, inp.offY) : 0; // atc-qucy: a boxed slice's notation-position mark moves with its clamped pan; an unboxed line draws unpanned (atc-ihtb)
-      var px = pos.x - sx, py = strip && scoreRibbonStripMark(k) ? SCORE_RIBBON_STRIP_Y : pos.y + dyp, isSel = edit && k.id === inp.selId;
+      var px = pos.x - sx, py = strip && scoreRibbonStripMark(k) ? SCORE_RIBBON_STRIP_Y : pos.y + dyp, isSel = edit && k.id === (inp.ringId === undefined ? inp.selId : inp.ringId);
       if (edit) posMap[ci ? k.id + '@' + ci : k.id] = [Math.round(px), Math.round(py)]; // further copies: id@1, id@2
       if (isSel && !ci) selV = Math.round(px) + ',' + Math.round(py);
       if (pos.x < cullL || pos.x > cullR) return; // atc-elfg.5: too far off the visible ribbon to touch a pixel
@@ -10086,13 +10102,20 @@ function scorePosStrip(marks, t, nums) {
   var p = scoreIndexAt(list, t);
   return { prev: p >= 0 ? cell(list[p]) : null, next: p + 1 < list.length ? cell(list[p + 1]) : null, at: null };
 }
-/** atc-ore.36: the NOW cell's mark list - every timed mark in time order, named as the strip names it; cur = the mark at the playhead, else the one before it. */
-function scoreMarkListRows(marks, t, nums) {
-  var r = scorePosStrip(marks, t, nums), cur = r.at ? r.at.id : null, rows = [];
+/** atc-ore.36; owner 2026-11-04: the NOW cell's mark list - every mark and note in placement (reading) order: page, line, x (scoreVisualRows; a note at its own y).
+ *  name = '#n' (a note: 'Note'); sub = the label and the mark's note text (a note: its text); t = the time (null when untimed); flag = 'needs' | 'order' | '' (states from scoreValidate);
+ *  cur = the mark at the playhead, else the timed one before it. Jumps and EOLs are not listed. */
+function scoreMarkListRows(marks, t, nums, states) {
+  var r = scorePosStrip(marks, t, nums), cur = r.at ? r.at.id : null, rows = [], items = [], seen = {};
   if (!cur && r.prev) cur = r.prev.id;
-  scoreSorted(scoreTimed(marks)).forEach(function (k) {
-    var n = scoreMarkNum(marks, k.id, nums), lab = k.measure ? String(k.measure) : '';
-    rows.push({ id: k.id, name: lab || n, sub: lab ? n : '', t: k.t, current: k.id === cur });
+  states = states || {};
+  scoreVisualRows(marks || []).forEach(function (row, ri) { row.forEach(function (k, xi) { if (k.kind !== 'note' && k.kind !== 'jump' && k.kind !== 'eol') { seen[k.id] = 1; items.push({ k: k, page: k.page, y: row[0].y, x: k.x, o: ri * 1e4 + xi }); } }); });
+  (marks || []).forEach(function (k) { if (k && k.kind === 'note' && !seen[k.id]) items.push({ k: k, page: k.page, y: k.y, x: k.x, o: 1e9 }); });
+  items.sort(function (a, b) { return a.page - b.page || (Math.abs(a.y - b.y) <= SCORE_SAME_LINE_PT ? 0 : a.y - b.y) || a.x - b.x || a.o - b.o; });
+  items.forEach(function (it) {
+    var k = it.k, note = k.kind === 'note', st = states[k.id];
+    rows.push({ id: k.id, note: note, name: note ? 'Note' : scoreMarkNum(marks, k.id, nums), sub: note ? scoreNoteShort(k.note) : [k.measure ? String(k.measure) : '', k.note ? scoreNoteShort(k.note) : ''].filter(Boolean).join(' \u00B7 '), // owner 2026-11-04: a mark's label, then its note
+      t: typeof k.t === 'number' && !note ? k.t : null, flag: st === 'needs' || st === 'order' ? st : '', current: k.id === cur });
   });
   return rows;
 }
@@ -11089,7 +11112,7 @@ function initScorePanel_() {
     pdfs: [], opener: null, pinch: null, raf: 0,
     fileId: '', marks: [], undo: [], selId: null, edit: false, sub: 'layout', followOn: true, reaction: 0.25,
     disp: {}, snapPending: true, easeFrom: null, easeStart: -1, lastN: null, last: null, loop: 0, touching: false, gesture: null,
-    ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, pan: null, seekDim: '',
+    ptrs: 0, curN: -1, playing: false, readOnly: false, lead: SCORE_LEAD_DEFAULT, offY: 0, holdY: null, easeMs: 0, pan: null, seekDim: '',
     folder: '', shared: null, sharedP: null, stale: null, saving: false, saveMsg: '',
     carriedKey: '', focusId: null, offsets: {}, offsetMode: false, place: 'mark', noteId: null, fieldMsgId: null, offsetTrack: '', orphan: {},
     ribbon: true, ribbonShown: false, rv: ribbonReset(null), ribbonBuilds: 0
@@ -11754,7 +11777,15 @@ function initScorePanel_() {
     if (!syncOn()) return null;
     var sm = selMark();
     var nums = markNums(), vn = validNow(), fl = scoreSyncOrder_(S.marks, nums).filter(function (k) { return vn.v[k.id] !== 'ok'; }).map(function (k) { return k.id; });
-    return scoreSyncTarget(S.marks, sm ? sm.id : null, scoreNowT(), S.skipped, fl, nums);
+    var r = scoreSyncTarget(S.marks, sm ? sm.id : null, scoreNowT(), S.skipped, fl, nums);
+    // owner 2026-11-03 (atc-rlep.16): the Retime target (all timed, nothing selected) is the first mark after the playhead when it is chosen, then HELD:
+    // the playhead (Next, Previous, playback) never changes it; only a timing tap, Skip, the chip, a selection or a Sync entry does.
+    if (r.mode === 'retime' && !r.sel && r.id) {
+      var held = S.retimeId && S.skipped.indexOf(S.retimeId) < 0 ? markById(S.retimeId) : null;
+      if (held && held.kind === 'mark' && held.id !== r.id) r = scoreSyncTarget(S.marks, held.id, scoreNowT(), S.skipped, fl, nums), r.sel = false;
+      else S.retimeId = r.id;
+    } else S.retimeId = null;
+    return r;
   }
   /** atc-rlep.3 J5b: the fix window of mark `id` (scoreFixWindow over the validated states); null for a jump. */
   function fixWinFor(id) { return scoreFixWindow(S.marks, validNow().v, id, trackEndT()); }
@@ -11773,7 +11804,14 @@ function initScorePanel_() {
     var to = scoreFixPreroll(scoreNowT(), f.win, rate());
     if (to !== null) { jumpTo(to); S.preId = f.id; }
   }
-  function nudgeMark() { var m = S.nudgeId ? markById(S.nudgeId) : null; return m && typeof m.t === 'number' ? m : null; }
+  /** owner 2026-11-03 (atc-rlep.17): the id drawn with the selection ring. In Sync the timing button's target is the selected mark even after an advance cleared S.selId. */
+  function ringId() {
+    if (!S.edit) return null;
+    if (S.selId) return S.selId;
+    var r = syncOn() ? syncTargetNow() : null;
+    return r && r.id ? r.id : null;
+  }
+  function nudgeMark() { var m = S.nudgeId ? markById(S.nudgeId) : null; if (!m) m = selMark(); return m && m.kind !== 'eol' && typeof m.t === 'number' ? m : null; } // owner 2026-11-04: the mark just set, else the selected timed mark
   function pinMark() { if (!syncOn() || S.unpinned || S.offsetMode) return null; var r = syncTargetNow(); return r && r.id ? markById(r.id) : null; }
   /** A user pan or scroll of the view unpins it (the pill and Follow button tell how to go back). */
   /** owner 2026-11-03: the page point Sync shows now: the selected mark, else the pinned target, else (ribbon) the point under the now bar; null when Sync shows neither (an unpinned page view just stays). */
@@ -11946,7 +11984,7 @@ function initScorePanel_() {
       var idx = markIndex()[id] === undefined ? -1 : markIndex()[id];
       el.setAttribute('data-n', String((idx >= 0 && markNums()[S.marks[idx].id]) || idx + 1));
       el.setAttribute('data-current', String(idx === S.curN));
-      el.setAttribute('data-selected', String(S.edit && id === S.selId));
+      el.setAttribute('data-selected', String(S.edit && id === ringId()));
       if (!S.edit) { el.style.width = ''; el.style.height = ''; }
       var dot = el.querySelector('.dot'), mtEl = el.querySelector('.mt'), tm = idx >= 0 && typeof S.marks[idx].t === 'number';
       var fs = S.edit && idx >= 0 ? validNow().v[S.marks[idx].id] : 'ok'; // Play draws no flags
@@ -12056,7 +12094,7 @@ function initScorePanel_() {
     Object.keys(SCORE_UI).forEach(function (id) { var el = $(id); if (el && el.hidden === !!shown[id]) el.hidden = !shown[id]; });
   }
   function syncUi() {
-    if (S.selId !== S.lastSelId) { S.lastSelId = S.selId; if (S.selId) { S.skipped = []; S.unpinned = false; S.nudgeId = null; } } // a selection re-pins, ends the skips and the nudge
+    if (S.selId !== S.lastSelId) { S.lastSelId = S.selId; if (S.selId) { S.skipped = []; S.unpinned = false; S.nudgeId = null; S.retimeId = null; } } // a selection re-pins, ends the skips and the nudge
     var av = String(viewOffPts()); if (av !== S.addrView) { S.addrView = av; notifyAddress(); } // atc-tty9.23: the link carries the vertical offset
     var has = scoreTimed(playMarks()).length > 0; // Follow, previous/next and the ribbon use timed marks only
     panel.setAttribute('data-mark-count', String(S.marks.length));
@@ -12335,9 +12373,9 @@ function initScorePanel_() {
   }
   function resumeFollow() {
     S.followOn = true;
-    S.offY = 0; S.pan = null;
+    S.offY = 0; S.holdY = null; S.pan = null;
     S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop };
-    S.easeStart = performance.now();
+    S.easeStart = performance.now(); S.easeMs = scoreFollowMs(S.lead);
     syncUi();
   }
   /** atc-tty9.42: a crop depends on the marks, so redo the layout when it differs from what is shown (after marks load, or a toggle). */
@@ -12352,10 +12390,18 @@ function initScorePanel_() {
   $('score-ribbon-toggle').addEventListener('change', function () { S.ribbon = this.checked; store(RIBBON_KEY, S.ribbon ? '1' : '0'); syncUi(); });
 
   // Frame loop: audio clock -> target view -> scroll position of the already-drawn pages (AC 10).
+  /** owner 2026-11-03 (Gap B): the view height. Syncing while playing it is frozen at its value when playback (or Sync) began, so a toolbar or message appearing under the score (the scroller shrinks) cannot shift the ribbon lines or the page centring. */
+  function viewH() {
+    var h = scroller.clientHeight;
+    if (S.edit && isPlayingNow()) { if (S.frozenH === null || S.frozenH === undefined) S.frozenH = h; return S.frozenH; }
+    S.frozenH = null;
+    return h;
+  }
   function pageGeo(forRibbon) { // the ribbon always works on the uncropped page (atc-tty9.42)
+    var vh = viewH();
     return {
-      W: scroller.clientWidth, H: scroller.clientHeight,
-      maxX: Math.max(0, scroller.scrollWidth - scroller.clientWidth), maxY: Math.max(0, scroller.scrollHeight - scroller.clientHeight),
+      W: scroller.clientWidth, H: vh,
+      maxX: Math.max(0, scroller.scrollWidth - scroller.clientWidth), maxY: Math.max(0, scroller.scrollHeight - vh),
       pages: S.pages.map(function (p) { return forRibbon ? { left: p.el.offsetLeft, top: p.el.offsetTop, w: p.cssW, h: p.baseH, ptW: p.w, ptH: p.h } : { left: p.el.offsetLeft, top: p.el.offsetTop, w: p.cssW, h: p.cssH, ptW: p.cw, ptH: p.h, x0: p.x0 }; })
     };
   }
@@ -12546,12 +12592,12 @@ function initScorePanel_() {
       if (gp >= 1) { S.rv.hold = null; S.rv.glide = null; } else S.rv.hold = { sx: scoreRibbonGlide(S.rv.glide.from, fsx, gp) };
     }
     var pinRx, pm = pinMark();
-    if (pm && !S.rv.scrub) { // atc-rlep.2 J4: Sync pinned: the view shows the target (scoreRibbonFrame applies the 65 percent rule)
+    if (pm && !S.rv.scrub && !pl) { // atc-rlep.15: playing, only the playhead moves the view (no pin); atc-rlep.2 J4: Sync pinned: the view shows the target (scoreRibbonFrame applies the 65 percent rule)
       S.rv.hold = null; S.rv.glide = null;
       var pp0 = scoreRibbonPos(L, geo, pm, scoreRibbonScroll(scoreRibbonX(S.marks, t, L), L, geo.W) + SCORE_RIBBON_ANCHOR_X * geo.W, true);
       if (pp0) pinRx = pp0.x;
     }
-    var inp = { L: L, geo: geo, marks: S.marks, t: t, edit: S.edit, playing: pl, selId: S.selId, selAt: S.rv.selAt, prevSx: S.rv.sx, hold: S.rv.hold, scrub: S.rv.scrub, pinRx: pinRx, dpr: dpr, offY: ribbonPan(), gen: S.renderGen + '|' + S.pubGen + '|' + S.noteId };
+    var inp = { L: L, geo: geo, marks: S.marks, t: t, edit: S.edit, playing: pl, selId: S.selId, ringId: ringId(), selAt: S.rv.selAt, prevSx: S.rv.sx, hold: S.rv.hold, scrub: S.rv.scrub, pinRx: pinRx, dpr: dpr, offY: ribbonPan(), gen: S.renderGen + '|' + S.pubGen + '|' + S.noteId };
     var view = scoreRibbonFrame(inp);
     S.rv.selAt = view.selAt; S.rv.sx = view.sx;
     var off = S.edit && !pl && Math.abs(view.sx - view.followSx) > 8; // atc-ore.37
@@ -12578,6 +12624,7 @@ function initScorePanel_() {
     if (!ctx) return;
     var RP = ribbonPos(L, geo), list = scoreRibbonPaintList(view, inp, RP);
     paintRibbon(ctx, view, list, geo, S.marks, markNums(), S.edit, RP.broken, flagsNow);
+    seam('data-ribbon-ring', ringId() || ''); // test seam: the id of the mark drawn with the selection ring
     seam('data-ribbon-dots', JSON.stringify(S.rv.dotTxt)); // test seam: the number drawn in each mark's dot
     seam('data-ribbon-bar', view.bar ? view.bar.x0 + ',' + view.bar.x1 : ''); // test seam: the position bar's x extent (px); not tappable (drawn only)
     seam('data-ribbon-bar2', view.bar2 === null ? '' : String(Math.round(view.bar2))); // test seam: its y (px); drawn only
@@ -12689,7 +12736,7 @@ function initScorePanel_() {
     if (playing !== S.playing) {
       S.playing = playing; paintMarks();
       if (S.edit && !playing && !S.ribbonShown) pauseFollow(); // atc-tty9.28: pausing in Edit leaves the page where it is (no snap to the playhead)
-      if (playing) S.offsetMode = false; // atc-ore.16 AC 17: starting playback turns offset mode off
+      if (playing) { S.offsetMode = false; S.offY = 0; S.holdY = null; } // atc-ore.16 AC 17: starting playback turns offset mode off; atc-rlep.14: Play ends a manual hold
       if ((playMode() || (S.edit && (playing || S.ribbon))) && !S.followOn) resumeFollow(); // starting to play puts Follow back (atc-ore.17 AC 2); Edit too, page view and ribbon (atc-tty9.17, atc-tty9.33); pausing in Edit with the page view must not undo the pauseFollow above
       syncUi();
     }
@@ -12705,7 +12752,7 @@ function initScorePanel_() {
         return;
       }
     }
-    if (!rb && syncOn() && pinMark()) { // atc-rlep.2 J4: Sync pinned (page view): the target line at the anchor, the mark at about 65 percent of the width
+    if (!rb && syncOn() && !playing && pinMark()) { // atc-rlep.15: not while playing // atc-rlep.2 J4: Sync pinned (page view): the target line at the anchor, the mark at about 65 percent of the width
       var pgeo = pageGeo(), pt = scoreJumpClock(playMarks(), scoreTrackTime(dispT, rate())), pn = scoreIndexAt(scoreTimed(playMarks()), pt);
       if (pn !== S.curN) { S.curN = pn; syncUi(); }
       drawPageBar(scoreTimed(playMarks()).length ? scorePageBar(playMarks(), pt, { pageW: pageWOf }) : null);
@@ -12754,26 +12801,37 @@ function initScorePanel_() {
         S.pan.h = true; // play mode: the view eases back once the touch ends (atc-ore.17 AC 2)
       }
       if (S.pan.h && Math.abs(sx - S.pan.lastX) > 0.5) { S.pan.lastX = sx; S.pan.idle = now; }
-      if (Math.abs(sy - S.pan.last) > 0.5) { S.pan.last = sy; S.pan.idle = now; S.offY = scoreOffsetFor(sy, tv.y); syncUi(); }
+      if (Math.abs(sy - S.pan.last) > 0.5) { S.pan.last = sy; S.pan.idle = now; S.offY = scoreOffsetFor(sy, tv.y); if (playing) { S.holdY = sy; S.easeStart = -1; } syncUi(); } // atc-rlep.14: a manual vertical move holds the position
       if (now - S.pan.idle < 150) { S.lastN = tv.v; return; }
-      if (S.pan.h) { S.easeFrom = { x: sx, y: sy }; S.easeStart = now; }
+      if (S.pan.h) { S.easeFrom = { x: sx, y: sy }; S.easeStart = now; S.easeMs = 0; }
       S.pan = null;
     }
-    var vw = scoreApplyOffset(tv, S.offY, geo);
+    // atc-rlep.14: a manual vertical move holds the absolute scroll position. It ends when the playing mark leaves the visible area
+    // (ease back to centre), on a seek, on Play after a pause and on Resume (those clear S.offY, which ends the hold).
+    if (S.snapPending) { S.holdY = null; S.offY = 0; }
+    if (S.holdY !== null && S.offY === 0) S.holdY = null;
+    if (S.holdY !== null) {
+      var hm = tv.n >= 0 ? scoreTimed(playMarks())[tv.n] : null, hpg = hm ? scorePagePx(geo, hm.page) : null;
+      if (!hm || scoreHoldReleased(hpg.top + hm.y * hpg.h / hpg.ptH, S.holdY, geo.H)) {
+        S.holdY = null; S.offY = 0; syncUi();
+        S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = now; S.easeMs = scoreFollowMs(S.lead);
+      } else S.offY = scoreOffsetFor(S.holdY, tv.y) || 1e-6;
+    }
+    var vw = S.holdY !== null ? { x: tv.x, y: S.holdY } : scoreApplyOffset(tv, S.offY, geo);
     if (S.snapPending) { setView(vw.x, vw.y); S.easeStart = -1; }
     else {
-      if (S.lastN !== null && tv.v !== S.lastN && playing) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = now; }
+      if (S.lastN !== null && tv.v !== S.lastN && playing && S.holdY === null) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = now; S.easeMs = scoreFollowMs(S.lead); } // smooth scroll over 2 x lead-in
       if (S.easeStart >= 0) {
-        var k = scoreEase(now - S.easeStart);
+        var dur = S.easeMs || SCORE_EASE_MS, k = scoreEase(now - S.easeStart, dur);
         setView(scoreLerp(S.easeFrom.x, vw.x, k), scoreLerp(S.easeFrom.y, vw.y, k));
-        if (now - S.easeStart >= SCORE_EASE_MS) S.easeStart = -1;
+        if (now - S.easeStart >= dur) S.easeStart = -1;
       } else setView(vw.x, vw.y);
     }
     S.lastN = tv.v; S.snapPending = false;
   }
   /** Follow's target at track time t: the shared marks plus the focus track's offset (atc-ore.8 AC 3), before the user's own vertical offset. */
   function followView(geo, t) {
-    return scoreFollowView(playMarks(), t, geo, { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() }, S.offsets, focusTrackId());
+    return scoreFollowView(playMarks(), t, (S.edit && S.sub === 'layout') ? geo : Object.assign({}, geo, { center: true }), { x: scroller.scrollLeft, y: scroller.scrollTop }, { lead: S.lead, speed: rate() }, S.offsets, focusTrackId());
   }
   function followTarget() {
     var geo = pageGeo();
@@ -12785,8 +12843,8 @@ function initScorePanel_() {
       S.offY = scoreRibbonNudge(ribbonPan(), dy, pageGeo().H, scoreRibbonPanLimit(S.rv.layout), scoreRibbonPanMin(S.rv.layout)); syncUi(); return;
     } // the ribbon is not bound to the page's scroll range
     var f = followTarget();
-    var y = Math.max(0, Math.min(f.geo.maxY, f.tv.y + S.offY + dy));
-    S.offY = scoreOffsetFor(y, f.tv.y);
+    var y = Math.max(0, Math.min(f.geo.maxY, (S.holdY !== null ? S.holdY : scroller.scrollTop) + dy));
+    S.offY = scoreOffsetFor(y, f.tv.y); S.holdY = y; S.easeStart = -1; // atc-rlep.14: hold where the user put it; a move cancels a running scroll
     syncUi();
   }
   function startLoop() { if (!S.loop) S.loop = requestAnimationFrame(tick); }
@@ -12845,7 +12903,7 @@ function initScorePanel_() {
       var noted = scoreHitMark(pdfHitMarks().filter(function (q) { return q.note; }), hit.page, hit.x, hit.y);
       showNote(noted && S.noteId !== noted.id ? noted : null); // a tap on a noted mark shows its text; tapping again hides it
       if (noted && noted.kind === 'note') return; // atc-tty9.26: a note is untimed; tapping it seeks nowhere
-      var mk = scoreNearestPreceding(playMarks(), hit.page, hit.x, hit.y);
+      var mk = (!S.ribbonShown && scoreHitMark(scoreTimed(playMarks()).filter(function (q) { return q.kind !== 'note' && q.kind !== 'jump'; }), hit.page, hit.x, hit.y)) || scoreNearestPreceding(playMarks(), hit.page, hit.x, hit.y); // owner 2026-11-04: page view, a tap on a mark's dot goes to that mark (as the ribbon does), not the one before
       if (mk) jumpTo(mk.t + (S.ribbonShown && S.rv.layout && hit.seg !== undefined ? scoreRibbonSeekD(S.rv.layout, hit.seg, mk) : 0)); // atc-tty9.35: a tap on a replay copy seeks to that copy's audio time
       return;
     }
@@ -13064,7 +13122,7 @@ function initScorePanel_() {
     if (m === 'layout' && wasEdit && wasSub === 'sync') S.focusPt = syncFocusPoint(); // owner 2026-11-03: Sync -> Layout shows the spot Sync showed (applied each frame for a moment: the refit below re-snaps)
     var enterPt = m === 'sync' && wasEdit && wasSub === 'layout' && !selMark() ? layoutCenterPoint() : null; // Layout -> Sync with no selection: the ribbon opens where the page view was
     S.edit = m !== 'play'; if (S.edit) S.sub = m; S.rv.selAt = null;
-    if (m === 'sync' && !(wasEdit && wasSub === 'sync')) { S.skipped = []; S.unpinned = false; S.nudgeId = null; } // a fresh pass through the queue
+    if (m === 'sync' && !(wasEdit && wasSub === 'sync')) { S.skipped = []; S.unpinned = false; S.nudgeId = null; S.retimeId = null; } // a fresh pass through the queue
     if (m === 'sync' && !wasEdit) S.unpinned = true; // owner 2026-11-03: Play -> Sync shows the playhead (follow scroll), unpinned until a timing tap, Skip, the chip or a selection
     if (enterPt) { S.unpinned = true; S.enterPt = enterPt; }
     if (S.focusPt) S.focusPt.until = performance.now() + 500;
@@ -13098,9 +13156,14 @@ function initScorePanel_() {
   }, true);
   /** AC 19 / atc-ore.33: a PREV/NEXT tap goes to exactly the mark its cell names (the strip's r.prev / r.next at the same now). */
   function stepMark(dir) {
-    var r = posStrip(scoreNowT()), c = dir < 0 ? r.prev : r.next, vm = null;
+    var nowT = scoreNowT(), r = posStrip(nowT), c = dir < 0 ? r.prev : r.next, vm = null;
+    if (dir < 0 && c && nowT - c.t < 1.5) { // owner 2026-11-03 (atc-rlep.18): less than 1.5 s past the mark Previous would seek to: go one further back
+      var earlier = posStrip(c.t - 0.01).prev;
+      if (earlier) c = earlier;
+    }
     if (!c) return;
     S.marks.forEach(function (k) { if (k.id === c.id) vm = k; });
+    if (vm && syncOn()) { S.rv.hold = null; S.rv.glide = null; jumpTo(vm.t); return; } // owner 2026-11-03 (atc-rlep.16): in Sync Previous/Next only move the playhead; the selected mark and the target hold
     if (vm) goToMark(vm);
   }
   /** atc-ore.36: go to a timed mark as the strip's PREV/NEXT do in the current mode (outside Edit: seek to the mark; in Edit: select, exact seek when paused). */
@@ -13136,14 +13199,15 @@ function initScorePanel_() {
     if (box.hidden === !open) return;
     box.hidden = !open; btn.setAttribute('aria-expanded', String(open));
     if (!open) return;
-    var rows = scoreMarkListRows(S.marks, scoreNowT(), markNums());
+    var rows = scoreMarkListRows(S.marks, scoreNowT(), markNums(), validNow().v);
     box.textContent = '';
     rows.forEach(function (r) {
       var b = document.createElement('button'), n = document.createElement('span'), tm = document.createElement('span');
       b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('data-mark-id', r.id); b.setAttribute('data-testid', 'score-mark-row'); b.setAttribute('aria-selected', String(r.current));
-      if (r.current) b.className = 'cur';
+      b.className = (r.current ? 'cur' : '') + (r.flag ? ' flag' : ''); if (r.flag) b.setAttribute('data-flag', r.flag);
       n.textContent = r.name; if (r.sub) { var sb = document.createElement('span'); sb.className = 'sub'; sb.textContent = r.sub; n.appendChild(sb); }
-      tm.className = 'tm'; tm.textContent = fmtT(r.t);
+      tm.className = 'tm'; tm.textContent = r.flag === 'order' ? '! ' + fmtT(r.t) : r.flag === 'needs' ? '! no time' : r.t === null ? '' : fmtT(r.t);
+      if (r.flag) b.title = r.flag === 'order' ? 'Out of order: ignored in play' : 'Needs a time';
       b.appendChild(n); b.appendChild(tm); box.appendChild(b);
     });
     var pr = $('score-pos').getBoundingClientRect();
@@ -13154,9 +13218,17 @@ function initScorePanel_() {
   $('score-mark-list').addEventListener('click', function (e) {
     var b = e.target.closest('[data-mark-id]');
     if (!b) return;
-    var id = b.getAttribute('data-mark-id'); setMarkList(false);
-    S.marks.forEach(function (k) { if (k.id === id) goToMark(k); });
+    var id = b.getAttribute('data-mark-id'), v = validNow().v; setMarkList(false);
+    S.marks.forEach(function (k) { if (k.id !== id) return; if (k.kind !== 'note' && typeof k.t === 'number' && v[k.id] === 'ok') goToMark(k); else showMarkNoSeek(k); });
   });
+  /** owner 2026-11-04: a note, flagged or untimed row: show it (selected in Edit) without moving the playhead. */
+  function showMarkNoSeek(m) {
+    if (S.edit) { S.selId = m.id; }
+    pauseFollow(); // Follow (and the ribbon) would drag the view back to the playhead; the Follow button resumes it
+    syncUi();
+    var geo = pageGeo(), a = scoreAnchorView(m, geo);
+    setView(a.x, a.y);
+  }
   document.addEventListener('pointerdown', function (e) { // outside tap closes the list (the NOW button toggles it itself)
     var box = $('score-mark-list');
     if (!box.hidden && !box.contains(e.target) && !$('score-pos-now').contains(e.target)) setMarkList(false);
@@ -13233,13 +13305,13 @@ function initScorePanel_() {
     var setT = m.kind === 'jump' ? trackNow() : scoreNowT(); // atc-tty9.34: a jump keeps audio time, a mark its first-pass time
     var tt = scoreAddTime(setT, isPlayingNow(), S.reaction, rate());
     var fw = m.kind === 'mark' ? fixWinFor(m.id) : null;
-    if (fw && !scoreFixAccept(tt, fw)) { // atc-rlep.3 J5b: outside the open window the mark stays as it was and the queue does not advance
+    if (fw && r.mode !== 'retime' && !scoreFixAccept(tt, fw)) { // owner 2026-11-03 (atc-rlep.20): a Retime target (already validly timed) accepts a time outside its window; scoreValidate then flags the conflicts // atc-rlep.3 J5b: outside the open window the mark stays as it was and the queue does not advance
       $('score-field-msg').textContent = scoreFixMessage(fw, m.id, markNums(), S.marks); S.fieldMsgId = m.id; S.fixMsgId = m.id;
       syncUi();
       return;
     }
     S.fixMsgId = null; $('score-field-msg').textContent = '';
-    S.selId = null; S.lastSelId = null; S.nudgeId = m.id; S.unpinned = false; if (r.wrapped) S.skipped = [];
+    S.selId = null; S.lastSelId = null; S.nudgeId = m.id; S.unpinned = false; S.retimeId = null; if (r.wrapped) S.skipped = [];
     commit(scoreSetMarkTime(S.marks, m.id, tt, pageSizes()).marks, true);
     enterTarget();
   });
@@ -13247,7 +13319,7 @@ function initScorePanel_() {
     var r = syncTargetNow();
     if (!r || !r.id) return;
     if (r.wrapped) S.skipped = [];
-    S.skipped = S.skipped.concat([r.id]);
+    S.skipped = S.skipped.concat([r.id]); S.retimeId = null;
     S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.unpinned = false;
     syncUi();
     enterTarget();
@@ -13261,7 +13333,7 @@ function initScorePanel_() {
   $('score-sync-follow').addEventListener('click', syncFollowGo);
   $('score-chip').addEventListener('click', function (e) { // the Sync chip: clear the selection, go to the first queue item
     if (!syncOn() || e.target.closest('select')) return;
-    S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.skipped = []; S.unpinned = false;
+    S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.skipped = []; S.unpinned = false; S.retimeId = null;
     syncUi();
     enterTarget();
   });
@@ -13367,7 +13439,7 @@ function initScorePanel_() {
     strip.style.transform = ''; strip.style.transformOrigin = '';
     panel.setAttribute('data-pinching', 'false');
     setZoom(p.z, { x: p.mx, y: p.my });
-    if (playMode() && S.followOn) { S.easeFrom = { x: scroller.scrollLeft, y: scroller.scrollTop }; S.easeStart = performance.now(); } // play mode: back to the Follow target
+    if (playMode() && S.followOn) { var pf = followTarget(); S.holdY = scroller.scrollTop; S.offY = scoreOffsetFor(S.holdY, pf.tv.y) || 1e-6; S.easeStart = -1; syncUi(); } // atc-rlep.14: play mode: a pinch is a manual move, the view holds until the playing mark leaves it
   }
   scroller.addEventListener('touchend', endPinch);
   scroller.addEventListener('touchcancel', endPinch);
@@ -13377,7 +13449,7 @@ function initScorePanel_() {
 }
 
 if (typeof module !== 'undefined') module.exports = { scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
-  scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
+  scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreCenterTarget, scoreFollowMs, scoreHoldReleased, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreRibbonPoint, scoreRibbonXOfPoint, scorePagePointAt, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagTitle, scoreFixWindow, scoreFixAccept, scoreFixMessage, scoreFixCaption, scoreEstimateLabel, scoreFixPreroll, scoreFixLoopStep, scoreSyncChipText, scoreSyncFlagged, scoreSyncTarget, scoreSyncButtonText, scoreSyncCaption, scoreSyncCountdown, scoreMarkName, scoreMarkNum, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpClock, scoreBrokenJumps, scoreJumpList, scoreJumpWarning, scorePlayMarks, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreCarryAllowed, scoreSavedFor, scoreLinkNote, scoreLinkText, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
