@@ -2204,10 +2204,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.4.27";
+var STATIC_BUILD_VERSION_ = "1.8.5.1";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-03T22:56:16.398Z";
+var STATIC_BUILD_DATE_ = "2026-11-04T02:33:14.700Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -9479,7 +9479,7 @@ function scoreRibbonFrame(inp) {
     rx: rx, sx: sx, playheadX: rx - sx, selAt: selAt, page: page, followSx: scoreRibbonScroll(rx, L, W), offCursor: !!hold,
     held: sx <= 0 || sx >= max || (edit && !playing) || !!hold || (n >= 0 && !!(L.hold && L.hold[n])),
     strip: strip, bar: bar, bar2: bar2, cw: cw, ch: ch, dpr: dpr,
-    key: [sx, strip ? Math.round(barX) : '', inp.offY, inp.selId, edit, strip, bar2, page, cw, ch, dpr, inp.gen].join('|')
+    key: [sx, strip ? Math.round(barX) : '', inp.offY, inp.selId, inp.ringId, edit, strip, bar2, page, cw, ch, dpr, inp.gen].join('|')
   };
 }
 /** atc-elfg.6: what one drawn ribbon frame contains, from the frame view. mp = scoreRibbonMarkPos(...).
@@ -9503,7 +9503,7 @@ function scoreRibbonPaintList(view, inp, mp) {
     mp.pos[mi].forEach(function (pos, ci) {
       drawn++;
       var sgm = L.segs[pos.seg], dyp = sgm && sgm.panMax !== undefined ? sgm.srcY - scoreRibbonSrcY(sgm, inp.offY) : 0; // atc-qucy: a boxed slice's notation-position mark moves with its clamped pan; an unboxed line draws unpanned (atc-ihtb)
-      var px = pos.x - sx, py = strip && scoreRibbonStripMark(k) ? SCORE_RIBBON_STRIP_Y : pos.y + dyp, isSel = edit && k.id === inp.selId;
+      var px = pos.x - sx, py = strip && scoreRibbonStripMark(k) ? SCORE_RIBBON_STRIP_Y : pos.y + dyp, isSel = edit && k.id === (inp.ringId === undefined ? inp.selId : inp.ringId);
       if (edit) posMap[ci ? k.id + '@' + ci : k.id] = [Math.round(px), Math.round(py)]; // further copies: id@1, id@2
       if (isSel && !ci) selV = Math.round(px) + ',' + Math.round(py);
       if (pos.x < cullL || pos.x > cullR) return; // atc-elfg.5: too far off the visible ribbon to touch a pixel
@@ -11754,7 +11754,15 @@ function initScorePanel_() {
     if (!syncOn()) return null;
     var sm = selMark();
     var nums = markNums(), vn = validNow(), fl = scoreSyncOrder_(S.marks, nums).filter(function (k) { return vn.v[k.id] !== 'ok'; }).map(function (k) { return k.id; });
-    return scoreSyncTarget(S.marks, sm ? sm.id : null, scoreNowT(), S.skipped, fl, nums);
+    var r = scoreSyncTarget(S.marks, sm ? sm.id : null, scoreNowT(), S.skipped, fl, nums);
+    // owner 2026-11-03 (atc-rlep.16): the Retime target (all timed, nothing selected) is the first mark after the playhead when it is chosen, then HELD:
+    // the playhead (Next, Previous, playback) never changes it; only a timing tap, Skip, the chip, a selection or a Sync entry does.
+    if (r.mode === 'retime' && !r.sel && r.id) {
+      var held = S.retimeId && S.skipped.indexOf(S.retimeId) < 0 ? markById(S.retimeId) : null;
+      if (held && held.kind === 'mark' && held.id !== r.id) r = scoreSyncTarget(S.marks, held.id, scoreNowT(), S.skipped, fl, nums), r.sel = false;
+      else S.retimeId = r.id;
+    } else S.retimeId = null;
+    return r;
   }
   /** atc-rlep.3 J5b: the fix window of mark `id` (scoreFixWindow over the validated states); null for a jump. */
   function fixWinFor(id) { return scoreFixWindow(S.marks, validNow().v, id, trackEndT()); }
@@ -11772,6 +11780,13 @@ function initScorePanel_() {
     if (!f) return;
     var to = scoreFixPreroll(scoreNowT(), f.win, rate());
     if (to !== null) { jumpTo(to); S.preId = f.id; }
+  }
+  /** owner 2026-11-03 (atc-rlep.17): the id drawn with the selection ring. In Sync the timing button's target is the selected mark even after an advance cleared S.selId. */
+  function ringId() {
+    if (!S.edit) return null;
+    if (S.selId) return S.selId;
+    var r = syncOn() ? syncTargetNow() : null;
+    return r && r.id ? r.id : null;
   }
   function nudgeMark() { var m = S.nudgeId ? markById(S.nudgeId) : null; return m && typeof m.t === 'number' ? m : null; }
   function pinMark() { if (!syncOn() || S.unpinned || S.offsetMode) return null; var r = syncTargetNow(); return r && r.id ? markById(r.id) : null; }
@@ -11946,7 +11961,7 @@ function initScorePanel_() {
       var idx = markIndex()[id] === undefined ? -1 : markIndex()[id];
       el.setAttribute('data-n', String((idx >= 0 && markNums()[S.marks[idx].id]) || idx + 1));
       el.setAttribute('data-current', String(idx === S.curN));
-      el.setAttribute('data-selected', String(S.edit && id === S.selId));
+      el.setAttribute('data-selected', String(S.edit && id === ringId()));
       if (!S.edit) { el.style.width = ''; el.style.height = ''; }
       var dot = el.querySelector('.dot'), mtEl = el.querySelector('.mt'), tm = idx >= 0 && typeof S.marks[idx].t === 'number';
       var fs = S.edit && idx >= 0 ? validNow().v[S.marks[idx].id] : 'ok'; // Play draws no flags
@@ -12056,7 +12071,7 @@ function initScorePanel_() {
     Object.keys(SCORE_UI).forEach(function (id) { var el = $(id); if (el && el.hidden === !!shown[id]) el.hidden = !shown[id]; });
   }
   function syncUi() {
-    if (S.selId !== S.lastSelId) { S.lastSelId = S.selId; if (S.selId) { S.skipped = []; S.unpinned = false; S.nudgeId = null; } } // a selection re-pins, ends the skips and the nudge
+    if (S.selId !== S.lastSelId) { S.lastSelId = S.selId; if (S.selId) { S.skipped = []; S.unpinned = false; S.nudgeId = null; S.retimeId = null; } } // a selection re-pins, ends the skips and the nudge
     var av = String(viewOffPts()); if (av !== S.addrView) { S.addrView = av; notifyAddress(); } // atc-tty9.23: the link carries the vertical offset
     var has = scoreTimed(playMarks()).length > 0; // Follow, previous/next and the ribbon use timed marks only
     panel.setAttribute('data-mark-count', String(S.marks.length));
@@ -12551,7 +12566,7 @@ function initScorePanel_() {
       var pp0 = scoreRibbonPos(L, geo, pm, scoreRibbonScroll(scoreRibbonX(S.marks, t, L), L, geo.W) + SCORE_RIBBON_ANCHOR_X * geo.W, true);
       if (pp0) pinRx = pp0.x;
     }
-    var inp = { L: L, geo: geo, marks: S.marks, t: t, edit: S.edit, playing: pl, selId: S.selId, selAt: S.rv.selAt, prevSx: S.rv.sx, hold: S.rv.hold, scrub: S.rv.scrub, pinRx: pinRx, dpr: dpr, offY: ribbonPan(), gen: S.renderGen + '|' + S.pubGen + '|' + S.noteId };
+    var inp = { L: L, geo: geo, marks: S.marks, t: t, edit: S.edit, playing: pl, selId: S.selId, ringId: ringId(), selAt: S.rv.selAt, prevSx: S.rv.sx, hold: S.rv.hold, scrub: S.rv.scrub, pinRx: pinRx, dpr: dpr, offY: ribbonPan(), gen: S.renderGen + '|' + S.pubGen + '|' + S.noteId };
     var view = scoreRibbonFrame(inp);
     S.rv.selAt = view.selAt; S.rv.sx = view.sx;
     var off = S.edit && !pl && Math.abs(view.sx - view.followSx) > 8; // atc-ore.37
@@ -12578,6 +12593,7 @@ function initScorePanel_() {
     if (!ctx) return;
     var RP = ribbonPos(L, geo), list = scoreRibbonPaintList(view, inp, RP);
     paintRibbon(ctx, view, list, geo, S.marks, markNums(), S.edit, RP.broken, flagsNow);
+    seam('data-ribbon-ring', ringId() || ''); // test seam: the id of the mark drawn with the selection ring
     seam('data-ribbon-dots', JSON.stringify(S.rv.dotTxt)); // test seam: the number drawn in each mark's dot
     seam('data-ribbon-bar', view.bar ? view.bar.x0 + ',' + view.bar.x1 : ''); // test seam: the position bar's x extent (px); not tappable (drawn only)
     seam('data-ribbon-bar2', view.bar2 === null ? '' : String(Math.round(view.bar2))); // test seam: its y (px); drawn only
@@ -13064,7 +13080,7 @@ function initScorePanel_() {
     if (m === 'layout' && wasEdit && wasSub === 'sync') S.focusPt = syncFocusPoint(); // owner 2026-11-03: Sync -> Layout shows the spot Sync showed (applied each frame for a moment: the refit below re-snaps)
     var enterPt = m === 'sync' && wasEdit && wasSub === 'layout' && !selMark() ? layoutCenterPoint() : null; // Layout -> Sync with no selection: the ribbon opens where the page view was
     S.edit = m !== 'play'; if (S.edit) S.sub = m; S.rv.selAt = null;
-    if (m === 'sync' && !(wasEdit && wasSub === 'sync')) { S.skipped = []; S.unpinned = false; S.nudgeId = null; } // a fresh pass through the queue
+    if (m === 'sync' && !(wasEdit && wasSub === 'sync')) { S.skipped = []; S.unpinned = false; S.nudgeId = null; S.retimeId = null; } // a fresh pass through the queue
     if (m === 'sync' && !wasEdit) S.unpinned = true; // owner 2026-11-03: Play -> Sync shows the playhead (follow scroll), unpinned until a timing tap, Skip, the chip or a selection
     if (enterPt) { S.unpinned = true; S.enterPt = enterPt; }
     if (S.focusPt) S.focusPt.until = performance.now() + 500;
@@ -13098,9 +13114,14 @@ function initScorePanel_() {
   }, true);
   /** AC 19 / atc-ore.33: a PREV/NEXT tap goes to exactly the mark its cell names (the strip's r.prev / r.next at the same now). */
   function stepMark(dir) {
-    var r = posStrip(scoreNowT()), c = dir < 0 ? r.prev : r.next, vm = null;
+    var nowT = scoreNowT(), r = posStrip(nowT), c = dir < 0 ? r.prev : r.next, vm = null;
+    if (dir < 0 && c && nowT - c.t < 1.5) { // owner 2026-11-03 (atc-rlep.18): less than 1.5 s past the mark Previous would seek to: go one further back
+      var earlier = posStrip(c.t - 0.01).prev;
+      if (earlier) c = earlier;
+    }
     if (!c) return;
     S.marks.forEach(function (k) { if (k.id === c.id) vm = k; });
+    if (vm && syncOn()) { S.rv.hold = null; S.rv.glide = null; jumpTo(vm.t); return; } // owner 2026-11-03 (atc-rlep.16): in Sync Previous/Next only move the playhead; the selected mark and the target hold
     if (vm) goToMark(vm);
   }
   /** atc-ore.36: go to a timed mark as the strip's PREV/NEXT do in the current mode (outside Edit: seek to the mark; in Edit: select, exact seek when paused). */
@@ -13239,7 +13260,7 @@ function initScorePanel_() {
       return;
     }
     S.fixMsgId = null; $('score-field-msg').textContent = '';
-    S.selId = null; S.lastSelId = null; S.nudgeId = m.id; S.unpinned = false; if (r.wrapped) S.skipped = [];
+    S.selId = null; S.lastSelId = null; S.nudgeId = m.id; S.unpinned = false; S.retimeId = null; if (r.wrapped) S.skipped = [];
     commit(scoreSetMarkTime(S.marks, m.id, tt, pageSizes()).marks, true);
     enterTarget();
   });
@@ -13247,7 +13268,7 @@ function initScorePanel_() {
     var r = syncTargetNow();
     if (!r || !r.id) return;
     if (r.wrapped) S.skipped = [];
-    S.skipped = S.skipped.concat([r.id]);
+    S.skipped = S.skipped.concat([r.id]); S.retimeId = null;
     S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.unpinned = false;
     syncUi();
     enterTarget();
@@ -13261,7 +13282,7 @@ function initScorePanel_() {
   $('score-sync-follow').addEventListener('click', syncFollowGo);
   $('score-chip').addEventListener('click', function (e) { // the Sync chip: clear the selection, go to the first queue item
     if (!syncOn() || e.target.closest('select')) return;
-    S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.skipped = []; S.unpinned = false;
+    S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.skipped = []; S.unpinned = false; S.retimeId = null;
     syncUi();
     enterTarget();
   });
