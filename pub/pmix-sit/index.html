@@ -2255,10 +2255,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.6.4";
+var STATIC_BUILD_VERSION_ = "1.8.6.5";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-06T22:47:17.594Z";
+var STATIC_BUILD_DATE_ = "2026-11-06T23:02:09.869Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -4705,6 +4705,7 @@ const AudioEngine = (() => {
    * @param {number} time - Time in seconds
    */
   function seek(time) {
+    if (typeof time !== 'number' || !isFinite(time)) return; // atc-rmug.17: a non-finite time never reaches the clock or seek bar
     const clampedTime = Math.max(0, Math.min(time, getTotalDuration()));
     const wasPlaying = isPlaying;
 
@@ -9665,6 +9666,14 @@ function scoreRibbonSeekD(layout, si, k) {
   var sg = layout.segs[si], ps = sg && sg.pass && sg.pass[k.id];
   return ps ? ps.t - k.t : 0;
 }
+/** atc-rmug.17: the track time a tap on strip hit h ({mark, seg}) seeks to, or null when there is none to seek to (never NaN).
+ *  A jump seeks to its target's time (null when it is broken or untimed, as a tap on a jump anywhere else); a timed mark to its time plus its pass offset. marks: the played marks (playMarks()). */
+function scoreStripSeekTime(layout, marks, h) {
+  var k = h && h.mark;
+  if (!k) return null;
+  var t = k.kind === 'jump' ? scoreJumpTime(marks, k.id) : typeof k.t === 'number' ? k.t + scoreRibbonSeekD(layout, h.seg, k) : null;
+  return typeof t === 'number' && isFinite(t) ? t : null;
+}
 /** The slice index under ribbon x rx, or -1. */
 function scoreRibbonSegAt(layout, rx) {
   for (var i = 0; i < layout.segs.length; i++) if (rx >= layout.segs[i].ribbonX && rx < layout.segs[i].ribbonX + layout.segs[i].srcW) return i;
@@ -12406,6 +12415,7 @@ function initScorePanel_() {
   function scoreNowT() { return scoreRound2(scorePlayClock(playMarks(), trackNow())); }
   /** Move the playhead to track time t (kept playing or paused as it was) and snap the view. */
   function jumpTo(t) {
+    if (typeof t !== 'number' || !isFinite(t)) return; // atc-rmug.17: never seek to NaN
     S.hold = false; S.rv.hold = null; S.rv.glide = null; // atc-hc3l: a seek resumes following the cursor
     try { AudioEngine.seek(scoreClockTime(Math.max(0, t), rate())); } catch (e) { /* no audio loaded */ }
     S.snapPending = true; S.easeStart = -1;
@@ -13207,6 +13217,7 @@ function initScorePanel_() {
     var X = L.markX, off = SCORE_RIBBON_ANCHOR_X * geo.W; // atc-elfg.1: the virtual scroll reaches the first and last mark (the view itself stays inside the ribbon)
     var vs = X && X.length ? scoreClamp(base + dx, X[0] - off, X[X.length - 1] - off) : 0, t = ribbonTimeAtSx(vs, geo.W);
     S.rv.scrub = { vs: vs, sx: scoreClamp(vs, 0, Math.max(0, L.width - geo.W)), t: t };
+    if (!isFinite(t)) return true; // atc-rmug.17: no time under the line, no clock write
     var c = scoreClockTime(Math.max(0, t), rate()), ct = document.getElementById('current-time'), sb = document.getElementById('seek-bar');
     if (ct) ct.textContent = Math.floor(c / 60) + ':' + ('0' + Math.floor(c % 60)).slice(-2);
     if (sb) sb.value = String(c);
@@ -13681,7 +13692,11 @@ function initScorePanel_() {
     if (!hit) return;
     if (!S.edit) {
       var sh0 = ribbonStripHitAt(cx, cy); // atc-2ld9: a tap on a timed mark in the top strip seeks to it
-      if (sh0) { showNote(sh0.mark.note && S.noteId !== sh0.mark.id ? sh0.mark : null); jumpTo(sh0.mark.t + scoreRibbonSeekD(S.rv.layout, sh0.seg, sh0.mark)); return; }
+      if (sh0) { // atc-rmug.17: a jump in the strip seeks like a jump anywhere else (to its target; a broken one does nothing); never to NaN
+        var st0 = scoreStripSeekTime(S.rv.layout, playMarks(), sh0);
+        if (sh0.mark.kind === 'jump') { if (st0 !== null) { showNote(null); jumpTo(st0); } return; }
+        showNote(sh0.mark.note && S.noteId !== sh0.mark.id ? sh0.mark : null); if (st0 !== null) jumpTo(st0); return;
+      }
       var jmp = scoreHitMark(S.marks.filter(function (q) { return q.kind === 'jump'; }), hit.page, hit.x, hit.y);
       if (jmp) { // atc-tty9.10: a jump seeks to its target's current time; a broken one does nothing (it is shown disabled)
         var jt = scoreJumpTime(playMarks(), jmp.id);
@@ -13692,7 +13707,7 @@ function initScorePanel_() {
       showNote(noted && S.noteId !== noted.id ? noted : null); // a tap on a noted mark shows its text; tapping again hides it
       if (noted && noted.kind === 'note') return; // atc-tty9.26: a note is untimed; tapping it seeks nowhere
       var mk = (!S.ribbonShown && scoreHitMark(scoreTimed(playMarks()).filter(function (q) { return q.kind !== 'note' && q.kind !== 'jump'; }), hit.page, hit.x, hit.y)) || scoreNearestPreceding(playMarks(), hit.page, hit.x, hit.y); // owner 2026-11-04: page view, a tap on a mark's dot goes to that mark (as the ribbon does), not the one before
-      if (mk) jumpTo(mk.t + (S.ribbonShown && S.rv.layout && hit.seg !== undefined ? scoreRibbonSeekD(S.rv.layout, hit.seg, mk) : 0)); // atc-tty9.35: a tap on a replay copy seeks to that copy's audio time
+      if (mk && typeof mk.t === 'number') jumpTo(mk.t + (S.ribbonShown && S.rv.layout && hit.seg !== undefined ? scoreRibbonSeekD(S.rv.layout, hit.seg, mk) : 0)); // atc-tty9.35: a tap on a replay copy seeks to that copy's audio time
       return;
     }
     if (S.offsetMode) { setOffsetAt(hit); return; }
@@ -14358,7 +14373,7 @@ function initScorePanel_() {
 if (typeof module !== 'undefined') module.exports = { scorePartOf, scorePartY, scoreSetPartY, scoreSnapPartY, scorePartYFor, scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreCenterTarget, scoreFollowMs, scoreHoldReleased, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
   scoreDeriveLines, scoreLayoutStrip, scoreRibbonPoint, scoreRibbonXOfPoint, scorePagePointAt, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagReason, scoreExpandPasses, scoreLoopErrors, scorePassApplyCount, scoreApplyPassTimes, scoreVerifyPass, scorePassFlags, scorePassQueue, scorePassChoices, scoreRepeatBar, scorePassColor, SCORE_PASS_COLORS, scoreVoltaText, scorePassName, scoreFlagTitle, scoreFixWindow, scoreFixAccept, scoreFixMessage, scoreFixCaption, scoreEstimateLabel, scoreFixPreroll, scoreFixLoopStep, scoreSyncChipText, scoreSyncFlagged, scoreUntimedRepeatSigns, scoreSyncQueue, scoreSyncTarget, scoreSyncButtonText, scoreSyncCaption, scoreSyncCountdown, scoreMarkName, scoreMarkNum, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreNextVisual, scoreVisualRows, scoreMarkNumbers, scorePosStrip, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark,
-  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreJumpHeader, scoreGotoOptions, scoreTakenState, scoreTakenPatch, scoreVoltaState, scoreEndingOf, scoreEndingsText, scoreEndingStartCheck, scoreEndingEndCheck, scoreAddEndings, scoreSetPasses, scoreApplyState, scoreJumpIsBack, scoreJumpDir, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreBrokenJumps, scoreJumpWarning, scorePlayedOrder, scorePlayedAt, scorePlayClock, scorePassState, scorePassTargetAt, scoreSetPassTime, scoreClearPassTime, scorePlayMarks, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scoreLineOwner, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
+  scoreDeleteMark, scoreAddJump, scoreSetJump, scoreJumpHeader, scoreGotoOptions, scoreTakenState, scoreTakenPatch, scoreVoltaState, scoreEndingOf, scoreEndingsText, scoreEndingStartCheck, scoreEndingEndCheck, scoreAddEndings, scoreSetPasses, scoreApplyState, scoreJumpIsBack, scoreJumpDir, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreBrokenJumps, scoreJumpWarning, scorePlayedOrder, scorePlayedAt, scorePlayClock, scorePassState, scorePassTargetAt, scoreSetPassTime, scoreClearPassTime, scorePlayMarks, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scoreLineOwner, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreStripSeekTime, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreCarryAllowed, scoreSavedFor, scoreLinkNote, scoreLinkText, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreSetNow, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome, scoreKey_, scoreLegacyKeys_, scoreQueueKey_, scoreQueueOwn, scoreRibbonKey_ };
 </script>
