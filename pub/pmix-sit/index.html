@@ -2255,10 +2255,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.6.8";
+var STATIC_BUILD_VERSION_ = "1.8.6.9";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-07T17:37:44.623Z";
+var STATIC_BUILD_DATE_ = "2026-11-07T22:23:41.428Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -10104,7 +10104,7 @@ function scoreJumpDir(marks, j) {
 function scoreHasHops_(marks) { return (marks || []).some(function (k) { return k && k.kind === 'jump' && (typeof k.t === 'number' || (scoreJumpPass_(k) > 0 && scoreJumpDir(marks, k) === 'fwd')); }); }
 function scoreExpandPassesRaw_(marks, nums, hops, inf, skip, all) {
   var tn = function (k) { return typeof k.t === 'number'; };
-  var L = scoreSyncOrder_(marks, nums).filter(function (k) { return all || tn(k); }), idx = {}, at = {}, byJ = {}, out = [], visits = {}, fired = {}, arr = {}, i = 0, off = 0, offOk = true, via = null, landed = false, seq = 0;
+  var L = scoreSyncOrder_(marks, nums).filter(function (k) { return all || tn(k); }), idx = {}, at = {}, byJ = {}, out = [], visits = {}, fired = {}, arr = {}, arrOf = null, i = 0, off = 0, offOk = true, via = null, landed = false, seq = 0;
   L.forEach(function (k, j) { idx[k.id] = j; });
   (marks || []).forEach(function (j) {
     if (!j || j.kind !== 'jump' || idx[j.targetMarkId] === undefined || (skip && skip[j.id])) return;
@@ -10133,6 +10133,7 @@ function scoreExpandPassesRaw_(marks, nums, hops, inf, skip, all) {
         if (e.back) {
           if (f < e.reps - 1) {
             fired[e.j.id] = f + 1; note(e, 'end', tn(e.j) ? e.j.t + off : null);
+            arrOf = { j: e.j, first: f === 0, h: hops ? hops[hops.length - 1] : null }; // atc-rmug.22: the entry played right after this hop is its arrival
             if (e.delta === null) offOk = false; else off += e.delta;
             via = e.j.id; hop = e.ti;
           }
@@ -10153,14 +10154,19 @@ function scoreExpandPassesRaw_(marks, nums, hops, inf, skip, all) {
     var m = L[i], n = visits[m.id] = (visits[m.id] || 0) + 1, key = scorePassName(m.id, n), t, ov = via && byJ[via] && byJ[via].j.passT && byJ[via].j.passT[key];
     if (n === 1) { off = 0; offOk = true; }
     t = !tn(m) ? null : n === 1 ? m.t : offOk ? m.t + off : null;
-    if (n > 1 && typeof ov === 'number' && isFinite(ov) && ov >= 0) t = ov;
+    var ao = n > 1 ? arrOf : null; arrOf = null;
+    var own = !!(ao && ao.first && tn(ao.j)); // atc-rmug.22 (adr/0024): the arrival of a jump's first firing is the repeat sign's instant: the jump's time owns it, passT does not
+    if (own) { t = ao.j.t; ov = undefined; }
+    else if (n > 1 && typeof ov === 'number' && isFinite(ov) && ov >= 0) t = ov;
     var pj = n > 1 && via && byJ[via] ? byJ[via].j : null, prev = out.length ? out[out.length - 1] : null, ent = { id: m.id, n: n, key: key, t: t === null ? null : scoreRound2(t), via: n > 1 ? via : null, mark: m, state: null };
     if (n > 1) { // atc-rmug.8 (adr/0024): applied vs verified: no passT = unapplied (plays at its default), passT = applied, key in passOk = verified
       ent.def = tn(m) && offOk ? scoreRound2(m.t + off) : null;
       var has = typeof ov === 'number' && isFinite(ov) && ov >= 0; // a passOk key without a passT entry is ignored (ADR-0024)
-      ent.state = !has ? 'unapplied' : pj && Array.isArray(pj.passOk) && pj.passOk.indexOf(key) >= 0 ? 'verified' : 'applied';
+      ent.state = own ? 'jump' : !has ? 'unapplied' : pj && Array.isArray(pj.passOk) && pj.passOk.indexOf(key) >= 0 ? 'verified' : 'applied';
       if (prev && ent.t !== null && prev.t !== null && ent.t <= prev.t) ent.bad = 'Pass time ' + ent.t.toFixed(2) + ' is not after the entry before it (' + scoreMarkNum(marks, prev.id, nums) + (prev.n > 1 ? '.' + prev.n : '') + ' at ' + prev.t.toFixed(2) + ')';
     }
+    if (own) ent.owner = 'jump';
+    if (ao && ao.h && ent.t !== null) ao.h.tj = ent.t; // atc-rmug.22: the hop happens when its arrival does (the arrival's pass time on a later firing)
     out.push(ent);
     i++;
   }
@@ -10255,6 +10261,12 @@ function scoreSetPassTime(marks, jumpId, key, t) {
   var list = scoreCopyMarks(marks), j = list.filter(function (k) { return k.id === jumpId && k.kind === 'jump'; })[0];
   if (!j) return { error: 'Select a jump first.' };
   if (typeof t !== 'number' || !isFinite(t) || t < 0) return { error: 'A pass time is 0 or more.' };
+  var ar = scoreExpandPasses(marks).filter(function (q) { return q.key === key && q.via === jumpId; })[0];
+  if (ar && ar.owner) { // the repeat sign must stay after its target, or the back jump is not taken
+    var tg = list.filter(function (k) { return k.id === j.targetMarkId && k.kind === 'mark'; })[0];
+    if (tg && typeof tg.t === 'number' && scoreRound2(t) <= tg.t) return { error: 'The repeat sign must be later than its target (' + tg.t.toFixed(2) + ').' };
+    j.t = scoreRound2(t); return { marks: list };
+  } // atc-rmug.22: the first arrival is the repeat sign's instant: time the jump
   var pt = j.passT && typeof j.passT === 'object' && !Array.isArray(j.passT) ? j.passT : {}, ok = Array.isArray(j.passOk) ? j.passOk.filter(function (q) { return q !== key; }) : [];
   pt[key] = scoreRound2(t); ok.push(key);
   j.passT = pt; j.passOk = ok;
@@ -10262,9 +10274,10 @@ function scoreSetPassTime(marks, jumpId, key, t) {
 }
 /** atc-rmug.4: Untime on a pass mark: removes passT[key] and key from passOk of back jump jumpId (the pass mark plays at its default again); empty maps are dropped. */
 function scoreClearPassTime(marks, jumpId, key) {
-  var list = scoreCopyMarks(marks);
+  var list = scoreCopyMarks(marks), ar = scoreExpandPasses(marks).filter(function (q) { return q.key === key && q.via === jumpId; })[0];
   list.forEach(function (j) {
     if (j.id !== jumpId || j.kind !== 'jump') return;
+    if (ar && ar.owner) delete j.t; // atc-rmug.22: the first arrival is the repeat sign's instant: Untime clears the repeat sign's time
     if (j.passT && typeof j.passT === 'object') { delete j.passT[key]; if (!Object.keys(j.passT).length) delete j.passT; }
     if (Array.isArray(j.passOk)) { j.passOk = j.passOk.filter(function (q) { return q !== key; }); if (!j.passOk.length) delete j.passOk; }
   });
@@ -10276,7 +10289,7 @@ function scorePassApplyKeys_(marks, jumpId) {
   if (!j || !scoreJumpIsBack(marks, j)) return [];
   return scoreExpandPasses(marks).filter(function (e) {
     var pt = j.passT && typeof j.passT === 'object' ? j.passT[e.key] : undefined;
-    return e.n > 1 && e.via === jumpId && e.state !== 'verified' && (e.state === 'unapplied' || pt !== e.def);
+    return e.n > 1 && e.via === jumpId && !e.owner && e.state !== 'verified' && (e.state === 'unapplied' || pt !== e.def);
   });
 }
 /** atc-rmug.8: N of the offer 'Apply default times (N)'; 0 hides it. */
@@ -10297,6 +10310,7 @@ function scoreApplyPassTimes(marks, jumpId) {
 function scoreVerifyPass(marks, jumpId, key) {
   var e = scoreExpandPasses(marks).filter(function (q) { return q.n > 1 && q.key === key && q.via === jumpId; })[0];
   if (!e) return { error: 'That pass mark is not played.' };
+  if (e.owner) return { error: 'The repeat sign times this mark: set the repeat sign\'s time.' }; // atc-rmug.22
   var list = scoreCopyMarks(marks);
   list.forEach(function (j) {
     if (j.id !== jumpId || j.kind !== 'jump') return;
@@ -10318,7 +10332,7 @@ var scorePassQueueMemo_ = { src: null, len: -1, out: null };
 function scorePassQueue(marks) {
   var m = scorePassQueueMemo_;
   if (marks && m.src === marks && m.len === marks.length) return m.out;
-  var out = scoreHasHops_(marks) ? scoreExpandPasses(marks).filter(function (e) { return e.n > 1 && e.state !== 'verified'; }) : [];
+  var out = scoreHasHops_(marks) ? scoreExpandPasses(marks).filter(function (e) { return e.n > 1 && !e.owner && e.state !== 'verified'; }) : [];
   if (marks) { m.src = marks; m.len = marks.length; m.out = out; }
   return out;
 }
@@ -10537,10 +10551,19 @@ function scorePinView(mark, geo) {
 }
 /** Reading-order items of the mark list: every mark, note and jump (EOLs excluded) sorted page, line (same-line tolerance), x. Item = {k, page, y, x, o}. Shared by scoreMarkNumbers and scoreMarkListRows. */
 function scoreReadingItems_(marks) {
-  var items = [], seen = {};
-  scoreVisualRows(marks || []).forEach(function (row, ri) { row.forEach(function (k, xi) { if (k.kind !== 'note' && k.kind !== 'eol') { seen[k.id] = 1; items.push({ k: k, page: k.page, y: row[0].y, x: k.x, o: ri * 1e4 + xi }); } }); });
-  (marks || []).forEach(function (k) { if (k && (k.kind === 'note' || k.kind === 'jump') && !seen[k.id]) items.push({ k: k, page: k.page, y: k.y, x: k.x, o: 1e9 }); });
-  items.sort(function (a, b) { return a.page - b.page || (Math.abs(a.y - b.y) <= SCORE_SAME_LINE_PT ? 0 : a.y - b.y) || a.x - b.x || a.o - b.o; });
+  // Marks keep the exact order scoreVisualRows gives them (the played order and every mark number depend on it). A jump or note is slotted in afterwards,
+  // after the last mark that precedes it by (page, then x on the same 72 pt line, else y); a transitive result, as each slot is one insert into the fixed mark sequence.
+  var seq = [], loose = [];
+  scoreVisualRows(marks || []).forEach(function (row, ri) { row.forEach(function (k, xi) { if (k.kind === 'mark') seq.push({ k: k, page: k.page, y: row[0].y, x: k.x, o: ri * 1e4 + xi }); }); });
+  (marks || []).forEach(function (k, i) { if (k && (k.kind === 'note' || k.kind === 'jump')) loose.push({ k: k, page: k.page, y: k.y, x: k.x, o: i }); });
+  function precedes(m, it) { return m.page < it.page || (m.page === it.page && (Math.abs(m.y - it.y) <= SCORE_SAME_LINE_PT ? m.x <= it.x : m.y < it.y)); }
+  loose.forEach(function (it) { it.slot = -1; seq.forEach(function (m, i) { if (precedes(m, it)) it.slot = i; }); });
+  loose.sort(function (a, b) { return a.slot - b.slot || a.page - b.page || a.y - b.y || a.x - b.x || a.o - b.o; });
+  var items = [], q = 0;
+  for (var i = -1; i < seq.length; i++) {
+    if (i >= 0) items.push(seq[i]);
+    while (q < loose.length && loose[q].slot === i) items.push(loose[q++]);
+  }
   return items;
 }
 /** atc-tty9.30; owner 2026-11-07: the number of each mark and each jump ('mark' and 'jump' kinds share one sequence) = its position in reading order (page, line, x); {id: n}.
@@ -10588,70 +10611,65 @@ function scoreFlagReason(state, t, endT) {
   if (state === 'order' && typeof t === 'number' && endT > 0 && t > endT) return 'Past the end of the track' + len + ' but not the last mark: ignored in play';
   return '';
 }
+/** atc-rmug.23 (owner 2026-11-07): the word a jump's row carries - 'Repeat :|' (back), '1st ending' (forward, volta), else its own label when it differs from the default ('To Coda'), else 'Jump'. Never the repeat sign's stored label. */
+function scoreJumpWord_(marks, j) {
+  var d = scoreJumpDir(marks, j), lab = j.label ? String(j.label) : '';
+  return d === 'back' ? 'Repeat :|' : d && j.volta === true ? '1st ending' : lab && lab !== 'Jump' && lab !== ':|' ? lab : 'Jump';
+}
+/** atc-rmug.23: where a jump goes, read from its TARGET mark (never from the jump's stored label): 'none' | '#19 m54' (untaken) | '#19.2 m54.2' (arrival = the entry played after the hop, whose pass number is used). */
+function scoreJumpGoes_(marks, nums, j, arrival) {
+  var tg = (marks || []).filter(function (k) { return k && k.kind === 'mark' && k.id === j.targetMarkId; })[0], n = tg && arrival && arrival.id === tg.id ? arrival.n : 1;
+  return tg ? scorePassName(scoreMarkNum(marks, tg.id, nums), n) + (tg.measure ? ' ' + scorePassName(String(tg.measure), n) : '') : 'none';
+}
+/** atc-rmug.2 (owner 2026-11-05): a pass mark of a repeat (scoreExpandPasses, n > 1) as a row.
+ *  A pass row = {id (the original mark), key ('m20.2'), pass n, name '#7.2', sub (the label with '.n'), t (the pass time), flag '', current false}. */
+function scorePassRow_(marks, nums, e) {
+  return { id: e.id, key: e.key, via: e.via, pass: e.n, note: false, name: scoreMarkNum(marks, e.id, nums) + '.' + e.n, sub: [e.mark.measure ? scorePassName(String(e.mark.measure), e.n) : '', e.mark.note ? scoreNoteShort(e.mark.note) : ''].filter(Boolean).join(' · '), t: e.t, state: e.state, flag: e.bad ? 'order' : '', reason: e.bad || '', current: false };
+}
+/** atc-rmug.23: the mark list (Play, Sync and Layout) - one builder. rows = the reading-order rows (marks, notes, jumps); the walk (timed in Play and Sync, structural in Layout) puts them in played order:
+ *  a mark visited, its pass rows (n > 1), and for each jump TAKEN one row at the moment it is taken ('#22 Repeat :| -> #19.2 m54.2', key '<jumpId>' for the first visit, '<jumpId>.<n>' after, t = the time it occurs, hop true, visit n),
+ *  with the entry played right after it - the arrival - named '-> #19.2' (sub 'm54.2'). A jump never taken keeps ONE row in reading order ('#22 Repeat :| -> #19', its flag in the time column). Rows the walk does not reach follow the walked row before them in reading order.
+ *  The walk is NOT changed: Follow, the clock, the ribbon and Prev / Next never see a jump entry. */
+function scoreListMerge_(marks, nums, rows, all, cur) {
+  var hops = [], ex = scoreExpandPasses(marks, nums, hops, undefined, all ? { all: true } : undefined), byKey = {}, walked = {}, taken = {}, tail = {}, front = [], out = [], last = null, visit = {};
+  rows.forEach(function (r) { byKey[r.key] = r; });
+  ex.forEach(function (e) { if (e.n === 1) walked[e.key] = true; });
+  hops.forEach(function (h) { if (byKey[h.j.id]) taken[h.j.id] = true; });
+  rows.forEach(function (r) { if (walked[r.key]) last = r.key; else if (!(r.jump && taken[r.id])) (last ? (tail[last] = tail[last] || []) : front).push(r); });
+  function hopsAt(k) {
+    hops.forEach(function (h) {
+      if (h.k !== k || !byKey[h.j.id]) return;
+      var j = h.j, n = visit[j.id] = (visit[j.id] || 0) + 1, base = byKey[j.id], num = scorePassName(scoreMarkNum(marks, j.id, nums), n);
+      out.push(Object.assign({}, base, { key: scorePassName(j.id, n), hop: true, visit: n, name: num + ' ' + scoreJumpWord_(marks, j) + ' -> ' + scoreJumpGoes_(marks, nums, j, ex[h.k]), t: typeof h.tj === 'number' ? h.tj : null, flag: n === 1 ? base.flag : '', reason: n === 1 ? base.reason : '' }));
+    });
+  }
+  front.forEach(function (r) { out.push(r); });
+  ex.forEach(function (e, i) {
+    hopsAt(i);
+    var arrived = hops.some(function (h) { return h.k === i && byKey[h.j.id]; }), row = e.n === 1 ? byKey[e.key] : scorePassRow_(marks, nums, e);
+    if (!row) return;
+    if (arrived) row = Object.assign({}, row, { name: '-> ' + row.name });
+    out.push(row);
+    if (e.n === 1) (tail[e.key] || []).forEach(function (r) { out.push(r); });
+  });
+  hopsAt(ex.length);
+  if (all) out.forEach(function (r) { r.current = r.key === cur; });
+  return out;
+}
 function scoreMarkListRows(marks, t, nums, states, endT, opts) {
   var structural = !!(opts && opts.structural), r = structural ? { at: null, prev: null } : scorePosStrip(marks, t, nums), cur = r.at ? r.at.id : null, rows = [], items = scoreReadingItems_(marks);
   if (!cur && r.prev) cur = r.prev.id;
   states = states || {};
   items.forEach(function (it) {
-    var k = it.k, note = k.kind === 'note', st = states[k.id], jp = k.kind === 'jump', jd = jp ? scoreJumpDir(marks, k) : null; // atc-rmug.19: every jump is a row, named by structure
-    rows.push({ key: k.id, id: k.id, jump: jp, note: note, name: note ? 'Note' : jp ? scoreMarkNum(marks, k.id, nums) + ' ' + (jd === 'back' ? 'Repeat sign' : jd && k.volta === true ? '1st ending' : 'Jump') : scoreMarkNum(marks, k.id, nums), sub: jp ? (jd === 'back' ? ':|' : String(k.label || 'Jump')) + ' -> ' + (jd ? scoreMarkNum(marks, k.targetMarkId, nums) : 'none') : note ? scoreNoteShort(k.note) : [k.measure ? String(k.measure) : '', k.note ? scoreNoteShort(k.note) : ''].filter(Boolean).join(' \u00B7 '), // owner 2026-11-04: a mark's label, then its note
+    var k = it.k, note = k.kind === 'note', st = states[k.id], jp = k.kind === 'jump'; // atc-rmug.19: every jump is a row, named by structure
+    rows.push({ key: k.id, id: k.id, jump: jp, note: note, name: note ? 'Note' : jp ? scoreMarkNum(marks, k.id, nums) + ' ' + scoreJumpWord_(marks, k) + ' -> ' + scoreJumpGoes_(marks, nums, k, null) : scoreMarkNum(marks, k.id, nums), sub: note ? scoreNoteShort(k.note) : jp ? '' : [k.measure ? String(k.measure) : '', k.note ? scoreNoteShort(k.note) : ''].filter(Boolean).join(' · '), // owner 2026-11-04: a mark's label, then its note
       t: typeof k.t === 'number' && !note && k.kind !== 'jump' ? k.t : null, flag: st === 'needs' || st === 'order' || st === 'past-end' || st === 'loop' ? st : String(st || '').indexOf('jump-') === 0 ? st.slice(5) : '', reason: scoreFlagReason(st, k.t, endT), current: k.id === cur });
   });
-  return structural ? scoreStructRows_(marks, nums, rows, opts) : scoreHopRows_(marks, nums, scorePassRows_(marks, nums, rows));
-}
-/** atc-rmug.2 (owner 2026-11-05): the pass marks of repeats (scoreExpandPasses, n > 1) as rows in played order: each follows the row played just before it.
- *  A pass row = {id (the original mark), key ('m20.2'), pass n, name '#7.2', sub (the label with '.n'), t (the pass time), flag '', current false}. */
-function scorePassRow_(marks, nums, e) {
-  return { id: e.id, key: e.key, via: e.via, pass: e.n, note: false, name: scoreMarkNum(marks, e.id, nums) + '.' + e.n, sub: [e.mark.measure ? scorePassName(String(e.mark.measure), e.n) : '', e.mark.note ? scoreNoteShort(e.mark.note) : ''].filter(Boolean).join(' \u00B7 '), t: e.t, state: e.state, flag: e.bad ? 'order' : '', reason: e.bad || '', current: false };
-}
-function scorePassRows_(marks, nums, rows) {
-  var ex = scoreExpandPasses(marks, nums), by = {}, last = null;
-  if (!ex.some(function (e) { return e.n > 1; })) return rows;
-  rows.forEach(function (r) { by[r.key] = r; });
-  ex.forEach(function (e) {
-    if (e.n === 1) { last = by[e.key] || last; return; }
-    var row = scorePassRow_(marks, nums, e);
-    rows.splice((last ? rows.indexOf(last) : rows.length - 1) + 1, 0, row);
-    last = row;
-  });
-  return rows;
-}
-/** atc-rmug.13: the row of one jump taken (hop h = {k, kind, j, tj} from scoreExpandPasses): {hop true, id (the jump), key 'hop:<jump>:<i>', name ':| -> #2' | '1. -> #5 (pass 2)', t (the hop time or null)}. */
-function scoreHopRow_(marks, nums, h, i) {
-  var j = h.j, back = scoreJumpDir(marks, j) === 'back', p = scoreJumpPass_(j), sign = back ? ':|' : String(j.label || 'Jump'), suf = !back && p >= 2 ? (j.only === true ? ' (only pass ' : ' (pass ') + p + ')' : '';
-  return { key: 'hop:' + j.id + ':' + i, id: j.id, hop: true, note: false, name: sign + ' -> ' + scoreMarkNum(marks, j.targetMarkId, nums) + suf, sub: '', t: typeof h.tj === 'number' ? h.tj : null, flag: '', reason: '', current: false };
-}
-/** atc-rmug.13: timed mode - a hop row after the row played just before each hop (Play and Sync). */
-function scoreHopRows_(marks, nums, rows) {
-  var hops = [], ex = scoreExpandPasses(marks, nums, hops);
-  hops.slice().reverse().forEach(function (h, ri) {
-    var i = hops.length - 1 - ri, prev = h.k > 0 ? ex[h.k - 1] : null, at = -1;
-    rows.forEach(function (r, q) { if (prev && r.key === prev.key && !r.hop) at = q; });
-    if (at >= 0) rows.splice(at + 1, 0, scoreHopRow_(marks, nums, h, i));
-  });
-  return rows;
-}
-/** atc-rmug.13 (owner 2026-11-06): Layout's list - the structural played order (scoreExpandPasses all:true): every mark, timed or not, its pass rows and a hop row per jump taken.
- *  rows = the reading-order rows (marks, notes, loop jumps); a row not in the walk (a note) follows the walked row before it in reading order. opts.cur = the key of the current row. */
-function scoreStructRows_(marks, nums, rows, opts) {
-  var hops = [], ex = scoreExpandPasses(marks, nums, hops, undefined, { all: true }), by = {}, tail = {}, front = [], out = [], last = null, cur = opts && opts.cur;
-  ex.forEach(function (e) { if (e.n === 1) by[e.key] = true; });
-  rows.forEach(function (r) { if (by[r.key]) { last = r.key; } else (last ? (tail[last] = tail[last] || []) : front).push(r); });
-  function hopsAt(k) { hops.forEach(function (h, i) { if (h.k === k) out.push(scoreHopRow_(marks, nums, h, i)); }); }
-  var byKey = {};
-  rows.forEach(function (r) { byKey[r.key] = r; });
-  front.forEach(function (r) { out.push(r); });
-  ex.forEach(function (e, i) {
-    hopsAt(i);
-    if (e.n === 1) { out.push(byKey[e.key]); (tail[e.key] || []).forEach(function (r) { out.push(r); }); } else out.push(scorePassRow_(marks, nums, e));
-  });
-  hopsAt(ex.length);
-  out.forEach(function (r) { r.current = r.key === cur; });
-  return out;
+  return scoreListMerge_(marks, nums, rows, structural, structural ? opts.cur : cur);
 }
 /** atc-rmug.13: the Layout strip's cells over the structural rows (notes skipped): { prev, at, next } around the row with key curKey; at is null when the key is not in the list. A cell = {id, key, name, sub, pass, hop, via}. */
 function scoreLayoutStrip(rows, curKey) {
-  var L = (rows || []).filter(function (r) { return !r.note && (!r.jump || r.key === curKey); }), i = -1; // atc-rmug.19: a jump's reading-order row is not a step of the walk (its hop row is), unless it is the current one
+  var L = (rows || []).filter(function (r) { return !r.note && (!r.jump || r.hop || r.key === curKey); }), i = -1; // atc-rmug.23: a jump taken is a step of the walk (one row); a jump never taken is not, unless it is the current one
   L.forEach(function (r, q) { if (r.key === curKey) i = q; });
   function cell(r) { return r ? { id: r.id, key: r.key, name: r.name, sub: r.sub || '', pass: r.pass || 1, hop: !!r.hop, via: r.via || null } : null; }
   return i < 0 ? { prev: null, at: null, next: null } : { prev: cell(L[i - 1]), at: cell(L[i]), next: cell(L[i + 1]) };
@@ -10752,11 +10770,10 @@ function scoreJumpRowSeekTime(marks, id) {
   var all = marks || [], j = null, prevT = null, hit = false;
   all.forEach(function (k) { if (k && k.id === id && k.kind === 'jump') j = k; });
   if (!j) return null;
-  var rows = scoreMarkListRows(all, 0, scoreMarkNumbers(all), {}, 0);
-  rows.forEach(function (r) {
-    if (hit || r.hop || r.pass) return;
-    if (r.id === id) { hit = true; return; }
-    if (!r.jump && !r.note && typeof r.t === 'number' && isFinite(r.t)) prevT = r.t;
+  scoreReadingItems_(all).forEach(function (it) { // atc-rmug.23: reading order (the list now merges visit rows in played order, so it is not read here)
+    if (hit) return;
+    if (it.k.id === id) { hit = true; return; }
+    if (it.k.kind === 'mark' && typeof it.k.t === 'number' && isFinite(it.k.t)) prevT = it.k.t;
   });
   if (typeof j.t === 'number' && isFinite(j.t)) {
     var s = Math.max(0, j.t - 0.1);
@@ -14075,10 +14092,10 @@ function initScorePanel_() {
     box.textContent = '';
     rows.forEach(function (r) {
       var b = document.createElement('button'), n = document.createElement('span'), tm = document.createElement('span');
-      b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('data-mark-id', r.id); b.setAttribute('data-testid', 'score-mark-row'); b.setAttribute('data-row-key', r.key); if (r.jump) b.setAttribute('data-jump', '1'); if (r.hop) { b.setAttribute('data-hop', '1'); b.setAttribute('data-hop-t', r.t === null ? '' : String(r.t)); } if (r.pass) { b.setAttribute('data-pass', String(r.pass)); b.setAttribute('data-pass-t', String(r.t)); b.setAttribute('data-pass-key', r.key); b.setAttribute('data-pass-via', r.via || ''); } b.setAttribute('aria-selected', String(r.current));
+      b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('data-mark-id', r.id); b.setAttribute('data-testid', 'score-mark-row'); b.setAttribute('data-row-key', r.key); if (r.jump) b.setAttribute('data-jump', '1'); if (r.hop) { b.setAttribute('data-hop', '1'); b.setAttribute('data-visit', String(r.visit || 1)); b.setAttribute('data-hop-t', r.t === null ? '' : String(r.t)); } if (r.pass) { b.setAttribute('data-pass', String(r.pass)); b.setAttribute('data-pass-t', String(r.t)); b.setAttribute('data-pass-key', r.key); b.setAttribute('data-pass-via', r.via || ''); } b.setAttribute('aria-selected', String(r.current));
       b.className = (r.current ? 'cur' : '') + (r.flag ? ' flag' : ''); if (r.flag) b.setAttribute('data-flag', r.flag);
       n.textContent = r.name; if (r.sub) { var sb = document.createElement('span'); sb.className = 'sub'; sb.textContent = r.sub; n.appendChild(sb); }
-      tm.className = 'tm'; if (r.state) { b.setAttribute('data-state', r.state); b.classList.add('pass-' + r.state); } tm.textContent = r.flag === 'past-end' ? '\u26A0 ' + fmtT(r.t) : r.flag === 'order' ? '! ' + fmtT(r.t) : r.flag === 'needs' ? '! no time' : r.flag === 'loop' ? '! loop' : r.flag === 'broken' ? '! no target' : r.flag === 'ignored' ? '! ignored' : r.t === null ? (layoutOn() ? '\u2013' : '') : r.state === 'unapplied' ? '(' + fmtT(r.t) + ')' : r.state === 'applied' ? '~' + fmtT(r.t) : fmtT(r.t);
+      tm.className = 'tm'; if (r.state) { b.setAttribute('data-state', r.state); b.classList.add('pass-' + r.state); } tm.textContent = r.flag === 'past-end' ? '\u26A0 ' + fmtT(r.t) : r.flag === 'order' ? '! ' + fmtT(r.t) : r.flag === 'needs' ? '! no time' : r.flag === 'loop' ? '! loop' : r.flag === 'broken' ? '! no target' : r.flag === 'ignored' ? '! never taken' : r.t === null ? (layoutOn() ? '\u2013' : '') : r.state === 'unapplied' ? '(' + fmtT(r.t) + ')' : r.state === 'applied' ? '~' + fmtT(r.t) : fmtT(r.t);
       if (r.flag) b.title = r.reason || 'Out of order: ignored in play';
       b.appendChild(n); b.appendChild(tm); box.appendChild(b);
     });
@@ -14090,9 +14107,9 @@ function initScorePanel_() {
   $('score-mark-list').addEventListener('click', function (e) {
     var b = e.target.closest('[data-mark-id]');
     if (!b) return;
-    var id = b.getAttribute('data-mark-id'), v = validNow().v, pt = b.getAttribute('data-pass-t'), hop = b.getAttribute('data-hop'), ht = b.getAttribute('data-hop-t'); setMarkList(false);
+    var id = b.getAttribute('data-mark-id'), v = validNow().v, pt = b.getAttribute('data-pass-t'), hop = b.getAttribute('data-hop'), ht = b.getAttribute('data-hop-t'), visit = Number(b.getAttribute('data-visit') || 0); setMarkList(false);
     if (layoutOn()) { var lr = layoutRows().rows.filter(function (r) { return r.key === b.getAttribute('data-row-key'); })[0]; if (lr) layoutSelect(lr); return; } // atc-rmug.13: Layout never seeks
-    if (hop) { var jm = markById(id); if (jm) { if (ht !== '' && ht !== null) goToMark(jm, Number(ht)); else showMarkNoSeek(jm); } return; } // atc-rmug.13: a hop row seeks to the hop time in Play and Sync
+    if (hop && visit > 1) { var jm = markById(id); if (jm) { if (ht !== '' && ht !== null) goToMark(jm, Number(ht)); else showMarkNoSeek(jm); } return; } // atc-rmug.23: a later visit of a jump ('<jump>.<n>') seeks to its own visit time; the first visit is the jump's own row (below)
     var jr = markById(id); // atc-rmug.19: a jump's own row: Edit selects it (its sheet opens) and the playhead goes 0.1 s before the jump, or to the preceding timed mark when it has no time (scoreJumpRowSeekTime; never NaN; the target is not used)
     if (jr && jr.kind === 'jump') { var jt = scoreJumpRowSeekTime(playMarks(), id); if (S.edit) { S.selPass = null; S.selId = id; showMarkNoSeek(jr); } if (jt !== null && isFinite(jt) && !(S.edit && isPlayingNow())) jumpTo(jt); return; }
     S.selPass = pt !== null && b.getAttribute('data-pass-via') ? { id: id, key: b.getAttribute('data-pass-key'), via: b.getAttribute('data-pass-via') } : null; // atc-rmug.4: the pass row picked is the pass Set to now and Untime act on
