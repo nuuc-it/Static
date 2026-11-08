@@ -408,7 +408,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.24";
+var STATIC_BUILD_VERSION_ = "0.1.25";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbxXl_7EmMdsEDU2ISsJ5NTXnPTUjucaZ4y2U_hASOc2l3zoeS_DvPMwK00mbWP047JTtA/exec";
 var STATIC_ENV_LABEL_ = "PROD";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell";
@@ -564,12 +564,12 @@ const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
 //
 // NT-71y.2: ?doc= no longer redirects to doc.html — it filters this page to
 // that document (every list_team_actions call carries docId; the server
-// re-resolves team and tier from it, R8). &action=<ACT-N|AI-N|ACTION-N>
+// re-resolves team and tier from it, R8). &action=<ACT-N|AI-N|ACTION-N|Action Item-N>
 // focuses one row of that document.
 const QUERY_PARAMS = new URLSearchParams(location.search);
 const QUERY_TEAM = QUERY_PARAMS.get('team') || null;
 const QUERY_DOC = QUERY_PARAMS.get('doc') || null;
-const ACTION_REF_RE = /^(?:ACT|AI|ACTION)-(\d+)$/i;
+const ACTION_REF_RE = /^(?:ACT|AI|ACTION|ACTION ITEM)-(\d+)$/i; // NT-1sg: 'Action Item-N'
 const QUERY_ACTION = QUERY_PARAMS.get('action') || null;
 // NT-56r: ?status=open|closed|all, ?age=<bucket> and ?from=health preset the filters on load (UX only; the
 // server applies the caller's own visibility to whatever is asked).
