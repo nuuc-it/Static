@@ -608,6 +608,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 .score-mark-list { position: fixed; z-index: 40; max-height: 45vh; overflow-y: auto; display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
 .score-mark-list button { display: flex; justify-content: space-between; gap: 12px; min-height: 40px; padding: 4px 12px; border: 0; border-bottom: 1px solid var(--border-strong); background: transparent; color: var(--text); font: inherit; text-align: left; align-items: center; cursor: pointer; }
 .score-mark-list button.cur { background: var(--surface-1); font-weight: 700; }
+.score-mark-list button.skipped { opacity: .5; } /* atc-rmug.25: a jump reached and not taken on this pass */
 .score-mark-list .sub { color: var(--text-2); opacity: .8; font-weight: 400; margin-left: 6px; }
 .score-mark-list .tm { color: var(--text-2); font-variant-numeric: tabular-nums; }
 .score-mark-list button.pass-unapplied .tm { opacity: .6; } /* atc-rmug.8: hollow = plays at its default, nothing applied */
@@ -2255,10 +2256,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.6.9";
+var STATIC_BUILD_VERSION_ = "1.8.6.10";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-07T22:23:41.428Z";
+var STATIC_BUILD_DATE_ = "2026-11-08T00:25:38.704Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -10074,12 +10075,13 @@ function scoreJumpAfter_(j, k) { return k.page > j.page || (k.page === j.page &&
  *  j (the jump), tj (its time on that pass: the jump's t plus the offset, else the landing mark's time, null when unknown) } for the ribbon's cuts. */
 function scoreExpandPasses(marks, nums, hops, info, opts) {
   nums = nums || scoreMarkNumbers(marks);
-  var inf = {}, hp = hops ? [] : null, all = !!(opts && opts.all), out = scoreExpandPassesRaw_(marks, nums, hp, inf, null, all);
+  var inf = {}, hp = hops ? [] : null, all = !!(opts && opts.all), out = scoreExpandPassesRaw_(marks, nums, hp, inf, null, all), fin = inf;
   if (inf.capHit) { // atc-rmug.10 (adr/0024): a loop that never exits hit the cap: its jumps are errors and play once (ignored), so the order stays short and finite
     var skip = {}; inf.loops.forEach(function (id) { skip[id] = true; });
     if (hp) hp = [];
-    out = scoreExpandPassesRaw_(marks, nums, hp, {}, skip, all);
+    out = scoreExpandPassesRaw_(marks, nums, hp, fin = {}, skip, all);
   }
+  if (opts && opts.skips) (fin.skips || []).forEach(function (q) { opts.skips.push(q); }); // atc-rmug.25: the visits where a jump was reached and did not fire, {k, s, j, why}: the mark list greys them; nothing else reads them
   if (hops && hp) hp.forEach(function (h) { hops.push(h); });
   if (info) { info.capHit = !!inf.capHit; info.loops = inf.loops || []; }
   return out;
@@ -10122,7 +10124,8 @@ function scoreExpandPassesRaw_(marks, nums, hops, inf, skip, all) {
   Object.keys(at).forEach(function (p) { // pass jumps first, highest pass first; then the rest by time (untimed last, in mark order)
     at[p].sort(function (a, b) { return (a.pass ? 0 : 1) - (b.pass ? 0 : 1) || (a.pass ? b.pass - a.pass : (tn(a.j) ? a.j.t : Infinity) - (tn(b.j) ? b.j.t : Infinity)) || a.o - b.o; });
   });
-  var note = function (e, kind, tj) { if (hops) hops.push({ k: out.length, kind: kind, j: e.j, tj: tj }); };
+  var ord = 0, note = function (e, kind, tj) { if (hops) hops.push({ k: out.length, kind: kind, j: e.j, tj: tj, s: ord++ }); };
+  var miss = function (e, why) { if (inf) (inf.skips = inf.skips || []).push({ k: out.length, s: ord++, j: e.j, why: why }); }; // atc-rmug.25: reached, did not fire
   while ((i < L.length || (i === L.length && at[i])) && out.length < SCORE_PASS_CAP_) {
     var hop = -1, q, e, f;
     if (at[i] && !landed) { // a hop lands on its landing mark and does not reach the jumps placed before it
@@ -10136,15 +10139,15 @@ function scoreExpandPassesRaw_(marks, nums, hops, inf, skip, all) {
             arrOf = { j: e.j, first: f === 0, h: hops ? hops[hops.length - 1] : null }; // atc-rmug.22: the entry played right after this hop is its arrival
             if (e.delta === null) offOk = false; else off += e.delta;
             via = e.j.id; hop = e.ti;
-          }
+          } else miss(e, 'skipped this pass');
         } else if (e.pass) {
           if (e.only ? arr[e.j.id] === e.pass : arr[e.j.id] >= e.pass) {
             var lm = L[e.ti], lt = !tn(lm) ? null : !visits[lm.id] ? lm.t : offOk ? lm.t + off : null; // the hop happens at the landing mark's time unless the jump is timed (old data)
             note(e, 'fwd', tn(e.j) ? e.j.t + off : lt); hop = e.ti;
-          }
+          } else miss(e, e.only ? 'pass ' + e.pass + ' only' : 'pass ' + e.pass);
         } else if (!all && tn(e.j)) { // old data: a timed forward jump without pass is taken on the pass whose span holds its time
           var pm = L[i], pn = (visits[pm.id] || 0) + 1, nextT = pn === 1 ? pm.t : pm.t + off;
-          if ((out.length ? out[out.length - 1].t : -Infinity) <= e.j.t && e.j.t < nextT) { note(e, 'fwd', e.j.t); hop = e.ti; }
+          if ((out.length ? out[out.length - 1].t : -Infinity) <= e.j.t && e.j.t < nextT) { note(e, 'fwd', e.j.t); hop = e.ti; } else miss(e, 'skipped this pass');
         }
       }
     }
@@ -10631,16 +10634,24 @@ function scorePassRow_(marks, nums, e) {
  *  with the entry played right after it - the arrival - named '-> #19.2' (sub 'm54.2'). A jump never taken keeps ONE row in reading order ('#22 Repeat :| -> #19', its flag in the time column). Rows the walk does not reach follow the walked row before them in reading order.
  *  The walk is NOT changed: Follow, the clock, the ribbon and Prev / Next never see a jump entry. */
 function scoreListMerge_(marks, nums, rows, all, cur) {
-  var hops = [], ex = scoreExpandPasses(marks, nums, hops, undefined, all ? { all: true } : undefined), byKey = {}, walked = {}, taken = {}, tail = {}, front = [], out = [], last = null, visit = {};
+  var hops = [], skips = [], ex = scoreExpandPasses(marks, nums, hops, undefined, { all: !!all, skips: skips }), byKey = {}, walked = {}, taken = {}, tail = {}, front = [], out = [], last = null, visit = {};
+  var first = {}; // atc-rmug.25: the first event of each jump; a jump whose first visit is a skip keeps its reading-order place, greyed (the walk's first pass is reading order); later visits are placed by the walk
+  hops.concat(skips).sort(function (a, b) { return a.s - b.s; }).forEach(function (h) { if (!first[h.j.id]) first[h.j.id] = h; });
+  rows = rows.map(function (r) { var f = r.jump && first[r.id]; return f && f.why ? Object.assign({}, r, { skipped: true, visit: 1, sub: '(' + f.why + ')', flag: '', reason: '' }) : r; });
   rows.forEach(function (r) { byKey[r.key] = r; });
   ex.forEach(function (e) { if (e.n === 1) walked[e.key] = true; });
-  hops.forEach(function (h) { if (byKey[h.j.id]) taken[h.j.id] = true; });
+  hops.concat(skips).forEach(function (h) { if (byKey[h.j.id] && !(first[h.j.id] && first[h.j.id].why)) taken[h.j.id] = true; });
   rows.forEach(function (r) { if (walked[r.key]) last = r.key; else if (!(r.jump && taken[r.id])) (last ? (tail[last] = tail[last] || []) : front).push(r); });
   function hopsAt(k) {
-    hops.forEach(function (h) {
+    hops.concat(skips).sort(function (a, b) { return a.s - b.s; }).forEach(function (h) {
       if (h.k !== k || !byKey[h.j.id]) return;
       var j = h.j, n = visit[j.id] = (visit[j.id] || 0) + 1, base = byKey[j.id], num = scorePassName(scoreMarkNum(marks, j.id, nums), n);
-      out.push(Object.assign({}, base, { key: scorePassName(j.id, n), hop: true, visit: n, name: num + ' ' + scoreJumpWord_(marks, j) + ' -> ' + scoreJumpGoes_(marks, nums, j, ex[h.k]), t: typeof h.tj === 'number' ? h.tj : null, flag: n === 1 ? base.flag : '', reason: n === 1 ? base.reason : '' }));
+      if (h.why) { // atc-rmug.25 (owner 2026-11-07): reached and not taken on this pass: its row stays, greyed, with the reason (the first visit's row is the reading-order row above)
+        if (n === 1) return;
+        out.push(Object.assign({}, base, { key: scorePassName(j.id, n), skipped: true, visit: n, name: num + ' ' + scoreJumpWord_(marks, j) + ' -> ' + scoreJumpGoes_(marks, nums, j, null), sub: '(' + h.why + ')', t: null, flag: '', reason: '', current: false }));
+        return;
+      }
+      out.push(Object.assign({}, base, { key: scorePassName(j.id, n), hop: true, visit: n, skipped: undefined, sub: '', name: num + ' ' + scoreJumpWord_(marks, j) + ' -> ' + scoreJumpGoes_(marks, nums, j, ex[h.k]), t: typeof h.tj === 'number' ? h.tj : null, flag: n === 1 ? base.flag : '', reason: n === 1 ? base.reason : '' }));
     });
   }
   front.forEach(function (r) { out.push(r); });
@@ -14093,7 +14104,7 @@ function initScorePanel_() {
     rows.forEach(function (r) {
       var b = document.createElement('button'), n = document.createElement('span'), tm = document.createElement('span');
       b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('data-mark-id', r.id); b.setAttribute('data-testid', 'score-mark-row'); b.setAttribute('data-row-key', r.key); if (r.jump) b.setAttribute('data-jump', '1'); if (r.hop) { b.setAttribute('data-hop', '1'); b.setAttribute('data-visit', String(r.visit || 1)); b.setAttribute('data-hop-t', r.t === null ? '' : String(r.t)); } if (r.pass) { b.setAttribute('data-pass', String(r.pass)); b.setAttribute('data-pass-t', String(r.t)); b.setAttribute('data-pass-key', r.key); b.setAttribute('data-pass-via', r.via || ''); } b.setAttribute('aria-selected', String(r.current));
-      b.className = (r.current ? 'cur' : '') + (r.flag ? ' flag' : ''); if (r.flag) b.setAttribute('data-flag', r.flag);
+      b.className = (r.current ? 'cur' : '') + (r.flag ? ' flag' : '') + (r.skipped ? ' skipped' : ''); if (r.skipped) b.setAttribute('data-skipped', '1'); /* atc-rmug.25: a jump not taken on this pass, greyed */ if (r.flag) b.setAttribute('data-flag', r.flag);
       n.textContent = r.name; if (r.sub) { var sb = document.createElement('span'); sb.className = 'sub'; sb.textContent = r.sub; n.appendChild(sb); }
       tm.className = 'tm'; if (r.state) { b.setAttribute('data-state', r.state); b.classList.add('pass-' + r.state); } tm.textContent = r.flag === 'past-end' ? '\u26A0 ' + fmtT(r.t) : r.flag === 'order' ? '! ' + fmtT(r.t) : r.flag === 'needs' ? '! no time' : r.flag === 'loop' ? '! loop' : r.flag === 'broken' ? '! no target' : r.flag === 'ignored' ? '! never taken' : r.t === null ? (layoutOn() ? '\u2013' : '') : r.state === 'unapplied' ? '(' + fmtT(r.t) + ')' : r.state === 'applied' ? '~' + fmtT(r.t) : fmtT(r.t);
       if (r.flag) b.title = r.reason || 'Out of order: ignored in play';
