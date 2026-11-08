@@ -35,6 +35,33 @@
   .menu-row button[disabled] { cursor: not-allowed; opacity: 0.55; }
   .menu-row .result { margin-top: 0; flex: 1 1 200px; }
   .menu-row.excluded { color: var(--muted); }
+  .admin-block { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 4px; }
+  .admin-block h4 { color: var(--head); margin: 6px 0; font-size: 1em; }
+  .menu-desc { color: var(--muted); font-size: 0.95em; flex: 1 1 100%; margin: 0 0 2px; }
+  .dlg-modal { width: min(720px, 100%); }
+  .dlg-modal .dlg-bar strong { font-size: 1.05em; color: var(--head); }
+  .dlg-body { overflow: auto; padding: 12px 16px; line-height: 1.5; }
+  .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+  .dlg-foot button, .dlg-bar button, .finding button { padding: 5px 12px; font: inherit; cursor: pointer; }
+  .dlg-body h4 { color: var(--head); margin: 14px 0 6px; font-size: 1em; }
+  [data-report-status] { min-height: 1.4em; margin: 0 0 8px; }
+  .findings { list-style: none; margin: 0; padding: 0; }
+  .finding { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; border: 1px solid var(--line); border-left-width: 5px; border-radius: 4px; padding: 6px 10px; margin: 6px 0; background: var(--panel); }
+  .finding .sev { font-weight: bold; text-transform: uppercase; font-size: 0.8em; letter-spacing: 0.03em; }
+  .finding .msg { flex: 1 1 240px; word-break: break-word; }
+  .finding[data-severity=error] { border-left-color: var(--bad); }
+  .finding[data-severity=error] .sev { color: var(--bad); }
+  .finding[data-severity=warning] { border-left-color: #b45309; }
+  .finding[data-severity=warning] .sev { color: #b45309; }
+  .finding[data-severity=ok] { border-left-color: var(--ok); }
+  .finding[data-severity=ok] .sev { color: var(--ok); }
+  @media (prefers-color-scheme: dark) { .finding[data-severity=warning] { border-left-color: #fbbf24; } .finding[data-severity=warning] .sev { color: #fbbf24; } }
+  dl.details { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; }
+  dl.details dt { font-weight: bold; }
+  dl.details dd { margin: 0; word-break: break-word; min-width: 0; }
+  dl.details dl.details { margin: 0; }
+  .dlg-body .table-wrap { margin: 2px 0; }
+  .dlg-body th, .dlg-body td { padding: 3px 8px; font-size: 0.95em; }
   .doc-box { border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin: 12px 0; background: var(--panel); }
   .doc-box label { display: block; font-weight: bold; margin-bottom: 6px; }
   .doc-box input[type=text] { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; }
@@ -90,7 +117,7 @@ access on every run. Buttons that need more access than you have are disabled, w
 <script>
 // Build-time stamps — gas-static (scripts/static-pages.js) replaces these literals per env. Left null in the
 // unbuilt source, which has no backend to call.
-var STATIC_BUILD_VERSION_ = "0.1.24";
+var STATIC_BUILD_VERSION_ = "0.1.25";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbxXl_7EmMdsEDU2ISsJ5NTXnPTUjucaZ4y2U_hASOc2l3zoeS_DvPMwK00mbWP047JTtA/exec";
 var STATIC_ENV_LABEL_ = "PROD";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell";
@@ -195,6 +222,7 @@ function onGoogleSignIn(credentialResponse) {
       showWho_();
       $('signinBox').classList.add('hidden');
       const p = state.pending; state.pending = null;
+      probeAdminBlocks_();
       if (p && typeof p.resume === 'function') p.resume();
       else if (p) runDocAction_(p.entry, p.input, p.resultEl, p.button);
     })
@@ -420,6 +448,7 @@ function floorReason_(floor, level) {
 function applyLevel_() {
   document.querySelectorAll('[data-item]').forEach((b) => {
     if (b.dataset.excluded === 'true') return;
+    if (b.dataset.kind === 'sheet') return;   // sheet actions take no document: the level never gates them (§5.6.1)
     const floor = b.dataset.floor;
     const blocked = docLevel_ !== null && (LEVEL_RANK_[docLevel_] || 0) < (FLOOR_RANK_[floor] || 0);
     b.disabled = blocked;
@@ -502,7 +531,290 @@ function runMenuItem_(entry, resultEl, button) {
     .then(() => { button.disabled = false; applyLevel_(); });
 }
 
+// Runs a kind:'sheet' entry: POST {action: route, assertion}, no document (§5.6.1). The route does its own admin check.
+// confirm:'preview' (§5.6.2): POST apply:false, stop on count 0, else ask, then POST apply:true. onDone(ran) follows a finished run.
+function sheetFailure_(res) { return res && res.ok === false ? String(res.reason || res.error || '') : ''; }
+const sheetEntries_ = {};   // 'id/item' -> sheet entry, for a finding's fix to find the entry it names
+function runSheetItem_(entry, resultEl, button, onDone) {
+  resultEl.className = 'result';
+  const resume = () => runSheetItem_(entry, resultEl, button, onDone);
+  if (!state.assertion) { state.pending = { resume }; resultEl.textContent = 'Sign in to continue.'; showSignIn_(); return; }
+  const preview = entry.confirm === 'preview';
+  button.disabled = true;
+  resultEl.textContent = preview ? 'Checking…' : 'Running…';
+  let ran = false, expired = false;
+  const post = (extra) => postJson(SHELL_URL, Object.assign({ action: entry.route, assertion: state.assertion }, extra || {}));
+  // Returns the response when ok, else null after showing the failure.
+  const okOrShow = (res) => {
+    const why = sheetFailure_(res);
+    if (why === 'unauthorized') { expired = true; sessionExpired_(resultEl, resume); return null; }
+    if (!res || res.ok !== true) { resultEl.className = 'result bad'; resultEl.textContent = 'Error: ' + (why || 'unknown error'); return null; }
+    return res;
+  };
+  const text = (res, fallback) => (typeof res.message === 'string' && res.message) ? res.message : fallback;
+  let chain;
+  if (!preview) {
+    chain = post().then((res) => {
+      if (!okOrShow(res)) return;
+      const rest = Object.assign({}, res); delete rest.ok;
+      ran = true; resultEl.className = 'result ok';
+      resultEl.textContent = text(res, 'ok. ' + summarize_(rest));
+    });
+  } else {
+    chain = post({ apply: false }).then((res) => {
+      if (!okOrShow(res)) return null;
+      const pv = res.preview;
+      if (!pv || typeof pv.message !== 'string') { resultEl.className = 'result bad'; resultEl.textContent = 'Error: no preview returned'; return null; }
+      if (!(Number(pv.count) > 0)) { resultEl.className = 'result ok'; resultEl.textContent = pv.message; return null; }
+      resultEl.textContent = 'Waiting for confirmation…';
+      return confirmDialog_(entry.caption || entry.item, pv.message).then((yes) => {
+        if (!yes) { resultEl.textContent = 'Cancelled. Nothing was changed.'; return null; }
+        resultEl.textContent = 'Running…';
+        return post({ apply: true });
+      });
+    }).then((res) => {
+      if (!res || !okOrShow(res)) return;
+      const rest = Object.assign({}, res); delete rest.ok;
+      ran = true; resultEl.className = 'result ok';
+      resultEl.textContent = text(res, 'ok. ' + summarize_(rest));
+    });
+  }
+  chain.catch((err) => { resultEl.className = 'result bad'; resultEl.textContent = 'Error: ' + (err.message || String(err)); })
+    .then(() => { button.disabled = false; if (onDone && !expired) onDone(ran); });
+}
+
+// ---- Track admin block: link / report sheet items, shown only to a caller whose signed read succeeds ----------------
+const SHEET_LINK_PREFIX_ = 'https://docs.google.com/spreadsheets/';
+function clip_(text) { text = String(text); return text.length > 600 ? text.slice(0, 600) + '…' : text; }
+
+// ---- modal dialogs (report, preview confirm): focus-trapped, Escape closes, stackable (a Fix confirm opens over the report) --
+const modals_ = [];
+let modalSeq_ = 0;
+function focusables_(root) {
+  return Array.prototype.slice.call(root.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+    .filter((e) => !e.disabled);
+}
+document.addEventListener('keydown', (ev) => {
+  const top = modals_[modals_.length - 1];
+  if (!top) return;
+  if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); top.close(); return; }
+  if (ev.key !== 'Tab') return;
+  let list = focusables_(top.panel);
+  const sign = $('signinBox');   // the sign-in box floats above an open dialog (body.dialogOpen) and must stay reachable
+  if (sign && !sign.classList.contains('hidden')) list = list.concat(focusables_(sign));
+  if (!list.length) { ev.preventDefault(); top.panel.focus(); return; }
+  const first = list[0], last = list[list.length - 1], cur = document.activeElement;
+  if (!list.includes(cur)) { ev.preventDefault(); first.focus(); }
+  else if (ev.shiftKey && cur === first) { ev.preventDefault(); last.focus(); }
+  else if (!ev.shiftKey && cur === last) { ev.preventDefault(); first.focus(); }
+}, true);
+function openModal_(title, attr, onClose) {
+  const opener = document.activeElement;
+  const id = 'modalTitle' + (++modalSeq_);
+  const overlay = document.createElement('div'); overlay.className = 'dlg-overlay';
+  const panel = document.createElement('div'); panel.className = 'dlg-panel dlg-modal'; panel.tabIndex = -1;
+  panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-labelledby', id);
+  panel.setAttribute(attr, '');
+  const bar = document.createElement('div'); bar.className = 'dlg-bar';
+  const h = document.createElement('strong'); h.id = id; h.textContent = title;
+  const closeBtn = document.createElement('button'); closeBtn.type = 'button'; closeBtn.textContent = 'Close';
+  closeBtn.setAttribute('data-modal-close', '');
+  bar.appendChild(h); bar.appendChild(closeBtn);
+  const body = document.createElement('div'); body.className = 'dlg-body';
+  const foot = document.createElement('div'); foot.className = 'dlg-foot hidden';
+  panel.appendChild(bar); panel.appendChild(body); panel.appendChild(foot); overlay.appendChild(panel);
+  const m = { overlay, panel, body, foot, closeBtn, closed: false };
+  m.close = () => {
+    if (m.closed) return;
+    m.closed = true;
+    const i = modals_.indexOf(m); if (i >= 0) modals_.splice(i, 1);
+    overlay.remove();
+    if (!modals_.length && !activeDialog_) document.body.classList.remove('dialogOpen');
+    if (opener && opener.isConnected && typeof opener.focus === 'function') opener.focus();
+    if (onClose) onClose();
+  };
+  m.refocus = () => { if (!panel.contains(document.activeElement)) closeBtn.focus(); };
+  closeBtn.addEventListener('click', () => m.close());
+  modals_.push(m);
+  document.body.appendChild(overlay);
+  document.body.classList.add('dialogOpen');
+  return m;
+}
+// Resolves true on Confirm, false on Cancel, Close or Escape.
+function confirmDialog_(title, message) {
+  return new Promise((resolve) => {
+    let decided = false;
+    const m = openModal_(title, 'data-admin-confirm-dialog', () => { if (!decided) { decided = true; resolve(false); } });
+    const p = document.createElement('p'); p.setAttribute('data-admin-confirm-message', ''); p.textContent = message;
+    m.body.appendChild(p);
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel'; cancel.setAttribute('data-admin-confirm-cancel', '');
+    const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'Confirm'; ok.setAttribute('data-admin-confirm-ok', '');
+    cancel.addEventListener('click', () => m.close());
+    ok.addEventListener('click', () => { decided = true; m.close(); resolve(true); });
+    m.foot.classList.remove('hidden'); m.foot.appendChild(cancel); m.foot.appendChild(ok);
+    cancel.focus();   // the safe choice has the initial focus
+  });
+}
+
+// ---- report rendering: local times, findings first, readable details --------------------------------------------------
+const ISO_TIME_RE_ = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+function timeNode_(raw) {
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return document.createTextNode(raw);
+  const t = document.createElement('time');
+  t.setAttribute('datetime', raw); t.title = raw;
+  t.textContent = d.toLocaleString(undefined, { timeZoneName: 'short' });
+  return t;
+}
+function isRecord_(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+// Any JSON value -> a node. ISO timestamps (any depth) become local time; arrays of objects become small tables.
+function valueNode_(v, depth) {
+  depth = depth || 0;
+  if (v === null || v === undefined || v === '') { const e = document.createElement('span'); e.className = 'muted'; e.textContent = '—'; return e; }
+  if (typeof v === 'string') return ISO_TIME_RE_.test(v) ? timeNode_(v) : document.createTextNode(clip_(v));
+  if (typeof v !== 'object') return document.createTextNode(String(v));
+  if (depth > 5) return document.createTextNode(clip_(JSON.stringify(v)));
+  if (Array.isArray(v)) {
+    if (!v.length) { const e = document.createElement('span'); e.className = 'muted'; e.textContent = '(none)'; return e; }
+    if (v.every(isRecord_)) return tableNode_(v, depth);
+    const ul = document.createElement('ul'); ul.style.margin = '0'; ul.style.paddingLeft = '1.2em';
+    v.forEach((x) => { const li = document.createElement('li'); li.appendChild(valueNode_(x, depth + 1)); ul.appendChild(li); });
+    return ul;
+  }
+  return listNode_(v, depth);
+}
+function listNode_(obj, depth) {
+  const dl = document.createElement('dl'); dl.className = 'details';
+  Object.keys(obj).forEach((k) => {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.appendChild(valueNode_(obj[k], (depth || 0) + 1));
+    dl.appendChild(dt); dl.appendChild(dd);
+  });
+  return dl;
+}
+function tableNode_(rows, depth) {
+  const cols = [];
+  rows.forEach((r) => Object.keys(r).forEach((k) => { if (cols.indexOf(k) < 0) cols.push(k); }));
+  const wrap = document.createElement('div'); wrap.className = 'table-wrap';
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  cols.forEach((c) => { const th = document.createElement('th'); th.scope = 'col'; th.textContent = c; head.appendChild(th); });
+  const thead = document.createElement('thead'); thead.appendChild(head); table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  rows.forEach((r) => {
+    const tr = document.createElement('tr');
+    cols.forEach((c) => { const td = document.createElement('td'); td.appendChild(valueNode_(r[c], (depth || 0) + 1)); tr.appendChild(td); });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); wrap.appendChild(table);
+  return wrap;
+}
+const SEVERITIES_ = ['error', 'warning', 'ok'];
+// entry: the report's sheet entry; ctx: {sheetEntryFor(item), runFix(entry, button), rerun()} supplied by the dialog.
+function renderReportBody_(host, res, ctx) {
+  host.innerHTML = '';
+  const findings = Array.isArray(res.findings) ? res.findings.filter(isRecord_) : [];
+  if (findings.length) {
+    const h = document.createElement('h4'); h.textContent = 'Findings'; host.appendChild(h);
+    const ul = document.createElement('ul'); ul.className = 'findings';
+    findings.forEach((f) => {
+      const sev = SEVERITIES_.indexOf(f.severity) >= 0 ? f.severity : 'warning';
+      const li = document.createElement('li'); li.className = 'finding';
+      li.setAttribute('data-admin-finding', ''); li.setAttribute('data-severity', sev);
+      if (f.id !== undefined) li.dataset.findingId = String(f.id);
+      const tag = document.createElement('span'); tag.className = 'sev'; tag.textContent = sev;
+      const msg = document.createElement('span'); msg.className = 'msg'; msg.textContent = String(f.message === undefined ? '' : f.message);
+      li.appendChild(tag); li.appendChild(msg);
+      const fixEntry = typeof f.fix === 'string' ? ctx.sheetEntryFor(f.fix) : null;
+      if (fixEntry) {
+        const b = document.createElement('button'); b.type = 'button'; b.setAttribute('data-admin-fix', f.fix);
+        b.textContent = 'Fix: ' + (fixEntry.caption || fixEntry.item);
+        b.addEventListener('click', () => ctx.runFix(fixEntry, b));
+        li.appendChild(b);
+      }
+      ul.appendChild(li);
+    });
+    host.appendChild(ul);
+  }
+  let data = isRecord_(res.health) ? res.health : null;
+  if (!data) { data = Object.assign({}, res); delete data.ok; delete data.findings; }
+  else { data = Object.assign({}, data); if (isRecord_(res.health) && Array.isArray(data.findings) && !findings.length) delete data.findings; }
+  if (Object.keys(data).length) {
+    const h = document.createElement('h4'); h.textContent = 'Details'; host.appendChild(h);
+    const box = document.createElement('div'); box.setAttribute('data-admin-details', '');
+    box.appendChild(listNode_(data, 0)); host.appendChild(box);
+  }
+}
+
+// Opens the health dialog for a show:'report' entry; the route is POSTed on open and again by every re-run.
+function openReportDialog_(entry, opener) {
+  const resume = () => openReportDialog_(entry, opener);
+  const statusEl = document.createElement('div'); statusEl.className = 'result'; statusEl.setAttribute('data-report-status', ''); statusEl.setAttribute('role', 'status');
+  const content = document.createElement('div');
+  const m = openModal_(entry.caption || entry.item, 'data-admin-report-dialog');
+  m.body.appendChild(statusEl); m.body.appendChild(content);
+  const load = () => {
+    if (!state.assertion) { m.close(); state.pending = { resume }; showSignIn_(); return Promise.resolve(); }
+    return postJson(SHELL_URL, { action: entry.route, assertion: state.assertion }).then((res) => {
+      if (m.closed) return;
+      const why = sheetFailure_(res);
+      if (why === 'unauthorized') { m.close(); sessionExpired_(document.createElement('div'), resume); return; }
+      if (!res || res.ok !== true) { content.textContent = 'Error: ' + (why || 'unknown error'); content.className = 'bad'; return; }
+      content.className = '';
+      renderReportBody_(content, res, {
+        sheetEntryFor: (item) => { const e = sheetEntries_[entry.id + '/' + item]; return e && e.show !== 'report' && e.show !== 'link' ? e : null; },
+        runFix: (fixEntry, btn) => runSheetItem_(fixEntry, statusEl, btn, (ran) => { if (ran) load(); }),
+      });
+      m.refocus();
+    }).catch((err) => { if (!m.closed) { content.className = 'bad'; content.textContent = 'Error: ' + (err.message || String(err)); } });
+  };
+  content.textContent = 'Loading…';
+  m.closeBtn.focus();
+  load();
+}
+function renderAdminLink_(el, res) {
+  el.innerHTML = '';
+  if (typeof res.url !== 'string' || res.url.indexOf(SHEET_LINK_PREFIX_) !== 0) return;   // anything else is never linked
+  const a = document.createElement('a');
+  a.setAttribute('data-admin-link', ''); a.href = res.url; a.target = '_blank'; a.rel = 'noopener';
+  a.textContent = el.dataset.caption || 'Open';
+  el.appendChild(a);
+}
+// Probes every link/report item of every admin block with a signed read; runs only while signed in.
+function probeAdminBlocks_() {
+  if (!state.assertion) return;
+  document.querySelectorAll('section[data-admin-block]').forEach((box) => {
+    if (box.dataset.probing === '1') return;
+    box.dataset.probing = '1';
+    const probes = Array.prototype.slice.call(box.querySelectorAll('[data-probe-route]'));
+    const done = () => { box.dataset.probing = '0'; };
+    Promise.all(probes.map((el) => postJson(SHELL_URL, { action: el.dataset.probeRoute, assertion: state.assertion })
+      .then((res) => {
+        const why = sheetFailure_(res);
+        if (why === 'unauthorized') { sessionExpired_(document.createElement('div'), () => probeAdminBlocks_()); return; }
+        if (why === 'forbidden') { box.remove(); return; }
+        if (!res || res.ok !== true) return;
+        if (el.dataset.show !== 'report') renderAdminLink_(el, res);   // a report only needs the probe to reveal its button
+        if (box.isConnected) box.classList.remove('hidden');
+      })
+      .catch(() => { /* a failed probe leaves the block hidden */ })))
+      .then(done, done);
+  });
+}
+
 // ---- render ---------------------------------------------------------------------------------------------------------
+// The short description beside a button or link (§5.6.2); plain text only.
+function appendDesc_(row, it) {
+  if (typeof it.desc !== 'string' || !it.desc) return;
+  const d = document.createElement('div'); d.className = 'menu-desc'; d.setAttribute('data-admin-desc', ''); d.textContent = it.desc;
+  row.appendChild(d);
+}
+// The short description beside a button or link (§5.6.2); plain text only.
+function appendDesc_(row, it) {
+  if (typeof it.desc !== 'string' || !it.desc) return;
+  const d = document.createElement('div'); d.className = 'menu-desc'; d.setAttribute('data-admin-desc', ''); d.textContent = it.desc;
+  row.appendChild(d);
+}
 // One menu button. kind: run -> subapp_web_invoke; dialog -> feature dialog overlay; doc -> feature_doc_invoke.
 function menuRow_(it) {
   const row = document.createElement('div'); row.className = 'menu-row';
@@ -511,6 +823,7 @@ function menuRow_(it) {
   button.setAttribute('data-item', it.item || '');
   button.setAttribute('data-id', it.id || '');
   button.dataset.floor = it.floor || 'VIEW';
+  if (it.kind === 'sheet') button.dataset.kind = 'sheet';
   const note = document.createElement('span'); note.className = 'muted why';
   const resultEl = document.createElement('div'); resultEl.className = 'result'; resultEl.setAttribute('role', 'status');
   if (it.excluded) {
@@ -527,17 +840,45 @@ function menuRow_(it) {
     } else if (it.kind === 'doc') {
       button.setAttribute('aria-label', 'Run ' + (it.caption || it.item));
       button.addEventListener('click', () => runDocAction_({ id: it.id, item: it.item }, input, resultEl, button));
+    } else if (it.kind === 'sheet') {
+      const se = sheetEntries_[it.id + '/' + it.item] = { id: it.id, item: it.item, caption: it.caption, route: it.route, confirm: it.confirm, show: it.show };
+      button.addEventListener('click', () => runSheetItem_(se, resultEl, button));
     } else {
       button.addEventListener('click', () => runMenuItem_({ id: it.id, item: it.item }, resultEl, button));
     }
   }
   row.appendChild(button); row.appendChild(note); row.appendChild(resultEl);
+  appendDesc_(row, it);
+  return row;
+}
+
+// A show:'link' or 'report' sheet item: a probe target, filled by probeAdminBlocks_(). A report is a button that opens the dialog.
+function probeRow_(it) {
+  const row = document.createElement('div'); row.className = 'menu-row';
+  let el;
+  if (it.show === 'report') {
+    el = document.createElement('button'); el.type = 'button'; el.className = 'admin-report';
+    el.setAttribute('data-admin-report-open', ''); el.textContent = it.caption || it.item;
+    el.dataset.id = it.id || ''; el.dataset.item = it.item || '';
+    const entry = sheetEntries_[it.id + '/' + it.item] = { id: it.id, item: it.item, caption: it.caption, route: it.route, show: 'report' };
+    el.addEventListener('click', () => {
+      const resume = () => openReportDialog_(entry, el);
+      if (!state.assertion) { state.pending = { resume }; showSignIn_(); return; }
+      resume();
+    });
+  } else {
+    el = document.createElement('div'); el.className = 'admin-link';
+  }
+  el.dataset.probeRoute = it.route || ''; el.dataset.show = it.show; el.dataset.caption = it.caption || it.item;
+  row.appendChild(el);
+  appendDesc_(row, it);
   return row;
 }
 
 function renderMenu_(menu) {
   const host = $('menuGroups');
   host.innerHTML = '';
+  Object.keys(sheetEntries_).forEach((k) => { delete sheetEntries_[k]; });
   let rendered = 0;
   (Array.isArray(menu) ? menu : []).forEach((g) => {
     // About NUUTS is the About section above; it is not a runnable item.
@@ -545,11 +886,26 @@ function renderMenu_(menu) {
     if (!items.length) return;
     const box = document.createElement('section'); box.className = 'menu-group'; box.setAttribute('data-group', g.group);
     const h = document.createElement('h3'); h.textContent = g.group; box.appendChild(h);
-    items.forEach((it) => { box.appendChild(menuRow_(it)); rendered++; });
+    // A group with a link/report sheet item keeps all its sheet items in a hidden admin block until a signed read succeeds.
+    const sheets = items.filter((it) => it.kind === 'sheet' && !it.excluded);
+    const gated = sheets.some((it) => it.show === 'link' || it.show === 'report');
+    let block = null;
+    if (gated) {
+      block = document.createElement('section'); block.className = 'admin-block hidden'; block.setAttribute('data-admin-block', '');
+      const bh = document.createElement('h4'); bh.textContent = 'Admin'; block.appendChild(bh);
+    }
+    items.forEach((it) => {
+      if (block && it.kind === 'sheet' && !it.excluded) {
+        block.appendChild((it.show === 'link' || it.show === 'report') ? probeRow_(it) : menuRow_(it));
+      } else box.appendChild(menuRow_(it));
+      rendered++;
+    });
+    if (block) box.appendChild(block);
     host.appendChild(box);
   });
   $('menuEmpty').classList.toggle('hidden', rendered > 0);
   applyLevel_();
+  probeAdminBlocks_();
 }
 
 // A Shell older than about.menu: list its dialogs and doc actions as one group.
