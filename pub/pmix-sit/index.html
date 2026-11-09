@@ -2253,10 +2253,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.6.13";
+var STATIC_BUILD_VERSION_ = "1.8.6.14";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-09T02:20:04.110Z";
+var STATIC_BUILD_DATE_ = "2026-11-09T04:26:32.340Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -9428,13 +9428,13 @@ function scoreRibbonEolT(tA, xA, tB, xB, xE) {
 /** atc-2ld9: while playing in the ribbon, timed marks (and the line bar) are drawn in a fixed strip at the top of the ribbon, at their normal x;
  *  untimed marks, EOL bars and notes stay on the notation at their own position; jumps join the strip (atc-rmug.16). */
 var SCORE_RIBBON_STRIP_Y = 10, SCORE_RIBBON_STRIP_H = 20, SCORE_RIBBON_STRIP_HIT = 22;
-function scoreRibbonStripMark(k) { return !!k && (k.kind === 'jump' || (typeof k.t === 'number' && (k.kind === undefined || k.kind === 'mark'))); } // atc-rmug.16: a jump (timed or not) is drawn in the strip too, so it stays visible while the view scrolls
+function scoreRibbonStripMark(k, sync) { return !!k && (k.kind === 'jump' || ((sync || typeof k.t === 'number') && (k.kind === undefined || k.kind === 'mark'))); } // sync: every ordinary mark (timed or not) is pinned in Sync so an untimed one stays visible while panning to a part line // atc-rmug.16: a jump (timed or not) is drawn in the strip too, so it stays visible while the view scrolls
 /** atc-2ld9: the timed mark drawn in the top strip nearest ribbon point (rx, ry), within SCORE_RIBBON_STRIP_HIT px: {mark, seg, x, y}, else null. */
-function scoreRibbonStripHit(layout, geo, marks, rx, ry) {
+function scoreRibbonStripHit(layout, geo, marks, rx, ry, sync) {
   var best = null, bd = Infinity;
   (marks || []).forEach(function (k) {
-    if (!scoreRibbonStripMark(k)) return;
-    scoreRibbonPosAll(layout, geo, k, true).forEach(function (p) {
+    if (!scoreRibbonStripMark(k, sync)) return;
+    scoreRibbonPosAll(layout, geo, k, true, sync).forEach(function (p) {
       var d = Math.hypot(p.x - rx, p.y - ry), pg = scorePagePx(geo, k.page); // the same 0.5 in reach as a notation hit (SCORE_HIT_PT), at least SCORE_RIBBON_STRIP_HIT px
       if (d <= Math.max(SCORE_RIBBON_STRIP_HIT, SCORE_HIT_PT * pg.w / pg.ptW) && d < bd) { bd = d; best = { mark: k, seg: p.seg, x: p.x, y: p.y }; }
     });
@@ -9479,8 +9479,8 @@ function scorePagePointAt(geo, cx, cy) {
   return { page: bi + 1, x: (cx - q.left) / s + (q.x0 || 0), y: (cy - q.top) / s };
 }
 /** atc-tty9.35: every copy of the mark on the ribbon (a line shown more than once by a timed jump has one slice per copy), in ribbon order; [] when it is on none. */
-function scoreRibbonPosAll(layout, geo, mark, strip) {
-  var out = [], sy = strip && scoreRibbonStripMark(mark), line = scoreLineOwner(layout.starts, mark, layout.startBox, layout.skip);
+function scoreRibbonPosAll(layout, geo, mark, strip, sync) {
+  var out = [], sy = strip && scoreRibbonStripMark(mark, sync), line = scoreLineOwner(layout.starts, mark, layout.startBox, layout.skip);
   if (line < 0) return out;
   layout.segs.forEach(function (sg, si) {
     if (sg.line !== line) return;
@@ -9702,7 +9702,7 @@ function scoreRibbonPaintList(view, inp, mp) {
     mp.pos[mi].forEach(function (pos, ci) {
       drawn++;
       var sgm = L.segs[pos.seg], dyp = sgm && sgm.panMax !== undefined ? sgm.srcY - scoreRibbonSrcY(sgm, inp.offY) : 0; // atc-qucy: a boxed slice's notation-position mark moves with its clamped pan; an unboxed line draws unpanned (atc-ihtb)
-      var px = pos.x - sx, py = strip && scoreRibbonStripMark(k) ? SCORE_RIBBON_STRIP_Y : pos.y + dyp, isSel = edit && k.id === (inp.ringId === undefined ? inp.selId : inp.ringId);
+      var px = pos.x - sx, py = strip && scoreRibbonStripMark(k, inp.edit) ? SCORE_RIBBON_STRIP_Y : pos.y + dyp, isSel = edit && k.id === (inp.ringId === undefined ? inp.selId : inp.ringId);
       if (edit) posMap[ci ? k.id + '@' + ci : k.id] = [Math.round(px), Math.round(py)]; // further copies: id@1, id@2
       if (isSel && !ci) selV = Math.round(px) + ',' + Math.round(py);
       if (pos.x < cullL || pos.x > cullR) return; // atc-elfg.5: too far off the visible ribbon to touch a pixel
@@ -9984,8 +9984,16 @@ function scorePlaceMark(list, mark, ptW, ptH, partRef) {
     if (py) mark.partY = py;
   }
 }
+/** Fixit S1: an existing ordinary mark (kind 'mark' or none) on the same page within SCORE_HIT_PT of the request, as {mark, dist}, else null. Jumps, notes and EOLs never count. */
+function scoreDupMark_(list, spec) {
+  var ord = list.filter(function (k) { return !k.kind || k.kind === 'mark'; });
+  var hit = scoreHitMark(ord, spec.page, spec.x, spec.y);
+  return hit ? { mark: hit, dist: scoreRound2(Math.hypot(hit.x - spec.x, hit.y - spec.y)) } : null;
+}
 function scoreAddMark(marks, spec) {
   var list = scoreSorted(marks), at = 0, i;
+  var dup = scoreDupMark_(list, spec);
+  if (dup) return { marks: list, mark: dup.mark, dup: { id: dup.mark.id, dist: dup.dist, page: spec.page, x: spec.x, y: spec.y, count: list.length } };
   for (i = 0; i < list.length; i++) { if (list[i].t <= spec.t) at = i + 1; else break; }
   var mark = { id: scoreFreshId(list), kind: 'mark', page: spec.page, x: spec.x, y: spec.y, t: scoreRound2(spec.t) };
   scorePlaceMark(list, mark, spec.ptW, spec.ptH, spec.partRef);
@@ -10774,6 +10782,8 @@ function scoreNudgeEntry(marks, key, dt) {
 /** atc-tty9.9: a mark without a time ('mark' untimed, or 'eol'), appended after the timed ones. spec = {kind, page, x, y, ptW?, ptH?}; a 'mark' is placed (scorePlaceMark). */
 function scoreAddPlain(marks, spec) {
   var list = scoreSorted(marks);
+  var dup = spec.kind === 'eol' ? null : scoreDupMark_(list, spec);
+  if (dup) return { marks: list, mark: dup.mark, dup: { id: dup.mark.id, dist: dup.dist, page: spec.page, x: spec.x, y: spec.y, count: list.length } };
   var mark = { id: scoreFreshId(list), kind: spec.kind === 'eol' ? 'eol' : 'mark', page: spec.page, x: scoreRound2(spec.x), y: scoreRound2(spec.y) };
   if (mark.kind === 'mark') scorePlaceMark(list, mark, spec.ptW, spec.ptH, spec.partRef); // atc-rlep.1: a mark joins or starts a line (with a box) when added, timed or not
   list.push(mark);
@@ -12050,9 +12060,26 @@ function initScorePanel_() {
     p.px = 0;
     p.zoomRendered = 0;
   }
+  /** The page indexes the ribbon's visible slices draw from (the shown and the held view); [] when the ribbon is not up. */
+  function ribbonSourcePages() {
+    var L = S.rv.layout, out = [];
+    if (!S.ribbonShown || !L || !L.segs || S.rv.sx === null) return out;
+    var W = pageGeo(true).W, a = S.rv.sx, b = S.rv.sx;
+    [S.rv.hold && S.rv.hold.sx, S.rv.scrub && S.rv.scrub.sx].forEach(function (x) { if (x != null) { a = Math.min(a, x); b = Math.max(b, x); } });
+    L.segs.forEach(function (sg) {
+      var i = sg.page - 1;
+      if (sg.ribbonX < b + W && sg.ribbonX + sg.srcW > a && i >= 0 && i < S.pages.length && out.indexOf(i) < 0) out.push(i);
+    });
+    return out;
+  }
   function currentWindow() {
     var g = geometry();
-    return scoreWindow(g.tops, g.heights, scroller.scrollTop, scroller.clientHeight);
+    var w = scoreWindow(g.tops, g.heights, scroller.scrollTop, scroller.clientHeight);
+    ribbonSourcePages().forEach(function (i) { // a held ribbon view can sit on pages far from the parked page scroller: they stay live
+      if (w.visible.indexOf(i) < 0) w.visible.push(i);
+      if (w.keep.indexOf(i) < 0) w.keep.push(i);
+    });
+    return w;
   }
   // ---- Address bar (ADR-0016, bd atc-ex0): the open PDF, the page under the view anchor and how far down it the anchor sits ----
   function notifyAddress() { if (typeof window.pmixAddressChanged_ === 'function') window.pmixAddressChanged_(); }
@@ -13484,7 +13511,7 @@ function initScorePanel_() {
         if (isSel) hl(px - jw / 2 - 3, py - 13, jw + 6, 26);
         return;
       }
-      var timed = typeof k.t === 'number', lbl = !!(k.measure || k.note), inStrip = strip && scoreRibbonStripMark(k), dy0 = lbl && !inStrip ? (edit ? -20 : 0) : 0, ly = inStrip && lbl && edit ? 20 : 0; // atc-2ld9: in the strip the number stays at the strip and an Edit label drops below it
+      var timed = typeof k.t === 'number', lbl = !!(k.measure || k.note), inStrip = strip && scoreRibbonStripMark(k, edit), dy0 = lbl && !inStrip ? (edit ? -20 : 0) : 0, ly = inStrip && lbl && edit ? 20 : 0; // atc-2ld9: in the strip the number stays at the strip and an Edit label drops below it
       if (isSel) { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py + dy0, 14, 0, 6.2832); ctx.stroke(); ctx.lineWidth = 1; } // atc-tty9.13: a label replaces the number; in Edit the number sits above it
       if (!lbl || edit) {
         var fst = edit && flags ? flags[k.id] : 'ok';
@@ -13549,6 +13576,7 @@ function initScorePanel_() {
     seam('data-ribbon-scroll', String(Math.round(view.sx))); // test seam: the ribbon's scroll offset (px)
     seam('data-playhead-x', String(Math.round(view.playheadX))); // test seam: the playhead's screen x (40% of the width inside the ribbon)
     if (ribbonCv.width !== view.cw || ribbonCv.height !== view.ch) { ribbonCv.width = view.cw; ribbonCv.height = view.ch; ribbonCv.style.width = geo.W + 'px'; ribbonCv.style.height = geo.H + 'px'; }
+    if (ribbonSourcePages().some(function (i) { var q = S.pages[i]; return !q.canvas && !q.el.classList.contains('score-fail'); })) pump(); // a held view moved onto a page that is not rendered: draw it (publish redraws the ribbon)
     var pp = S.pages[view.page - 1];
     seam('data-ribbon-page', String(view.page)); // test seam: the page the hidden scroller is parked on (rendered with its neighbours)
     if (pp) { // keep the scroller (hidden under the ribbon) on that page so its neighbours stay rendered
@@ -13590,9 +13618,9 @@ function initScorePanel_() {
     var L = layout || S.rv.layout;
     if (!L || !S.ribbonShown) return null;
     var r = ribbonCv.getBoundingClientRect();
-    return scoreRibbonStripHit(L, pageGeo(true), S.marks, (sx == null ? S.rv.sx : sx) + cx - r.left, cy - r.top);
+    return scoreRibbonStripHit(L, pageGeo(true), S.marks, (sx == null ? S.rv.sx : sx) + cx - r.left, cy - r.top, S.edit);
   }
-  function pdfHitMarks() { return S.ribbonShown ? S.marks.filter(function (q) { return !scoreRibbonStripMark(q); }) : S.marks; }
+  function pdfHitMarks() { return S.ribbonShown ? S.marks.filter(function (q) { return !scoreRibbonStripMark(q, S.edit); }) : S.marks; }
   // ---- Performance stats: one stretch per play run (max 30 s), sent as a flat scorePerf activity record; overlay only when asked ----
   var PERF_KEY = 'pmix.' + pmixTarget() + '.v1.scorePerfOverlay';
   var perfEl = $('score-perf'), perfOverlay = false, perfLt = null, perfSt = null, perfLast = null, perfOvAt = 0;
@@ -13897,6 +13925,7 @@ function initScorePanel_() {
     }
     var pl = scoreAddPlain(S.marks, { kind: 'mark', page: hit.page, x: hit.x, y: hit.y, ptW: hit.ptW, ptH: hit.ptH, partRef: partRefNow() }); // atc-rlep.1: placed into a line now, no time
     S.selId = pl.mark.id;
+    if (pl.dup) { try { logActivity_('scoreDupMark', pl.dup); } catch (e) { /* telemetry only */ } return; } // fixit S1: the existing mark is selected, nothing added
     commit(pl.marks, true);
   }
   function resetPointers() { S.ptrs = 0; S.touching = false; S.gesture = null; }
@@ -14337,6 +14366,7 @@ function initScorePanel_() {
       r = scoreEndingEndCheck(S.marks, pk.jumpId, pt);
       if (r.error) { pk.msg = r.error; syncUi(); return; }
       var pl = scoreAddPlain(S.marks, { kind: 'mark', page: hit.page, x: hit.x, y: hit.y, ptW: hit.ptW, ptH: hit.ptH, partRef: partRefNow() });
+      if (pl.dup) { try { logActivity_('scoreDupMark', pl.dup); } catch (e) { /* telemetry only */ } }
       marks = pl.marks; toId = pl.mark.id;
     }
     r = scoreAddEndings(marks, pk.jumpId, pk.p1, toId);
