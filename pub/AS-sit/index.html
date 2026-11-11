@@ -409,7 +409,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.2";
+var STATIC_BUILD_VERSION_ = "0.1.28.3";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -554,6 +554,8 @@ const state = {
   collapsed: {}
 };
 
+// NT-4siu: declared before initAuth() runs renderCachedPortal_(); docIsCollapsed_ reads it (set per render by renderList_).
+let docDefaultCollapsed_ = false;
 const $ = (id) => document.getElementById(id);
 const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
 
@@ -1891,7 +1893,6 @@ function collapsibleGroupHtml(o){
 // NT-o1zu.7: a document group's collapse state. The user's choice (toggle, Collapse/Expand all) wins; with
 // none, collapsed iff the list holds more than 2 documents. Document view (one document) and the &action=
 // focus target always render expanded. Set per render by renderList_.
-let docDefaultCollapsed_ = false;
 function docIsCollapsed_(docId){
   if (state.docId) return false;
   if (state.focusGid && state.focusGid.indexOf(docId + '/') === 0) return false;
