@@ -272,8 +272,9 @@
         <!-- NT-71y.2: document filter. #docSearch lists the doc names of the loaded rows (#docSearchList);
              #docFilterChip names the active document and #docFilterClear removes the filter. -->
         <div class="field"><label for="docSearch">Document</label>
-          <input class="sel" id="docSearch" type="search" list="docSearchList" placeholder="Search documents" autocomplete="off" />
+          <input class="sel" id="docSearch" type="search" list="docSearchList" placeholder="Search documents or paste a Doc link" autocomplete="off" />
           <datalist id="docSearchList"></datalist>
+          <span class="hidden" id="docSearchError" role="alert" style="color:#b91c1c;font-size:12px">Not a Google Doc link or ID</span>
           <span class="docchip hidden" id="docFilterChip"><span id="docFilterName"></span>
             <button id="docFilterClear" type="button" aria-label="Clear document filter" title="Clear document filter">&times;</button></span>
         </div>
@@ -408,7 +409,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.25.2";
+var STATIC_BUILD_VERSION_ = "0.1.28.2";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -535,6 +536,7 @@ const state = {
                         // OWN team rather than one blended state.tier (gts-zm8w)
   status: 'open', scope: 'all', windowDays: 60, age: '',
   person: '', assignees: [],  // NT-tnh: scope 'person' filter email; res.assignees for #personSelect
+  docTracked: null, docUrl: '', docStarting: false, // NT-o1zu.5: from the doc-mode response (tracked, docUrl)
   docId: '', docName: '',  // NT-71y.2: document filter (?doc=); docName arrives with each filtered response
   docDenied: false,        // NT-71y.2 C4: last filtered response was tier NONE
   docIndex: {},            // doc_name -> doc_id for the #docSearch datalist
@@ -568,7 +570,24 @@ const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
 // focuses one row of that document.
 const QUERY_PARAMS = new URLSearchParams(location.search);
 const QUERY_TEAM = QUERY_PARAMS.get('team') || null;
-const QUERY_DOC = QUERY_PARAMS.get('doc') || null;
+// NT-o1zu.5: ?doc= and the Document box take a Doc ID or a Docs URL (docs.google.com/document/[u/N/]d/<id>/...).
+// parseDocRef_ returns the id, or '' when the text is neither. Plausibility mirrors the server (>= 10 chars of [A-Za-z0-9_-]).
+function parseDocRef_(text){
+  const t = String(text == null ? '' : text).trim();
+  if (!t) return '';
+  const m = /^(?:https?:\/\/)?docs\.google\.com\/document\/(?:u\/\d+\/)?d\/([A-Za-z0-9_-]{10,})(?:[\/?#].*)?$/i.exec(t);
+  if (m) return m[1];
+  return /^[A-Za-z0-9_-]{10,}$/.test(t) ? t : '';
+}
+const QUERY_DOC_RAW = QUERY_PARAMS.get('doc') || null;
+const QUERY_DOC = QUERY_DOC_RAW ? (parseDocRef_(QUERY_DOC_RAW) || QUERY_DOC_RAW) : null;
+if (QUERY_DOC && QUERY_DOC !== QUERY_DOC_RAW) { // a URL is normalised to the id in the address bar
+  try {
+    const u0 = new URL(location.href);
+    u0.searchParams.set('doc', QUERY_DOC);
+    history.replaceState(history.state, '', u0.pathname + u0.search + u0.hash);
+  } catch (e) { /* history unavailable: the id is still used */ }
+}
 const ACTION_REF_RE = /^(?:ACT|AI|ACTION|ACTION ITEM)-(\d+)$/i; // NT-1sg: 'Action Item-N'
 const QUERY_ACTION = QUERY_PARAMS.get('action') || null;
 // NT-56r: ?status=open|closed|all, ?age=<bucket> and ?from=health preset the filters on load (UX only; the
@@ -873,6 +892,17 @@ function loadTeams(opts){
       $('appView').classList.remove('hidden');
       $('whoEmail').textContent = state.email;
 
+      if (state.teams.length === 0 && state.docId) {
+        // NT-o1zu.5 AC2: a user with no team can still open a document by link (teamId '' list call).
+        clearPortalCache_(state.sub);
+        setStale_(false);
+        state.teamId = '';
+        $('noTeamsNotice').classList.add('hidden');
+        $('listWrap').classList.remove('hidden');
+        $('filtersRow').classList.remove('hidden');
+        setTeamOptions_();
+        return refreshActions();
+      }
       if (state.teams.length === 0) {
         clearPortalCache_(state.sub);
         setStale_(false);
@@ -1027,12 +1057,15 @@ function applyDocFilterResponse_(res){
   const rows = state.rows;
   if (!state.docId) state.docIndex = {};
   rows.forEach(r => { if (r.doc_name && !state.docIndex[r.doc_name]) state.docIndex[r.doc_name] = r.doc_id; });
-  if (!state.docId || (res && res.ok === false)) { state.docDenied = false; return; }
+  if (!state.docId || (res && res.ok === false)) { state.docDenied = false; state.docTracked = null; state.docUrl = ''; return; }
   state.docDenied = (res.tier || 'NONE') === 'NONE';
-  // NT-vhl: a teamless document the caller can't open gets its own message (reason 'no_document_access').
-  $('docNoAccessMsg').textContent = state.docDenied && res.reason === 'no_document_access'
-    ? "This document isn't assigned to a team and you can't open it."
-    : "You don't have access to this document's actions.";
+  state.docTracked = state.docDenied ? null : (typeof res.tracked === 'boolean' ? res.tracked : null); // NT-o1zu.5
+  state.docUrl = state.docDenied ? '' : (res.docUrl || '');
+  // NT-o1zu.5 AC7 / D5: an invalid id is named; every other denial (no access, not found, unreadable by the
+  // tracker) reads the same.
+  $('docNoAccessMsg').textContent = state.docDenied && res.reason === 'invalid_document'
+    ? "That isn't a valid Google Doc link or ID."
+    : "You can't open this document, or it isn't shared where the action tracker can read it.";
   state.docName = state.docDenied ? '' : (res.docName || '');
   if (res.teamId && state.teams.some(t => t.teamId === res.teamId)) {
     state.teamId = res.teamId;
@@ -1071,24 +1104,43 @@ function syncDocControls_(){
 function clearDocFilter_(){
   if (!state.docId) { $('docSearch').value = ''; return; }
   setDocFilter_('', '');
+  if (!state.teams.length) { // NT-o1zu.5: a no-team user opened a document by link; back to the no-teams notice
+    state.rows = []; state.docTracked = null; state.docDenied = false;
+    $('noTeamsNotice').classList.remove('hidden');
+    $('docNoAccess').classList.add('hidden');
+    $('listWrap').classList.add('hidden');
+    $('filtersRow').classList.add('hidden');
+    $('countLabel').textContent = '';
+    return;
+  }
   refreshActions();
 }
 $('docFilterClear').addEventListener('click', clearDocFilter_);
 $('docNoAccessClear').addEventListener('click', clearDocFilter_);
+$('docSearch').addEventListener('input', () => $('docSearchError').classList.add('hidden'));
 $('docSearch').addEventListener('change', e => {
   const v = e.target.value.trim();
+  $('docSearchError').classList.add('hidden');
   if (!v) { clearDocFilter_(); return; }
   const id = state.docIndex[v];
   if (id && id !== state.docId) {
     setDocFilter_(id, v);
     refreshActions();
-  } else {
-    e.target.value = state.docName; // unknown name or unchanged: keep the current filter
+    return;
   }
+  if (id) { e.target.value = state.docName; return; } // unchanged: keep the current filter
+  // NT-o1zu.5 AC6: not a known name, so a pasted Docs URL or ID opens doc mode for that id.
+  const ref = parseDocRef_(v);
+  if (ref) {
+    if (ref !== state.docId) { setDocFilter_(ref, ''); refreshActions(); }
+    return;
+  }
+  e.target.value = state.docName; // neither a known name nor a link/ID: keep the current filter
+  $('docSearchError').classList.remove('hidden');
 });
 
 function refreshActions(){
-  if (!state.teamId) return Promise.resolve();
+  if (!state.teamId && !state.docId) return Promise.resolve();
   setBusy(true);
   $('loadError').style.display = 'none';
 
@@ -1461,7 +1513,9 @@ function scanGroupsHtml_(candidates, selectable){
 function syncCollapseAllField_(){
   const scanGroups = !$('adminScanResults').classList.contains('hidden') &&
     !!$('adminScanResults').querySelector('.scanteam');
-  $('collapseAllField').classList.toggle('hidden', !(state.teamId === ALL_TEAMS_ID || scanGroups));
+  // NT-o1zu.7 AC2: also whenever 2+ document groups are rendered (single-team view included).
+  const docGroups = state.docDenied || state.docTracked === false ? 0 : new Set(state.rows.map(r => r.doc_id)).size;
+  $('collapseAllField').classList.toggle('hidden', !(state.teamId === ALL_TEAMS_ID || scanGroups || docGroups >= 2));
 }
 
 function renderAdminScanResults(sc){
@@ -1701,9 +1755,14 @@ function renderList_(){
   listEl.innerHTML = '';
   $('docNoAccess').classList.toggle('hidden', !state.docDenied);
   if (state.docDenied) return; // NT-71y.2 C4: distinct from the empty-filter message; no rows
+  if (state.docId && state.docTracked === false) { // NT-o1zu.5 AC3: an untracked document
+    renderUntrackedPanel_();
+    return;
+  }
   if (!rows.length){
     listEl.innerHTML = `<div class="docgroup"><div class="empty">${
-      state.scope === 'mine' ? 'Nothing assigned to you in this team.'
+      state.docId && state.docTracked === true ? 'This document is tracked; it has no actions yet.'
+      : state.scope === 'mine' ? 'Nothing assigned to you in this team.'
                               : 'No actions match these filters.'}</div></div>`;
     renderReferences_();
     return;
@@ -1713,6 +1772,7 @@ function renderList_(){
   // control is document-scoped rather than one row-level button per row.
   const byDoc = new Map();
   rows.forEach(r => { if(!byDoc.has(r.doc_id)) byDoc.set(r.doc_id, []); byDoc.get(r.doc_id).push(r); });
+  docDefaultCollapsed_ = byDoc.size > 2 && !state.docId; // NT-o1zu.7 AC3/5: collapsed by default above 2 documents
 
   if (isAllTeams) {
     // gts-zeti: group doc-groups under a collapsible team header, in the
@@ -1747,7 +1807,7 @@ function renderList_(){
   }));
   listEl.querySelectorAll('[data-toggle-doc]').forEach(b => b.addEventListener('click', () => {
     const key = 'doc:' + b.dataset.toggleDoc;
-    state.collapsed[key] = !state.collapsed[key];
+    state.collapsed[key] = !docIsCollapsed_(b.dataset.toggleDoc); // NT-o1zu.7 AC4: the user's choice persists
     render();
   }));
   listEl.querySelectorAll('[data-sync]').forEach(b => b.addEventListener('click', onSyncClick));
@@ -1765,6 +1825,42 @@ function renderList_(){
   // assignee's own chips with fresh data, the Copy items on every chip.
   listEl.querySelectorAll('.status[data-status-for]').forEach(c => c.addEventListener('click', openStatusMenu));
   renderReferences_();
+}
+
+// NT-o1zu.5: the panel for a document the tracker is not following yet. Start tracking is the existing
+// team_sync_document route with teamId '' (the server decides the team); EDIT needed, fresh data only.
+function renderUntrackedPanel_(){
+  const canStart = state.tier === 'EDIT' && !state.stale && !state.docStarting;
+  const title = escape(state.docName || '(untitled document)');
+  listEl.innerHTML = `<div class="docgroup" id="docUntracked">
+    <div class="dochead"><div class="docname">${state.docUrl
+      ? `<a href="${escape(state.docUrl)}" target="_blank" rel="noopener">${title}</a>` : title}</div></div>
+    <div class="empty">This document is not tracking actions yet.</div>
+    <div style="padding:0 12px 12px"><button class="btn" id="docStartTracking" type="button" ${canStart ? '' : 'disabled'}
+      title="${state.tier !== 'EDIT' ? 'Starting tracking needs edit access to the document'
+              : state.stale ? 'Available once fresh data has loaded' : 'Start tracking this document\u2019s actions'}"
+    >Start tracking</button></div></div>`;
+  $('docStartTracking').addEventListener('click', onStartTrackingClick_);
+}
+function onStartTrackingClick_(){
+  const docId = state.docId;
+  if (!docId || state.docStarting) return;
+  state.docStarting = true;
+  $('docStartTracking').disabled = true;
+  postJson(GACTIONSHEET_URL, { action: 'team_sync_document', assertion: state.assertion, teamId: '', docId })
+    .then(res => {
+      if (res && res.ok) {
+        state.collapsed['doc:' + docId] = false;
+        state.docStarting = false;
+        return refreshActions().then(() => {
+          const n = state.rows.length;
+          toast('Tracking started' + (n ? ' — ' + n + (n === 1 ? ' action' : ' actions') : ''));
+        });
+      }
+      toast('Sync did not run: ' + ((res && res.outcome) || 'unknown'));
+    })
+    .catch(err => toast('Sync failed: ' + (err.message || err)))
+    .finally(() => { state.docStarting = false; if (state.docTracked === false) render(); });
 }
 
 // NT-3fj: one collapsible group (header: collapse button, optional extra control, name, count tag;
@@ -1792,18 +1888,26 @@ function collapsibleGroupHtml(o){
 // per-team badge (redundant once nested under a team header) and whether
 // this doc-group gets its own collapse toggle (only meaningful once there's
 // a team layer above it to collapse independently of).
+// NT-o1zu.7: a document group's collapse state. The user's choice (toggle, Collapse/Expand all) wins; with
+// none, collapsed iff the list holds more than 2 documents. Document view (one document) and the &action=
+// focus target always render expanded. Set per render by renderList_.
+let docDefaultCollapsed_ = false;
+function docIsCollapsed_(docId){
+  if (state.docId) return false;
+  if (state.focusGid && state.focusGid.indexOf(docId + '/') === 0) return false;
+  const v = state.collapsed['doc:' + docId];
+  return v === undefined ? docDefaultCollapsed_ : !!v;
+}
+
 function docGroupHtml(docId, docRows, inTeamGroup){
   const first = docRows[0];
   // gts-zm8w: in ALL-teams mode each doc belongs to exactly one team
   // (uniform team_id across a doc's rows), so gate this group's controls
   // by THAT team's own tier rather than the blended state.tier.
   const tier = inTeamGroup ? (state.teamTiers[first.team_id] || 'NONE') : state.tier;
-  const docKey = 'doc:' + docId;
-  const docCollapsed = inTeamGroup && !!state.collapsed[docKey];
-  const toggleBtn = inTeamGroup
-    ? `<button class="collapsebtn" data-toggle-doc="${escape(docId)}" aria-expanded="${!docCollapsed}"
-         title="${docCollapsed ? 'Expand' : 'Collapse'} this document">&#9662;</button>`
-    : '';
+  const docCollapsed = docIsCollapsed_(docId);
+  const toggleBtn = `<button class="collapsebtn" data-toggle-doc="${escape(docId)}" aria-expanded="${!docCollapsed}"
+         title="${docCollapsed ? 'Expand' : 'Collapse'} this document">&#9662;</button>`; // NT-o1zu.7 AC1/7
   return `
     <div class="docgroup${docCollapsed ? ' collapsed' : ''}">
       <div class="dochead">
