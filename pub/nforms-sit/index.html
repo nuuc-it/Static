@@ -29,7 +29,7 @@ var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwDMnuZRp9dQa6ez9Kv1tBdT0sUp9FQJsdlwtqw2aUrchbQKbdNvxbWtOh_wfAjLi_iew/exec";
 var STATIC_ASSERTION_AUD_ = "nforms-test";
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
-var STATIC_BUILD_VERSION_ = "0.1.0.4";
+var STATIC_BUILD_VERSION_ = "0.1.0.5";
 const GOOGLE_CLIENT_ID = '657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com';
 // pub/nforms and pub/nforms-sit share one origin, so storage is scoped to this build's audience.
 const AUTH_KEY = 'nformsAuth.v1:' + STATIC_ASSERTION_AUD_;
@@ -66,7 +66,7 @@ function onGoogle(resp){
 // One admin call: the server verifies the assertion and ADMIN_EMAILS on every request.
 function call(method,args){
  if(!state.assertion)return Promise.reject(new Error('Not signed in.'));
- return post(STATIC_WEBAPP_URL_,{action:'adminCall',assertion:state.assertion,method:method,args:args||{}}).then(res=>{
+ return post(STATIC_WEBAPP_URL_+'?cmd=admin',{action:'adminCall',assertion:state.assertion,method:method,args:args||{}}).then(res=>{
   if(res.ok)return res.result;
   if(['expired','bad_signature','bad_aud','bad_kid','unknown_kid','malformed','missing_identity'].includes(res.error)){signOut();throw new Error('Session no longer accepted ('+res.error+'). Sign in again.')}
   if(res.error==='not_admin')throw new Error('This Google account is not an NForms administrator.');
@@ -85,7 +85,7 @@ function refresh(){message('Loading…');call('adminListForms').then(rows=>{
  message('Loaded '+rows.length+' forms.')}).catch(err=>message(err.message||String(err),true))}
 function run(method){const args={slug:$('slug').value,spreadsheet:$('spreadsheet').value,form:$('form').value};
  message('Running '+method+'…');
- call(method,args).then(result=>{$('result').textContent=JSON.stringify(result,null,2);message(method+' completed.');refresh()}).catch(err=>message(err.message||String(err),true))}
+ call(method,args).then(result=>{$('result').textContent=JSON.stringify(result,null,2);message(method+' completed.');refresh()}).catch(err=>{const m=err.message||String(err);$('result').textContent='Error: '+m;message(m,true)})}
 $('refreshBtn').addEventListener('click',refresh);
 $('envLabel').textContent=STATIC_ENV_LABEL_?'('+STATIC_ENV_LABEL_+')':'';
 const cached=loadAuth();if(cached){state.assertion=cached.assertion;state.email=cached.email}
