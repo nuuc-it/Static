@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>NForms Administration</title><script src="https://accounts.google.com/gsi/client" async defer></script><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font:15px system-ui,Arial,sans-serif;max-width:1180px;margin:24px auto;padding:0 18px;color:#172332}
+h1{font-size:1.6rem}h2{font-size:1.2rem;margin-top:36px}table{width:100%;border-collapse:collapse}th,td{padding:11px 9px;border-bottom:1px solid #d9dde2;text-align:left;vertical-align:top}th{background:#f3f6f9}label{display:block;margin:11px 0 5px}input{padding:9px;width:100%;box-sizing:border-box}button{padding:9px 14px;cursor:pointer;margin:7px 8px 7px 0}a{color:#075caa}small{color:#52606f}#message{white-space:pre-wrap} .error{color:#9a1824}.success{color:#146b35}.links{white-space:nowrap}
+</style></head><body>
+<h1>NForms Administration <small id="envLabel"></small></h1>
+<div id="signinBox"><p>Sign in with an administrator Google account.</p><div id="g_signin_button"></div><div id="signinError" class="error"></div></div>
+<div id="whoBox" hidden>Signed in as <span id="whoEmail"></span> · <a href="#" id="signOutLink">Sign out</a></div>
+<div id="app" hidden>
+<p>Registered spreadsheet-backed forms. Configuration changes are made in the associated spreadsheet.</p>
+<button id="refreshBtn">Refresh</button>
+<div id="message" role="status"></div>
+<table><thead><tr><th>Form</th><th>Responses</th><th>Last submission</th><th>Configuration</th><th>Links</th></tr></thead><tbody id="forms"><tr><td colspan="5">Loading…</td></tr></tbody></table>
+<h2>Register / initialize</h2>
+<p><small>Initialize adds missing configuration without editing response tabs. Review validation messages before registering.</small></p>
+<label>Internal form key <input id="slug" placeholder="activity" autocomplete="off"></label>
+<label>Spreadsheet URL or ID <input id="spreadsheet" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+<label>Optional Google Form URL or ID <input id="form" placeholder="https://docs.google.com/forms/d/..."></label>
+<button onclick="run('adminPreviewRegistration')">Inspect</button>
+<button onclick="run('adminInitialize')">Initialize configuration</button>
+<button onclick="run('adminImportForm')">Import missing questions</button>
+<button onclick="run('adminRegister')">Register</button>
+<pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+</div>
+<script>
+// Stamped per environment by gas-static at build time (see manage-deployments.js / scripts/static-pages.js).
+var STATIC_ENV_LABEL_ = "SIT";
+var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwDMnuZRp9dQa6ez9Kv1tBdT0sUp9FQJsdlwtqw2aUrchbQKbdNvxbWtOh_wfAjLi_iew/exec";
+var STATIC_ASSERTION_AUD_ = "nforms-test";
+var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
+var STATIC_BUILD_VERSION_ = "0.1.0.4";
+const GOOGLE_CLIENT_ID = '657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com';
+// pub/nforms and pub/nforms-sit share one origin, so storage is scoped to this build's audience.
+const AUTH_KEY = 'nformsAuth.v1:' + STATIC_ASSERTION_AUD_;
+const RENEW_SKEW = 300;
+const state = { assertion: null, email: '' };
+const $ = (id) => document.getElementById(id);
+function message(text,bad){const el=$('message');el.textContent=text;el.className=bad?'error':'success'}
+function cell(tag,txt){const e=document.createElement(tag);e.textContent=txt??'';return e}
+function link(text,url){const a=document.createElement('a');a.textContent=text;a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a}
+function safeUrl(u){return typeof u==='string'&&/^https:\/\/(docs\.google\.com|script\.google\.com)\//.test(u)?u:''}
+// text/plain keeps these CORS-simple requests: Apps Script web apps implement no OPTIONS.
+function post(url,body){return fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(body)}).then(r=>r.text()).then(t=>{try{return JSON.parse(t)}catch(e){throw new Error('Non-JSON response: '+t.slice(0,120))}})}
+function jwtPayload(j){try{return JSON.parse(atob(j.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))}catch(e){return null}}
+function saveAuth(){const p=jwtPayload(state.assertion);if(!p||typeof p.exp!=='number')return;try{localStorage.setItem(AUTH_KEY,JSON.stringify({assertion:state.assertion,exp:p.exp,email:state.email}))}catch(e){}}
+function clearAuth(){try{localStorage.removeItem(AUTH_KEY)}catch(e){}}
+function loadAuth(){let c;try{c=JSON.parse(localStorage.getItem(AUTH_KEY)||'null')}catch(e){return null}
+ if(!c||typeof c.exp!=='number'||!c.assertion||Math.floor(Date.now()/1000)>=c.exp-RENEW_SKEW)return null;return c}
+function showState(){const on=!!state.assertion;$('app').hidden=!on;$('whoBox').hidden=!on;$('signinBox').hidden=on;$('whoEmail').textContent=state.email}
+function signOut(){state.assertion=null;state.email='';clearAuth();showState();if(window.google&&google.accounts&&google.accounts.id)google.accounts.id.disableAutoSelect()}
+$('signOutLink').addEventListener('click',e=>{e.preventDefault();signOut()});
+let gisReady=false;
+function initSignIn(){
+ if(!(window.google&&google.accounts&&google.accounts.id)){setTimeout(initSignIn,300);return}
+ if(gisReady)return;gisReady=true;
+ google.accounts.id.initialize({client_id:GOOGLE_CLIENT_ID,callback:onGoogle,auto_select:false});
+ google.accounts.id.renderButton($('g_signin_button'),{type:'standard',shape:'pill'})}
+function onGoogle(resp){
+ $('signinError').textContent='';
+ if(!STATIC_DISPATCH_URL_){$('signinError').textContent='This page was built without a Dispatch URL; sign-in is disabled.';return}
+ post(STATIC_DISPATCH_URL_,{action:'verify_identity',idToken:resp.credential,aud:STATIC_ASSERTION_AUD_}).then(res=>{
+  if(!res.verified||!res.assertion)throw new Error('Sign-in could not be verified ('+(res.error||'no assertion')+').');
+  state.assertion=res.assertion;state.email=res.email||'';saveAuth();showState();refresh()
+ }).catch(err=>{$('signinError').textContent=err.message||String(err)})}
+// One admin call: the server verifies the assertion and ADMIN_EMAILS on every request.
+function call(method,args){
+ if(!state.assertion)return Promise.reject(new Error('Not signed in.'));
+ return post(STATIC_WEBAPP_URL_,{action:'adminCall',assertion:state.assertion,method:method,args:args||{}}).then(res=>{
+  if(res.ok)return res.result;
+  if(['expired','bad_signature','bad_aud','bad_kid','unknown_kid','malformed','missing_identity'].includes(res.error)){signOut();throw new Error('Session no longer accepted ('+res.error+'). Sign in again.')}
+  if(res.error==='not_admin')throw new Error('This Google account is not an NForms administrator.');
+  throw new Error(res.message||res.error||'Request failed.')})}
+function refresh(){message('Loading…');call('adminListForms').then(rows=>{
+ const root=$('forms');root.replaceChildren();
+ rows.forEach(r=>{const tr=document.createElement('tr');
+ tr.appendChild(cell('td',(r.name||r.slug)+' ('+r.slug+')'));
+ tr.appendChild(cell('td',r.responseCount??'—'));
+ tr.appendChild(cell('td',r.lastSubmission||'—'));
+ tr.appendChild(cell('td',r.error||r.configStatus||'—'));
+ const td=document.createElement('td');td.className='links';
+ [['Submit',r.submitUrl],['Auditor',r.auditorUrl],['Sheet',r.spreadsheetUrl]].forEach(([name,url])=>{const u=safeUrl(url);if(u){td.appendChild(link(name,u));td.append('  ')}});
+ tr.appendChild(td);root.appendChild(tr)});
+ if(!rows.length){const tr=document.createElement('tr');const td=cell('td','No registered forms');td.colSpan=5;tr.appendChild(td);root.appendChild(tr)}
+ message('Loaded '+rows.length+' forms.')}).catch(err=>message(err.message||String(err),true))}
+function run(method){const args={slug:$('slug').value,spreadsheet:$('spreadsheet').value,form:$('form').value};
+ message('Running '+method+'…');
+ call(method,args).then(result=>{$('result').textContent=JSON.stringify(result,null,2);message(method+' completed.');refresh()}).catch(err=>message(err.message||String(err),true))}
+$('refreshBtn').addEventListener('click',refresh);
+$('envLabel').textContent=STATIC_ENV_LABEL_?'('+STATIC_ENV_LABEL_+')':'';
+const cached=loadAuth();if(cached){state.assertion=cached.assertion;state.email=cached.email}
+showState();if(state.assertion)refresh();else initSignIn();
+</script></body></html>
