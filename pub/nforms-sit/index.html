@@ -29,7 +29,7 @@ var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwDMnuZRp9dQa6ez9Kv1tBdT0sUp9FQJsdlwtqw2aUrchbQKbdNvxbWtOh_wfAjLi_iew/exec";
 var STATIC_ASSERTION_AUD_ = "nforms-test";
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
-var STATIC_BUILD_VERSION_ = "0.1.0.5";
+var STATIC_BUILD_VERSION_ = "0.1.0.8";
 const GOOGLE_CLIENT_ID = '657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com';
 // pub/nforms and pub/nforms-sit share one origin, so storage is scoped to this build's audience.
 const AUTH_KEY = 'nformsAuth.v1:' + STATIC_ASSERTION_AUD_;
@@ -83,9 +83,14 @@ function refresh(){message('Loading…');call('adminListForms').then(rows=>{
  tr.appendChild(td);root.appendChild(tr)});
  if(!rows.length){const tr=document.createElement('tr');const td=cell('td','No registered forms');td.colSpan=5;tr.appendChild(td);root.appendChild(tr)}
  message('Loaded '+rows.length+' forms.')}).catch(err=>message(err.message||String(err),true))}
+function nextStep(method,r){
+ if(method==='adminPreviewRegistration'){const errs=(r.warnings||[]).filter(w=>w.severity==='error').length;return errs?' '+errs+' configuration errors: enter a form key above and click Initialize configuration, then Import missing questions, then Register.':r.registered?' Already registered.':' Configuration is valid: click Register.'}
+ if(method==='adminInitialize')return ' Next: Import missing questions.';
+ if(method==='adminImportForm')return ' Next: Inspect again, then Register.';
+ return''}
 function run(method){const args={slug:$('slug').value,spreadsheet:$('spreadsheet').value,form:$('form').value};
  message('Running '+method+'…');
- call(method,args).then(result=>{$('result').textContent=JSON.stringify(result,null,2);message(method+' completed.');refresh()}).catch(err=>{const m=err.message||String(err);$('result').textContent='Error: '+m;message(m,true)})}
+ call(method,args).then(result=>{$('result').textContent=JSON.stringify(result,null,2);message(method+' completed.'+nextStep(method,result));refresh()}).catch(err=>{const m=err.message||String(err);$('result').textContent='Error: '+m;message(m,true)})}
 $('refreshBtn').addEventListener('click',refresh);
 $('envLabel').textContent=STATIC_ENV_LABEL_?'('+STATIC_ENV_LABEL_+')':'';
 const cached=loadAuth();if(cached){state.assertion=cached.assertion;state.email=cached.email}
