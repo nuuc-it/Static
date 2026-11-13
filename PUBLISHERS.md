@@ -32,6 +32,8 @@ its own folder beneath `pub/`.
 | `pub/shell` | NUUTS-Shell (same pipeline, PROD build) | production | <https://nuuc-it.github.io/Static/pub/shell/> |
 | `pub/DL-sit` | NDocs (`tools/static-pages.js` via `gas-static`, SIT build) | test | <https://nuuc-it.github.io/Static/pub/DL-sit/> |
 | `pub/DL` | NDocs (same pipeline, PROD build) | prod | <https://nuuc-it.github.io/Static/pub/DL/> |
+| `pub/nforms-sit` | NForms (`scripts/static-pages.js` via `gas-static`, SIT build) | test | <https://nuuc-it.github.io/Static/pub/nforms-sit/> |
+| `pub/nforms` | NForms (same pipeline, PROD build) | prod | <https://nuuc-it.github.io/Static/pub/nforms/> |
 
 `pub/pmix` went live on 2026-08-26 with PracticeMix v1.6.8 — its first PROD deploy. `pub/DL`/
 `pub/DL-sit` registered 2026-09-12, ahead of NDocs's first publish (its Stage 2, still to build).
@@ -57,6 +59,8 @@ Keep it in step with the table above.
   "pub/shell-sit": { "project": "NUUTS-Shell", "env": "test", "url": "https://nuuc-it.github.io/Static/pub/shell-sit/" },
   "pub/shell": { "project": "NUUTS-Shell", "env": "production", "url": "https://nuuc-it.github.io/Static/pub/shell/" },
   "pub/DL-sit": { "project": "NDocs", "env": "test", "url": "https://nuuc-it.github.io/Static/pub/DL-sit/" },
-  "pub/DL": { "project": "NDocs", "env": "prod", "url": "https://nuuc-it.github.io/Static/pub/DL/" }
+  "pub/DL": { "project": "NDocs", "env": "prod", "url": "https://nuuc-it.github.io/Static/pub/DL/" },
+  "pub/nforms-sit": { "project": "NForms", "env": "test", "url": "https://nuuc-it.github.io/Static/pub/nforms-sit/" },
+  "pub/nforms": { "project": "NForms", "env": "prod", "url": "https://nuuc-it.github.io/Static/pub/nforms/" }
 }
 ```
