@@ -1,27 +1,89 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>NForms Administration</title><script src="https://accounts.google.com/gsi/client" async defer></script><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-body{font:15px system-ui,Arial,sans-serif;max-width:1180px;margin:24px auto;padding:0 18px;color:#172332}
-h1{font-size:1.6rem}h2{font-size:1.2rem;margin-top:36px}table{width:100%;border-collapse:collapse}th,td{padding:11px 9px;border-bottom:1px solid #d9dde2;text-align:left;vertical-align:top}th{background:#f3f6f9}label{display:block;margin:11px 0 5px}input{padding:9px;width:100%;box-sizing:border-box}button{padding:9px 14px;cursor:pointer;margin:7px 8px 7px 0}a{color:#075caa}small{color:#52606f}#message{white-space:pre-wrap} .error{color:#9a1824}.success{color:#146b35}.links{white-space:nowrap}
+:root{--fg:#172332;--bg:#fff;--muted:#47556a;--line:#c9d0d8;--th:#f3f6f9;--link:#075caa;--err:#9a1824;--ok:#146b35;--panel:#f4f8fc;--tag-bg:#fff4d6;--tag-fg:#6b4700;--btn:#fff;--btn-fg:#172332;--btn-line:#5a6878;--pri:#0b5cad;--pri-fg:#fff;--focus:#0b5cad}
+@media (prefers-color-scheme:dark){:root{--fg:#e8edf3;--bg:#111821;--muted:#aab6c5;--line:#3a4655;--th:#1b2531;--link:#8cc4ff;--err:#ff9aa4;--ok:#7ddb9f;--panel:#16212d;--tag-bg:#4a3a10;--tag-fg:#ffe2a0;--btn:#1b2531;--btn-fg:#e8edf3;--btn-line:#8896a8;--pri:#8cc4ff;--pri-fg:#06121f;--focus:#8cc4ff}}
+body{font:15px system-ui,Arial,sans-serif;max-width:1180px;margin:24px auto;padding:0 18px;color:var(--fg);background:var(--bg)}
+h1{font-size:1.6rem;display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px}h2{font-size:1.2rem;margin-top:36px;display:flex;align-items:center;gap:8px}
+h3{font-size:1rem;margin:16px 0 6px}
+table{width:100%;border-collapse:collapse}th,td{padding:11px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--th)}
+label{display:block;margin:11px 0 5px}input{padding:9px;width:100%;box-sizing:border-box;color:var(--fg);background:var(--bg);border:1px solid var(--btn-line);border-radius:4px}
+button{padding:9px 14px;cursor:pointer;margin:7px 8px 7px 0;color:var(--btn-fg);background:var(--btn);border:1px solid var(--btn-line);border-radius:4px;font:inherit}
+button.primary{background:var(--pri);color:var(--pri-fg);border-color:var(--pri);font-weight:600}
+button:disabled{opacity:.55;cursor:progress}
+button.info{padding:2px 8px;margin:0;border-radius:999px;font-size:.9rem}
+button:focus-visible,a:focus-visible,summary:focus-visible,[tabindex]:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+a{color:var(--link)}small{color:var(--muted);font-weight:normal;font-size:.6em}
+.hint{color:var(--muted)}
+#message{white-space:pre-wrap;min-height:1.3em}.error{color:var(--err)}.success{color:var(--ok)}
+.tag{display:inline-block;margin-left:4px;padding:0 6px;border-radius:4px;background:var(--tag-bg);color:var(--tag-fg);font-size:.8em;white-space:nowrap}
+.links a{display:inline-block;margin:0 14px 4px 0}
+.panel{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:4px 16px 12px;margin:0 0 18px}
+.panel h2{margin:12px 0 0}.panel p{margin:4px 0}
+.status-state{font-weight:600}.status-errs{margin:4px 0 0;padding-left:18px;color:var(--err)}
+#statusBox{border:1px solid var(--line);border-radius:6px;padding:10px 14px;margin:12px 0}
+#statusBox:empty{display:none}
+#statusBox .next{font-weight:600}
+details{margin:8px 0}summary{cursor:pointer}
+pre{white-space:pre-wrap;overflow-wrap:anywhere}
+@media (max-width:700px){
+ table,tbody,tr,td{display:block;width:100%;box-sizing:border-box}
+ thead{position:absolute;left:-9999px}
+ tr{border-bottom:2px solid var(--line);padding:6px 0}td{border:0;padding:5px 2px;overflow-wrap:anywhere}
+ td[data-label]::before{content:attr(data-label) ": ";font-weight:600;color:var(--muted)}
+}
 </style></head><body>
-<h1>NForms Administration <small id="envLabel"></small></h1>
-<div id="signinBox"><p>Sign in with an administrator Google account.</p><div id="g_signin_button"></div><div id="signinError" class="error"></div></div>
-<div id="whoBox" hidden>Signed in as <span id="whoEmail"></span> · <a href="#" id="signOutLink">Sign out</a></div>
+<h1>NForms Administration <small id="envLabel"></small>
+<button id="helpBtn" type="button" aria-expanded="false" aria-controls="helpPanel"><span aria-hidden="true">&#9432;</span> Help</button></h1>
+<section id="helpPanel" class="panel" hidden aria-labelledby="helpTitle">
+<h2 id="helpTitle" tabindex="-1">Help</h2>
+<h3 id="help-what" tabindex="-1">What NForms does</h3>
+<p>NForms shows your form as a web page and saves each answer in a Google Sheet. The questions live in the same spreadsheet, on the Settings, Fields, Options and Conditions tabs. To change a form, edit those tabs; this page does not edit questions.</p>
+<h3 id="help-start" tabindex="-1">Two ways to start</h3>
+<p><em>From a Google Form:</em> enter a form key and the form's response spreadsheet (or the Google Form). Click Initialize configuration, then Import missing questions, then Register. The Google Form keeps working, and both save to the same sheet until you turn the Google Form off.</p>
+<p><em>Without a Google Form:</em> create a blank Google Sheet, then enter a form key and the sheet's link. Click Initialize configuration. Edit the example question in the Fields tab and add your own. Click Initialize configuration again to add answer columns for new questions, then Register. A new form starts Off; set formEnabled to TRUE in Settings when it is ready.</p>
+<h3 id="help-fields" tabindex="-1">The fields</h3>
+<p><em>Form key</em> is the short name that identifies this form, for example <code>activity</code>. It appears in the form's web address. Use 2 to 63 lowercase letters, digits or dashes, starting with a letter. Each form needs its own key, and a spreadsheet can be registered under one key only.</p>
+<p><em>Spreadsheet URL or ID</em> is the Google Sheet that holds the answers and the questions. Paste its address or just its ID. Required unless you enter a Google Form that already has a response sheet.</p>
+<p><em>Google Form URL or ID</em> is optional. Enter it only when you are starting from an existing Google Form. Leave it empty to start without one. If the sheet is already linked to a Google Form, NForms detects it.</p>
+<h3 id="help-buttons" tabindex="-1">Buttons</h3>
+<p><em>Inspect</em> checks the spreadsheet and tells you the next step. It changes nothing.</p>
+<p><em>Initialize configuration</em> adds missing tabs, settings and answer columns. It never changes what is already there. Safe to repeat.</p>
+<p><em>Import missing questions</em> copies questions from the Google Form that are not in Fields yet. It never changes questions you edited. On a registered form, new questions arrive switched off.</p>
+<p><em>Register</em> checks the configuration and, if it is valid, adds the form to the list. It changes nothing in the spreadsheet.</p>
+<h3 id="help-table" tabindex="-1">The form list</h3>
+<p><em>Form</em> is the form's key and title. <em>Responses</em> is how many answers are saved. <em>Last submission</em> is when the latest answer arrived. <em>Status</em> says whether the form is on and what to do next, with up to three problems listed.</p>
+<h3 id="help-links" tabindex="-1">Links</h3>
+<p><em>Submit</em> is the public form people fill in; anyone with the link can use it. <span id="helpSubmit"></span></p>
+<p><em>Auditor</em> is where signed-in reviewers search and correct answers. <span id="helpAuditor"></span></p>
+<p><em>Sheet</em> opens the spreadsheet with the answers and the questions. You need your own access to it.</p>
+<p><em>Google Form</em> opens the original Google Form while it is still linked.</p>
+<h3 id="help-know" tabindex="-1">Good to know</h3>
+<p><em>Refresh</em> reloads the form list. <em>Sign out</em> forgets your sign-in on this browser. <em>Details</em>, under the buttons, shows the raw server reply; it is for troubleshooting and never contains answers.</p>
+<p>The Status column shows what to do next for each form.</p>
+<p>To hide a question, set Enabled to FALSE in Fields. Do not delete the row: Import would add it back.</p>
+<p>Nothing on this page deletes answers.</p>
+</section>
+<div id="signinBox"><p>Sign in with an administrator Google account.</p><div id="g_signin_button"></div><div id="signinError" class="error" role="alert"></div></div>
+<div id="whoBox" hidden>Signed in as <span id="whoEmail"></span> &middot; <a href="#" id="signOutLink">Sign out</a></div>
 <div id="app" hidden>
 <p>Registered spreadsheet-backed forms. Configuration changes are made in the associated spreadsheet.</p>
-<button id="refreshBtn">Refresh</button>
+<button id="refreshBtn" type="button" class="act">Refresh</button>
 <div id="message" role="status"></div>
-<table><thead><tr><th>Form</th><th>Responses</th><th>Last submission</th><th>Configuration</th><th>Links</th></tr></thead><tbody id="forms"><tr><td colspan="5">Loading…</td></tr></tbody></table>
-<h2>Register / initialize</h2>
-<p><small>Initialize adds missing configuration without editing response tabs. Review validation messages before registering.</small></p>
-<label>Internal form key <input id="slug" placeholder="activity" autocomplete="off"></label>
-<label>Spreadsheet URL or ID <input id="spreadsheet" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
-<label>Optional Google Form URL or ID <input id="form" placeholder="https://docs.google.com/forms/d/..."></label>
-<button onclick="run('adminPreviewRegistration')">Inspect</button>
-<button onclick="run('adminInitialize')">Initialize configuration</button>
-<button onclick="run('adminImportForm')">Import missing questions</button>
-<button onclick="run('adminRegister')">Register</button>
-<pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+<table><thead><tr><th scope="col">Form</th><th scope="col">Responses</th><th scope="col">Last submission</th><th scope="col">Status</th><th scope="col">Links <button type="button" class="info" data-help="help-links" aria-label="Help: links"><span aria-hidden="true">&#9432;</span></button></th></tr></thead><tbody id="forms"><tr><td colspan="5">Loading&hellip;</td></tr></tbody></table>
+<h2>Set up a form <button type="button" class="info" data-help="help-start" aria-label="Help: setting up a form"><span aria-hidden="true">&#9432;</span></button></h2>
+<p class="hint">From a Google Form: enter its response spreadsheet (or the Google Form), then Initialize configuration, Import missing questions and Register.<br>Without a Google Form: paste the link of a blank Google Sheet, then Initialize configuration, edit Fields in the Sheet, Initialize again and Register.</p>
+<label for="slug">Form key</label><input id="slug" placeholder="activity" autocomplete="off">
+<label for="spreadsheet">Spreadsheet URL or ID</label><input id="spreadsheet" placeholder="https://docs.google.com/spreadsheets/d/..." autocomplete="off">
+<label for="form">Google Form URL or ID (optional; only when starting from a Google Form)</label><input id="form" placeholder="https://docs.google.com/forms/d/..." autocomplete="off">
+<div id="actions">
+<button type="button" class="act" data-act="inspect" data-method="adminPreviewRegistration">Inspect</button>
+<button type="button" class="act" data-act="initialize" data-method="adminInitialize">Initialize configuration</button>
+<button type="button" class="act" data-act="import" data-method="adminImportForm">Import missing questions</button>
+<button type="button" class="act" data-act="register" data-method="adminRegister">Register</button>
+</div>
+<div id="statusBox" role="status" aria-live="polite"></div>
+<details id="detailsBox"><summary>Details</summary><pre id="result"></pre></details>
 </div>
 <script>
 // Stamped per environment by gas-static at build time (see manage-deployments.js / scripts/static-pages.js).
@@ -29,7 +91,7 @@ var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwDMnuZRp9dQa6ez9Kv1tBdT0sUp9FQJsdlwtqw2aUrchbQKbdNvxbWtOh_wfAjLi_iew/exec";
 var STATIC_ASSERTION_AUD_ = "nforms-test";
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
-var STATIC_BUILD_VERSION_ = "0.1.0.8";
+var STATIC_BUILD_VERSION_ = "0.1.0.9";
 const GOOGLE_CLIENT_ID = '657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com';
 // pub/nforms and pub/nforms-sit share one origin, so storage is scoped to this build's audience.
 const AUTH_KEY = 'nformsAuth.v1:' + STATIC_ASSERTION_AUD_;
@@ -71,27 +133,86 @@ function call(method,args){
   if(['expired','bad_signature','bad_aud','bad_kid','unknown_kid','malformed','missing_identity'].includes(res.error)){signOut();throw new Error('Session no longer accepted ('+res.error+'). Sign in again.')}
   if(res.error==='not_admin')throw new Error('This Google account is not an NForms administrator.');
   throw new Error(res.message||res.error||'Request failed.')})}
-function refresh(){message('Loading…');call('adminListForms').then(rows=>{
+// ---- Help panel (DESIGN W5) ----
+const HELP_KEY='nformsHelp.v1';
+const live={submit:false,audit:false};
+function renderHelpAvail(){
+ $('helpSubmit').textContent=live.submit?'Live: it works while the form is On.':'Not live yet: today it opens a "not enabled" page.';
+ $('helpAuditor').textContent=live.audit?'Live: every change is logged.':'Not live yet.'}
+function setHelp(open,focusId,persist){
+ $('helpPanel').hidden=!open;$('helpBtn').setAttribute('aria-expanded',open?'true':'false');
+ if(persist!==false){try{localStorage.setItem(HELP_KEY,open?'open':'closed')}catch(e){}}
+ if(open&&focusId){const t=$(focusId);if(t){t.focus();if(t.scrollIntoView)t.scrollIntoView({block:'start'})}}
+ else if(focusId==='button')$('helpBtn').focus()}
+$('helpBtn').addEventListener('click',()=>{const open=$('helpPanel').hidden;setHelp(open,open?'helpTitle':'button')});
+document.querySelectorAll('button.info').forEach(b=>b.addEventListener('click',()=>setHelp(true,b.dataset.help)));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('helpPanel').hidden){e.preventDefault();setHelp(false,'button')}});
+// ---- Dashboard ----
+function el(tag,txt,cls){const e=cell(tag,txt);if(cls)e.className=cls;return e}
+function linkWithTag(text,url,unavailable){const a=link(text,url);if(unavailable)a.appendChild(el('span','not live yet','tag'));return a}
+function n(v){return Array.isArray(v)?v.length:(Number(v)||0)}
+function plural(k,one,many){return k+' '+(k===1?one:many)}
+function statusCell(r){
+ const td=document.createElement('td');td.dataset.label='Status';
+ if(!r.state){td.textContent=r.error||r.configStatus||'—';return td}
+ td.appendChild(el('div',r.stateLabel||r.state,'status-state'));
+ if(r.next&&r.next.text)td.appendChild(el('div',r.next.text));
+ const errs=Array.isArray(r.errors)?r.errors:[];
+ if(errs.length){const ul=document.createElement('ul');ul.className='status-errs';
+  errs.slice(0,3).forEach(m=>ul.appendChild(el('li',String(m))));
+  if(errs.length>3)ul.appendChild(el('li','+'+(errs.length-3)+' more'));td.appendChild(ul)}
+ return td}
+function linksCell(r){
+ const td=document.createElement('td');td.className='links';td.dataset.label='Links';
+ const items=[['Submit',r.submitUrl,r.submitAvailable!==true],['Auditor',r.auditorUrl,r.auditorAvailable!==true],['Sheet',r.spreadsheetUrl,false]];
+ items.forEach(([name,url,off])=>{const u=safeUrl(url);if(u)td.appendChild(linkWithTag(name,u,off))});
+ if(r.googleForm&&r.googleForm.linked){const u=safeUrl(r.googleForm.editUrl);if(u)td.appendChild(link('Google Form',u))}
+ return td}
+function refresh(){message('Loading…');return call('adminListForms').then(rows=>{
  const root=$('forms');root.replaceChildren();
+ live.submit=rows.some(r=>r.submitAvailable===true);live.audit=rows.some(r=>r.auditorAvailable===true);renderHelpAvail();
  rows.forEach(r=>{const tr=document.createElement('tr');
- tr.appendChild(cell('td',(r.name||r.slug)+' ('+r.slug+')'));
- tr.appendChild(cell('td',r.responseCount??'—'));
- tr.appendChild(cell('td',r.lastSubmission||'—'));
- tr.appendChild(cell('td',r.error||r.configStatus||'—'));
- const td=document.createElement('td');td.className='links';
- [['Submit',r.submitUrl],['Auditor',r.auditorUrl],['Sheet',r.spreadsheetUrl]].forEach(([name,url])=>{const u=safeUrl(url);if(u){td.appendChild(link(name,u));td.append('  ')}});
- tr.appendChild(td);root.appendChild(tr)});
- if(!rows.length){const tr=document.createElement('tr');const td=cell('td','No registered forms');td.colSpan=5;tr.appendChild(td);root.appendChild(tr)}
- message('Loaded '+rows.length+' forms.')}).catch(err=>message(err.message||String(err),true))}
-function nextStep(method,r){
- if(method==='adminPreviewRegistration'){const errs=(r.warnings||[]).filter(w=>w.severity==='error').length;return errs?' '+errs+' configuration errors: enter a form key above and click Initialize configuration, then Import missing questions, then Register.':r.registered?' Already registered.':' Configuration is valid: click Register.'}
- if(method==='adminInitialize')return ' Next: Import missing questions.';
- if(method==='adminImportForm')return ' Next: Inspect again, then Register.';
- return''}
+ let c=cell('td',(r.name||r.slug)+' ('+r.slug+')');c.dataset.label='Form';tr.appendChild(c);
+ c=cell('td',r.responseCount??'—');c.dataset.label='Responses';tr.appendChild(c);
+ c=cell('td',r.lastSubmission||'—');c.dataset.label='Last submission';tr.appendChild(c);
+ tr.appendChild(statusCell(r));tr.appendChild(linksCell(r));root.appendChild(tr)});
+ if(!rows.length){const tr=document.createElement('tr');const td=cell('td','No registered forms');td.colSpan=5;tr.appendChild(td);root.appendChild(tr);setHelp(true,null,false)}
+ message('Loaded '+rows.length+' form'+(rows.length===1?'':'s')+'.')}).catch(err=>message(err.message||String(err),true))}
+// ---- Actions and status box ----
+const ACTION_BUTTON={initialize:'initialize',import:'import',register:'register',share:'inspect'};
+function markPrimary(action){document.querySelectorAll('#actions button').forEach(b=>b.classList.toggle('primary',b.dataset.act===ACTION_BUTTON[action]))}
+function countsText(method,r){
+ if(method==='adminPreviewRegistration')return 'Checked only; nothing was changed.';
+ if(method==='adminRegister')return 'Registered'+(r.slug?' as "'+r.slug+'"':'')+'. The spreadsheet was not changed.';
+ const p=[];
+ if(n(r.tabsCreated))p.push('created '+plural(n(r.tabsCreated),'tab','tabs'));
+ if(n(r.settingsAdded))p.push('added '+plural(n(r.settingsAdded),'setting','settings'));
+ if(n(r.exampleAdded))p.push('added the example question');
+ if(n(r.responseColumnsAdded))p.push('added '+plural(n(r.responseColumnsAdded),'answer column','answer columns'));
+ if(n(r.createdFields))p.push('added '+plural(n(r.createdFields),'question','questions'));
+ if(n(r.createdOptions))p.push('added '+plural(n(r.createdOptions),'choice','choices'));
+ let t=p.length?'Done: '+p.join(', ')+'.':'Nothing needed changing.';
+ if(r.newRowsSwitchedOff&&n(r.createdFields))t+=' The new questions are switched off; set Enabled to TRUE in Fields to show them.';
+ return t}
+function showStatus(method,r){
+ const box=$('statusBox');box.replaceChildren();
+ if(!r||typeof r!=='object')return;
+ if(r.stateLabel)box.appendChild(el('div','Status: '+r.stateLabel,'status-state'));
+ box.appendChild(el('div',countsText(method,r)));
+ if(r.next&&r.next.text)box.appendChild(el('div','Next: '+r.next.text,'next'));
+ const errs=Array.isArray(r.errors)?r.errors:[];
+ if(errs.length){const ul=document.createElement('ul');ul.className='status-errs';errs.slice(0,5).forEach(m=>ul.appendChild(el('li',String(m))));box.appendChild(ul)}
+ markPrimary(r.next&&r.next.action)}
+function busy(on){document.querySelectorAll('button.act').forEach(b=>{b.disabled=on})}
 function run(method){const args={slug:$('slug').value,spreadsheet:$('spreadsheet').value,form:$('form').value};
- message('Running '+method+'…');
- call(method,args).then(result=>{$('result').textContent=JSON.stringify(result,null,2);message(method+' completed.'+nextStep(method,result));refresh()}).catch(err=>{const m=err.message||String(err);$('result').textContent='Error: '+m;message(m,true)})}
-$('refreshBtn').addEventListener('click',refresh);
+ message('Running…');busy(true);
+ call(method,args).then(result=>{$('result').textContent=JSON.stringify(result,null,2);showStatus(method,result);message('');return refresh()})
+ .catch(err=>{const m=err.message||String(err);$('result').textContent='Error: '+m;$('statusBox').replaceChildren();message(m,true)})
+ .then(()=>busy(false))}
+document.querySelectorAll('#actions button').forEach(b=>b.addEventListener('click',()=>run(b.dataset.method)));
+renderHelpAvail();markPrimary('share');
+(function(){let v=null;try{v=localStorage.getItem(HELP_KEY)}catch(e){}if(v==='open')setHelp(true,null,false)})();
+$('refreshBtn').addEventListener('click',()=>{busy(true);refresh().then(()=>busy(false))});
 $('envLabel').textContent=STATIC_ENV_LABEL_?'('+STATIC_ENV_LABEL_+')':'';
 const cached=loadAuth();if(cached){state.assertion=cached.assertion;state.email=cached.email}
 showState();if(state.assertion)refresh();else initSignIn();
