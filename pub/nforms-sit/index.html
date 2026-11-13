@@ -5,7 +5,7 @@
 @media (prefers-color-scheme:dark){:root{--fg:#e8edf3;--bg:#111821;--muted:#aab6c5;--line:#3a4655;--th:#1b2531;--link:#8cc4ff;--err:#ff9aa4;--ok:#7ddb9f;--panel:#16212d;--tag-bg:#4a3a10;--tag-fg:#ffe2a0;--btn:#1b2531;--btn-fg:#e8edf3;--btn-line:#8896a8;--pri:#8cc4ff;--pri-fg:#06121f;--focus:#8cc4ff}}
 body{font:15px system-ui,Arial,sans-serif;max-width:1180px;margin:24px auto;padding:0 18px;color:var(--fg);background:var(--bg)}
 h1{font-size:1.6rem;display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px}h2{font-size:1.2rem;margin-top:36px;display:flex;align-items:center;gap:8px}
-h3{font-size:1rem;margin:16px 0 6px}
+h3{font-size:1rem;margin:16px 0 6px}h4{font-size:.95rem;margin:12px 0 4px}
 table{width:100%;border-collapse:collapse}th,td{padding:11px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--th)}
 label{display:block;margin:11px 0 5px}input{padding:9px;width:100%;box-sizing:border-box;color:var(--fg);background:var(--bg);border:1px solid var(--btn-line);border-radius:4px}
 button{padding:9px 14px;cursor:pointer;margin:7px 8px 7px 0;color:var(--btn-fg);background:var(--btn);border:1px solid var(--btn-line);border-radius:4px;font:inherit}
@@ -58,6 +58,66 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere}
 <p><em>Auditor</em> is where signed-in reviewers search and correct answers. <span id="helpAuditor"></span></p>
 <p><em>Sheet</em> opens the spreadsheet with the answers and the questions. You need your own access to it.</p>
 <p><em>Google Form</em> opens the original Google Form while it is still linked.</p>
+<h3 id="help-config" tabindex="-1">Configuring questions</h3>
+<p>A form without a Google Form starts with a worked example in the Fields, Options and Conditions tabs. Every example Field ID begins with <code>example_</code>. Edit them to suit, or hide them (see Hide or delete), and add your own rows. Questions appear in Order, within their section.</p>
+<h4>Fields tab: one row per question or page break</h4>
+<ul>
+<li><code>Field ID</code>: the question's permanent key, lowercase letters, digits and underscores. Do not change it once answers exist.</li>
+<li><code>Source Item ID</code>: the Google Form item this row came from. Leave blank for questions you add.</li>
+<li><code>Order</code>: a number; lower numbers come first.</li>
+<li><code>Section ID</code>: the page the question is on. <code>main</code> is the first page. A PAGE_BREAK row starts a new page, and its own Section ID is the name later questions use.</li>
+<li><code>Heading</code>: a short name for you; not shown to respondents.</li>
+<li><code>Prompt</code>: the question as respondents read it.</li>
+<li><code>Help Text</code>: smaller explanatory text under the question.</li>
+<li><code>Type</code>: see Question types below.</li>
+<li><code>Required</code>: TRUE if an answer must be given.</li>
+<li><code>Enabled</code>: TRUE shows the question; FALSE hides it.</li>
+<li><code>Response Header</code>: the exact column title in the response tab where the answer is saved. It must match one column. Click Initialize configuration to add a column for each new enabled question.</li>
+<li><code>Default Value</code>, <code>Validation JSON</code>, <code>UI JSON</code>: optional advanced settings; leave blank unless you were told what to enter.</li>
+</ul>
+<h4>Question types (Fields, Type)</h4>
+<ul>
+<li><code>TEXT</code>: one short line. <code>PARAGRAPH_TEXT</code>: several lines.</li>
+<li><code>MULTIPLE_CHOICE</code>: pick one of the options, shown as buttons. <code>LIST</code>: pick one from a drop-down. <code>CHECKBOX</code>: pick any number. Each needs rows in the Options tab.</li>
+<li><code>SCALE</code>: pick one number. Proposed: one Options row per step, for example 1 to 5.</li>
+<li><code>DATE</code>, <code>TIME</code>, <code>DATETIME</code>, <code>DURATION</code>: a date, a time of day, both, or a length of time.</li>
+<li><code>PAGE_BREAK</code>: starts a new page; it is not a question and has no answer column. Import also reads <code>SECTION_HEADER</code>, <code>GRID</code> and <code>CHECKBOX_GRID</code> rows from a Google Form; the example does not include them.</li>
+</ul>
+<h4>Options tab: one row per choice</h4>
+<ul>
+<li><code>Field ID</code>: the question the choice belongs to. <code>Order</code>: its position.</li>
+<li><code>Value</code>: what is saved in the answer column. <code>Label</code>: what respondents read; usually the same.</li>
+<li><code>Enabled</code>: FALSE hides the choice.</li>
+<li><code>Navigation</code>: MULTIPLE_CHOICE only; where this choice sends the respondent: <code>CONTINUE</code>, <code>GO_TO_PAGE</code>, <code>RESTART</code> or <code>SUBMIT</code>. <code>Target Section ID</code>: for GO_TO_PAGE, the Section ID of the page to jump to. Leave both blank otherwise.</li>
+</ul>
+<h4>Conditions tab: one row per rule</h4>
+<p>Rules change what the form shows depending on an earlier answer. <em>Proposed, enforced from M2:</em> NForms does not apply them yet and does not reject other values yet. The example rules are switched off.</p>
+<ul>
+<li><code>Rule ID</code> and <code>Order</code>: the rule's name and its position. <code>Enabled</code>: TRUE turns the rule on.</li>
+<li><code>Trigger Field ID</code>: the question whose answer is tested. <code>Comparison Value</code>: the value it is tested against.</li>
+<li><code>Operator</code>: <code>equals</code>, <code>not_equals</code>, <code>contains</code>, <code>is_empty</code> or <code>is_not_empty</code>. The last two ignore Comparison Value.</li>
+<li><code>Action</code>: <code>show</code> shows the target question when the test is true; <code>hide</code> hides it; <code>skip_to_section</code> jumps to a page.</li>
+<li><code>Target Field/Section ID</code>: the Field ID for show and hide, or the Section ID for skip_to_section.</li>
+</ul>
+<h4>Settings tab: Key and Value</h4>
+<ul>
+<li><code>schemaVersion</code>: the layout version; do not change. <code>formKey</code>: the form key.</li>
+<li><code>title</code>, <code>description</code>: shown at the top of the form. <code>confirmationMessage</code>: shown after submitting.</li>
+<li><code>responseSheet</code>: the tab where answers are saved. <code>formEnabled</code>: true opens the form to respondents; false closes it. <code>collectEmail</code>: true asks for an email address.</li>
+<li><code>notificationEmails</code>: comma-separated addresses to tell about new answers; blank means none.</li>
+<li><code>htmlFormUrl</code>, <code>sourceFormId</code>, <code>sourceUrl</code>, <code>importedAt</code>: records of where the form came from; leave them alone.</li>
+</ul>
+<h4>Hide or delete</h4>
+<p>To remove a question or choice from the form, set Enabled to FALSE. Its answers stay in the response tab. Delete a row only for a question you added by mistake and that has no answers; if it came from a Google Form, Import would add it back. Never delete or rename a response column.</p>
+<h4>Worked example</h4>
+<p>The seeded form has one question of each type on the first page (<code>example_text</code> to <code>example_scale</code>), then <code>example_followup</code>, then a PAGE_BREAK <code>example_page_end</code> followed by <code>example_last</code>.</p>
+<ul>
+<li><code>example_choice</code> has two options. <em>Show more</em> has Navigation CONTINUE. <em>Jump to the last page</em> has Navigation GO_TO_PAGE and Target Section ID <code>example_page_end</code>.</li>
+<li><code>example_checkbox</code>, <code>example_list</code> and <code>example_scale</code> have plain options with no Navigation.</li>
+<li>Rule <code>example_rule_show</code>: when <code>example_choice</code> equals <em>Show more</em>, show <code>example_followup</code>.</li>
+<li>Rule <code>example_rule_skip</code>: when <code>example_list</code> equals <em>Option B</em>, skip_to_section <code>example_page_end</code>.</li>
+<li>Both rules are Enabled FALSE until you turn them on. To make the form your own, set Enabled to FALSE on the example rows, add your questions, then click Initialize configuration to add their answer columns.</li>
+</ul>
 <h3 id="help-know" tabindex="-1">Good to know</h3>
 <p><em>Refresh</em> reloads the form list. <em>Sign out</em> forgets your sign-in on this browser. <em>Details</em>, under the buttons, shows the raw server reply; it is for troubleshooting and never contains answers.</p>
 <p>The Status column shows what to do next for each form.</p>
@@ -91,7 +151,7 @@ var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwDMnuZRp9dQa6ez9Kv1tBdT0sUp9FQJsdlwtqw2aUrchbQKbdNvxbWtOh_wfAjLi_iew/exec";
 var STATIC_ASSERTION_AUD_ = "nforms-test";
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
-var STATIC_BUILD_VERSION_ = "0.1.0.9";
+var STATIC_BUILD_VERSION_ = "0.1.0.10";
 const GOOGLE_CLIENT_ID = '657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com';
 // pub/nforms and pub/nforms-sit share one origin, so storage is scoped to this build's audience.
 const AUTH_KEY = 'nformsAuth.v1:' + STATIC_ASSERTION_AUD_;
@@ -187,7 +247,7 @@ function countsText(method,r){
  const p=[];
  if(n(r.tabsCreated))p.push('created '+plural(n(r.tabsCreated),'tab','tabs'));
  if(n(r.settingsAdded))p.push('added '+plural(n(r.settingsAdded),'setting','settings'));
- if(n(r.exampleAdded))p.push('added the example question');
+ if(n(r.exampleAdded))p.push('added '+plural(n(r.exampleAdded),'example question','example questions'));
  if(n(r.responseColumnsAdded))p.push('added '+plural(n(r.responseColumnsAdded),'answer column','answer columns'));
  if(n(r.createdFields))p.push('added '+plural(n(r.createdFields),'question','questions'));
  if(n(r.createdOptions))p.push('added '+plural(n(r.createdOptions),'choice','choices'));
