@@ -183,6 +183,14 @@
   .collapsebtn[aria-expanded="false"]{transform:rotate(-90deg)}
   .rowmain{flex:1;min-width:0}
   .action{color:#111827}
+  .assignees{display:inline-flex;gap:6px;flex-wrap:wrap;align-items:baseline;max-width:100%}
+  .assignees .asn{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .assignees .asn.co{opacity:.8;font-style:italic}
+  .assignees .as-extra{display:none}
+  .assignees.open .as-extra{display:inline-block}
+  .assignees .asmore{font-size:12px;padding:0}
+  @media (max-width:640px){ .assignees .asn{max-width:120px} }
+  .overlapnote{margin:0 2px 8px}
   .rowmeta{color:var(--muted);font-size:12px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap}
   .aiN{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;padding-top:1px}
 
@@ -446,7 +454,7 @@
       </div>
       <span class="searcherr hidden" id="searchError" role="alert">Not a Google Doc link or ID</span>
       <div class="chiprow hidden" id="chipRow"></div>
-      <div class="listhead"><div class="sub" id="countLabel" role="status"></div><span id="selectAllHost"></span></div>
+      <div class="listhead"><div class="sub" id="countLabel" role="status"></div><span id="selectAllHost"></span><span id="collapseAllHost"></span></div>
     </div>
 
     <!-- NT-2wr2.2: Filters panel (side panel on desktop, bottom sheet on phone). The old filter-row controls keep
@@ -548,7 +556,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.9";
+var STATIC_BUILD_VERSION_ = "0.1.28.10";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -1153,7 +1161,9 @@ function teamScope_(){
   if (state.teams.length === 1) return state.teams[0].teamId;
   return ALL_TEAMS_ID;
 }
-function peopleEmails_(){ return state.people.filter(x => x !== 'me'); }
+function peopleEmails_(){ return state.people.filter(x => x !== 'me' && x !== 'unassigned'); }
+// NT-2wr2.17: 'unassigned' in the People filter = items with no assignee and no co-assignee.
+function peopleHasUnassigned_(){ return state.people.includes('unassigned'); }
 function listPayload_(teamId){
   const payload = {
     assertion: state.assertion,
@@ -1167,8 +1177,11 @@ function listPayload_(teamId){
   // everyone; applyActions_ then filters the rows itself.
   const emails = peopleEmails_();
   if (peopleMeOnly_()) payload.scope = 'mine';
-  else if (emails.length === 1 && !state.people.includes('me')) payload.assigneeEmail = emails[0];
-  else if (state.people.length) { payload.assigneeEmails = emails; if (state.people.includes('me')) payload.includeMe = true; }
+  else if (emails.length === 1 && state.people.length === 1) payload.assigneeEmail = emails[0];
+  else if (state.people.length) {
+    payload.assigneeEmails = emails; if (state.people.includes('me')) payload.includeMe = true;
+    if (peopleHasUnassigned_()) payload.includeUnassigned = true; // NT-2wr2.17
+  }
   // The resolved-age control is hidden (and therefore meaningless) once
   // statusFilter=open — windowDays never affects unresolved rows anyway
   // (plan §12.1 invariant 1), but omit it in that state for clarity.
@@ -1191,10 +1204,12 @@ function narrowRows_(rows, res){
   if (state.docId) return rows;
   if (state.teamIds.length > 1 && !Array.isArray(res.teamIds)) rows = rows.filter(r => state.teamIds.indexOf(r.team_id) !== -1);
   const emails = peopleEmails_();
-  const multi = !peopleMeOnly_() && !(emails.length === 1 && !state.people.includes('me')) && state.people.length;
-  if (multi && !Array.isArray(res.assigneeEmails)) {
+  const un = peopleHasUnassigned_();
+  const multi = !peopleMeOnly_() && !(emails.length === 1 && state.people.length === 1) && state.people.length;
+  // NT-2wr2.17: a server that does not echo includeUnassigned did not apply it, so filter here.
+  if (multi && (un ? res.includeUnassigned !== true : !Array.isArray(res.assigneeEmails))) {
     const want = emails.concat(state.people.includes('me') && state.email ? [state.email.toLowerCase()] : []);
-    rows = rows.filter(r => rowHasPerson_(r, want));
+    rows = rows.filter(r => rowHasPerson_(r, want) || (un && assigneeItems_(r).length === 0));
   }
   return rows;
 }
@@ -1718,6 +1733,7 @@ function renderList_(){
   renderToolbar_(rows);
 
   listEl.innerHTML = '';
+  $('collapseAllHost').innerHTML = '';
   $('docNoAccess').classList.toggle('hidden', !state.docDenied);
   if (state.docDenied) { renderNoAccessCard_(); return; } // NT-71y.2 C4 / NT-2wr2.4: the no-access card stands alone
   if (state.docId && state.docTracked === false) { // NT-o1zu.5 AC3: an untracked document
@@ -1748,18 +1764,31 @@ function renderList_(){
   // One level of groups (spec section 4). Every group starts expanded; collapsed ones are remembered. Groups with
   // open items come first (the document named in the URL leads), then by name.
   const groups = new Map();
-  const keyOf = r => mode === 'team' ? (r.team_id || state.teamId || '')
-    : mode === 'person' ? (String(r.assignee_email || r.assignee_name || '').toLowerCase())
-    : r.doc_id;
-  rows.forEach(r => { const k = keyOf(r); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+  // NT-2wr2.17: Person grouping lists an item under EACH of its assignees (primary and co-assignees); an item with
+  // none goes under Unassigned. Group counts therefore overlap; totals elsewhere count each item once.
+  const keysOf = r => mode === 'team' ? [r.team_id || state.teamId || '']
+    : mode === 'person' ? (assigneeItems_(r).map(a => a.text.toLowerCase()).filter((x, i, a) => a.indexOf(x) === i))
+    : [r.doc_id];
+  let overlap = false;
+  rows.forEach(r => {
+    let ks = keysOf(r);
+    if (!ks.length) ks = [''];
+    if (mode === 'person' && ks.length > 1) overlap = true;
+    ks.forEach(k => { if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+  });
+  const meKey = (state.email || '').toLowerCase();
   const nameOf = (k, rs) => mode === 'team' ? teamDisplayName(k)
-    : mode === 'person' ? (k ? (isMine(rs[0]) ? (rs[0].assignee_name || personName_(k)) + ' (me)' : (rs[0].assignee_name || rs[0].assignee_email)) : 'Unassigned')
+    : mode === 'person' ? (k ? (((rs.find(r => String(r.assignee_email || '').toLowerCase() === k) || {}).assignee_name || personName_(k) || k)
+        + (k === meKey ? ' (me)' : '')) : 'Unassigned')
     : (rs[0].doc_name || '(untitled document)');
   const list = Array.from(groups.entries()).map(([k, rs], i) => ({ k, rs, i, name: nameOf(k, rs),
-    rank: mode === 'person' ? (!k ? 3 : isMine(rs[0]) ? 0 : rs.some(isOpenRow_) ? 1 : 2)
+    rank: mode === 'person' ? (!k ? 3 : k === meKey ? 0 : rs.some(isOpenRow_) ? 1 : 2)
         : (k === state.docId ? 0 : rs.some(isOpenRow_) ? 1 : 2) }));
   list.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name) || a.i - b.i);
   const teamsInList = new Set(rows.map(r => r.team_id)).size;
+  renderCollapseAll_(list.map(g => groupKey_(mode, g.k)));
+  if (mode === 'person' && overlap) listEl.insertAdjacentHTML('beforeend',
+    '<div class="sub overlapnote" id="overlapNote">Items with several assignees are listed under each of them, so group counts overlap. Totals count each item once.</div>');
   list.forEach(g => {
     if (mode === 'document') { listEl.insertAdjacentHTML('beforeend', docGroupHtml(g.k, g.rs, teamsInList > 1)); return; }
     const sub = g.rs.length;
@@ -1776,6 +1805,20 @@ function renderList_(){
   renderReferences_();
 }
 
+// NT-2wr2.17: one control collapses or expands every group currently drawn; choices persist like single toggles.
+function renderCollapseAll_(keys){
+  const host = $('collapseAllHost');
+  if (!host) return;
+  if (!keys || !keys.length) { host.innerHTML = ''; return; }
+  loadCollapsed_();
+  const allCollapsed = keys.every(k => state.collapsed[k] === true);
+  host.innerHTML = `<button class="linkbtn" id="collapseAllBtn" type="button" title="${allCollapsed ? 'Expand every group' : 'Collapse every group'}">${allCollapsed ? 'Expand all' : 'Collapse all'}</button>`;
+  $('collapseAllBtn').addEventListener('click', () => {
+    keys.forEach(k => { state.collapsed[k] = !allCollapsed; });
+    saveCollapsed_();
+    render();
+  });
+}
 function bindListEvents_(){
 
   listEl.querySelectorAll('[data-toggle-group]').forEach(b => b.addEventListener('click', () => {
@@ -1783,6 +1826,12 @@ function bindListEvents_(){
     state.collapsed[key] = !state.collapsed[key];
     saveCollapsed_();
     render();
+  }));
+  listEl.querySelectorAll('[data-asmore]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const box = b.closest('.assignees'); const open = box.classList.toggle('open');
+    b.textContent = open ? 'less' : b.dataset.asmore;
+    b.setAttribute('aria-expanded', String(open));
   }));
   listEl.querySelectorAll('[data-sync]').forEach(b => b.addEventListener('click', onSyncClick));
   listEl.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openPanel_(b.dataset.edit)));
@@ -1942,6 +1991,27 @@ function fromHtml_(from){
 function isOpenRow_(r){ return !r.status_resolved; }
 function rowTier_(r){ return state.teamId === ALL_TEAMS_ID ? (state.teamTiers[r.team_id] || 'NONE') : state.tier; }
 function daysSince_(iso){ const t = iso ? Date.parse(iso) : NaN; return isNaN(t) ? null : Math.max(0, Math.floor((Date.now() - t) / 86400000)); }
+// NT-2wr2.17: every assignee of a row: the primary first, co-assignees marked '+' and muted, '(me)' on the caller.
+// More than 3 collapse behind '+N more' (tap to expand); the whole list is also the tooltip.
+function assigneesHtml_(r){
+  const items = assigneeItems_(r);
+  if (!items.length) return '<span class="assignees">Unassigned</span>';
+  const hasPrimary = !!(r.assignee_email || r.assignee_name);
+  const me = (state.email || '').toLowerCase();
+  const parts = items.map((a, i) => {
+    const co = !(hasPrimary && i === 0);
+    const key = a.text.toLowerCase();
+    const name = !co ? (r.assignee_name || a.text) : (a.email ? (personName_(key) || a.text) : a.text);
+    const label = name + (a.email && key === me ? ' (me)' : '');
+    return { co, label };
+  });
+  const title = parts.map(p => (p.co ? 'Co-assignee: ' : 'Assignee: ') + p.label).join('\n');
+  const LIM = 3;
+  const one = (p, i) => `<span class="asn${p.co ? ' co' : ''}${i >= LIM ? ' as-extra' : ''}" ${p.co ? 'title="Co-assignee"' : ''}>${p.co ? '+ ' : ''}${escape(p.label)}</span>`;
+  const more = parts.length > LIM
+    ? `<button class="linkbtn asmore" type="button" data-asmore="+${parts.length - LIM} more" aria-expanded="false">+${parts.length - LIM} more</button>` : '';
+  return `<span class="assignees" title="${escape(title)}">${parts.map(one).join('')}${more}</span>`;
+}
 function rowHtml(r, tier, o){
   const age = o && o.showDoc && isOpenRow_(r) ? daysSince_(r.created_date) : null;
   const mine = isMine(r);
@@ -1954,7 +2024,7 @@ function rowHtml(r, tier, o){
       <div class="rowmain">
         <div class="action">${escape(r.action_text)}</div>
         <div class="rowmeta">
-          <span>${escape(r.assignee_name || r.assignee_email || 'Unassigned')}${mine ? ' (you)' : ''}</span>
+          ${assigneesHtml_(r)}
           ${o && o.showDoc ? `<span class="rowdoc"><a href="${escape(r.doc_url)}" target="_blank" rel="noopener">${escape(r.doc_name || '(untitled document)')}</a></span>` : ''}
           <span>updated ${shortDate(r.modified_date)}</span>${age !== null ? `<span>open ${age} ${age === 1 ? 'day' : 'days'}</span>` : ''}
           ${r.removed ? '<span class="removedbadge" title="This action is no longer in its document">Removed from document</span>' : ''}
@@ -2172,8 +2242,8 @@ function copyTargets_(globalId){
   const r = rowByGlobalId(globalId);
   return r ? [r] : [];
 }
-function selectedRowsInOrder_(){
-  return bulkBoxes_().map(b => b.dataset.select).filter(g => state.selected.has(g))
+function selectedRowsInOrder_(){ // one entry per item: Person grouping draws an item once under each assignee
+  return bulkBoxes_().map(b => b.dataset.select).filter((g, i, a) => state.selected.has(g) && a.indexOf(g) === i)
     .map(rowByGlobalId).filter(Boolean);
 }
 // NT-w0x: the row's assignees in order (primary, then co_assignees): {text, email} with email '' for a
@@ -2759,7 +2829,7 @@ function personName_(email){
   return (a && a.name) || email;
 }
 function peopleLabel_(){
-  return state.people.map(x => x === 'me' ? 'Me' : personName_(x)).join(', ');
+  return state.people.map(x => x === 'me' ? 'Me' : x === 'unassigned' ? 'Unassigned' : personName_(x)).join(', ');
 }
 function teamsLabel_(){
   return state.teamIds.length ? state.teamIds.map(teamDisplayName).join(', ') : 'All';
@@ -2806,8 +2876,8 @@ const peopleCfg_ = {
   title: 'People', anyLabel: 'Anyone',
   options: () => {
     const mine = (state.email || '').toLowerCase();
-    const list = [{ value: 'me', label: 'Me' }];
-    const seen = new Set(['me', mine]);
+    const list = [{ value: 'me', label: 'Me' }, { value: 'unassigned', label: 'Unassigned' }];
+    const seen = new Set(['me', 'unassigned', mine]);
     state.assignees.forEach(a => { const e = String(a.email || '').toLowerCase(); if (e && !seen.has(e)) { seen.add(e); list.push({ value: e, label: a.name || e }); } });
     state.people.forEach(e => { if (!seen.has(e)) { seen.add(e); list.push({ value: e, label: e }); } }); // a linked person stays selectable
     return list;
