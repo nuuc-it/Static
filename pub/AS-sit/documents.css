@@ -1,0 +1,39 @@
+/* NT-2wr2.15: Tracker Documents view. Scoped under #documentsView; reuses index.html tokens and .btn/.linkbtn/.tag. */
+#documentsView .dv-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+#documentsView .dv-toolbar input[type=search]{flex:1 1 200px;min-width:140px;border:1px solid var(--line);border-radius:9px;padding:6px 10px;font:inherit;background:#fff}
+#documentsView .dv-show{position:relative}
+#documentsView .dv-showmenu{position:absolute;z-index:20;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;box-shadow:var(--shadow);padding:8px 12px;display:flex;flex-direction:column;gap:6px;white-space:nowrap}
+#documentsView .dv-showmenu label{display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer}
+#documentsView .dv-folder{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 10px;overflow:hidden}
+#documentsView .dv-fhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 12px;background:#f9fafb;border-bottom:1px solid var(--line)}
+#documentsView .dv-folder.collapsed .dv-fhead{border-bottom:0}
+#documentsView .dv-toggle{border:0;background:none;cursor:pointer;font-size:13px;color:var(--muted);padding:2px 4px}
+#documentsView .dv-path{font-weight:600;font-size:14px;color:var(--text);text-decoration:none;word-break:break-word}
+#documentsView a.dv-path:hover{text-decoration:underline;color:var(--blue)}
+#documentsView .dv-scan{margin-left:auto;display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted)}
+#documentsView .dv-folder.collapsed .dv-rows{display:none}
+#documentsView .dv-row{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid #eef2f7}
+#documentsView .dv-row:last-child{border-bottom:0}
+#documentsView .dv-row.sel{background:var(--blue2)}
+#documentsView .dv-title{flex:1 1 auto;min-width:0}
+#documentsView .dv-title a{color:var(--text);text-decoration:none;word-break:break-word}
+#documentsView .dv-title a:hover{color:var(--blue);text-decoration:underline}
+#documentsView .dv-meta{font-size:12px;color:var(--muted);margin-top:2px}
+#documentsView .dv-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;border:1px solid var(--line);white-space:nowrap}
+#documentsView .dv-pill.tracked{background:var(--green2);border-color:#a7f3d0;color:#065f46}
+#documentsView .dv-pill.not_tracked{background:#f3f4f6;color:#374151}
+#documentsView .dv-pill.excluded{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+#documentsView .dv-acts{display:flex;gap:6px;align-items:center;white-space:nowrap}
+#documentsView .dv-viewonly{font-size:12px;color:var(--muted)}
+#documentsView .dv-empty{padding:12px;color:var(--muted);font-size:13px}
+#documentsView .dv-confirm{position:fixed;inset:0;background:rgba(17,24,39,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+#documentsView .dv-confirm .box{background:var(--panel);border-radius:14px;padding:18px;max-width:420px;box-shadow:var(--shadow)}
+#documentsView .dv-confirm .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+#documentsView .btn.danger{background:var(--red);border-color:var(--red);color:#fff}
+@media (max-width:640px){
+  #documentsView .dv-row{flex-wrap:wrap}
+  #documentsView .dv-title{flex:1 1 calc(100% - 40px)}
+  #documentsView .dv-acts{flex:1 0 100%;padding-left:28px}
+  #documentsView .dv-scan{margin-left:0;flex:1 0 100%}
+}

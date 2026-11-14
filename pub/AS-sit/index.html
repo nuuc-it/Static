@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Tracker — NUUC Action Sheet</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<link rel="stylesheet" href="documents.css">
 <style>
   /* Visual idiom carried over verbatim from the human-reviewed slice,
      GActionSheet's docs/team-portal-mockup.html (gts-79dw.4.7 gate,
@@ -138,6 +139,8 @@
   .seg button[aria-pressed="true"]{background:var(--blue);color:#fff}
   .seam{opacity:.5;cursor:not-allowed}
 
+  .grpsel{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted,#5b6577)}
+  .grpsel .sel{width:auto}
   .list{margin-top:14px;display:flex;flex-direction:column;gap:14px}
   .docgroup{background:var(--panel);border:1px solid var(--line);border-radius:14px;
             box-shadow:0 1px 0 rgba(0,0,0,.02);overflow:hidden}
@@ -161,10 +164,17 @@
   .scanfolder{gap:2px;margin-left:24px}
   .scanfolder .teamname{font-weight:600}
   .scanfolder > li{list-style:none;margin-left:30px}
-  .teamchips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
-  .teamchips button{border:1px solid #bfdbfe;background:#fff;border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer;color:inherit}
-  .teamchips button[aria-pressed="true"]{background:#dbeafe;border-color:#2563eb;font-weight:600}
-  #findScanStatus{white-space:normal;margin-left:6px}
+  /* NT-2wr2.13: multi-select pickers (Teams, People) */
+  .ms{position:relative}
+  .msbtn{white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis}
+  .mspop{position:absolute;top:calc(100% + 4px);left:0;z-index:40;min-width:220px;max-width:min(320px,90vw);max-height:320px;
+         overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px}
+  .mspop label{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px}
+  .mspop label:hover{background:#f3f6fb}
+  .mspop .msdiv{border-top:1px solid var(--line);margin:4px 0}
+  .searcherr{color:#b91c1c;font-size:12px}
+  .toolrow{flex-wrap:wrap}
+  @media (max-width:640px){ .toolrow .searchbox{flex:1 0 100%;order:5} }
   .viewonly{margin-left:8px;font-size:12px;color:var(--muted)}
   .scanmodified{margin-left:8px;font-size:12px;color:var(--muted)}
   .collapsebtn{border:1px solid var(--line);background:#fff;border-radius:6px;width:22px;height:22px;
@@ -337,9 +347,8 @@
     <header class="appbar" id="appBar">
       <h1>Tracker <span id="titleSpinner" class="spinner hidden" style="margin-left:8px;vertical-align:middle"></span></h1>
       <nav class="viewswitch" id="viewSwitch" aria-label="Views">
-        <button class="viewbtn" type="button" data-view="mine" title="Items assigned to you">My items</button>
-        <button class="viewbtn" type="button" data-view="team" title="Everyone's items in your teams">Team</button>
-        <button class="viewbtn" type="button" data-view="find" title="Open or add a document">Find documents</button>
+        <button class="viewbtn" type="button" data-view="items" title="Action items in your teams' documents">Items</button>
+        <button class="viewbtn" type="button" data-view="documents" title="The documents in your teams' folders and whether Tracker reads them">Documents</button>
       </nav>
       <div class="acctwrap">
         <button class="avatar" id="accountBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="accountBox" title="Account menu">?</button>
@@ -356,23 +365,10 @@
       </div>
     </header>
 
-    <!-- NT-2wr2.1: Find documents view. The Document box moved here from the filter row (ids unchanged). -->
-    <section class="top view hidden" id="findView">
-      <h2 class="viewhead">Find documents</h2>
-      <div class="field"><label for="docSearch">Document</label>
-        <input class="sel" id="docSearch" type="search" list="docSearchList" placeholder="Search documents or paste a Doc link" autocomplete="off" />
-        <datalist id="docSearchList"></datalist>
-        <span class="hidden" id="docSearchError" role="alert" style="color:#b91c1c;font-size:12px">Not a Google Doc link or ID</span>
-      </div>
-      <!-- NT-2wr2.6: members scan their own team's folder. UX only: the server decides who may scan (the scan
-           routes are admin-only today, so this section hides itself on a 'forbidden' answer). -->
-      <div class="field hidden" id="findScanField" style="flex-direction:column;align-items:flex-start">
-        <label id="findScanLabel">Find documents in a team folder</label>
-        <div class="teamchips hidden" id="findTeamChips" role="group" aria-labelledby="findScanLabel"></div>
-        <div><button class="btn small" id="findScanBtn" title="Scan the team folder for documents that are not in Tracker yet">Scan</button>
-          <span id="findScanStatus" class="scanstatus"></span></div>
-      </div>
-      <div class="notice hidden" id="findScanResults"></div>
+    <!-- NT-2wr2.13: Documents view hook. documents.js (NT-2wr2.15) renders into this section through
+         window.TrackerShell; this page never edits it. Until that script is present a placeholder shows. -->
+    <section class="view hidden" id="documentsView" aria-label="Documents">
+      <p class="sub" id="documentsPlaceholder">The Documents view is not available yet.</p>
     </section>
 
     <section class="view hidden" id="aboutView">
@@ -404,21 +400,6 @@
       <h2 class="adminhead">Admin tools (admins only)</h2>
       <div class="adminbody" id="adminBody">
       <div class="adminrow">
-        <!-- gts-gwyg/gts-lgpx/nightly-all-teams: admin-only. Hidden from a
-             non-admin caller (state.isAdmin comes from list_team_actions's
-             server-verified isAdmin field — this toggle is UX only, real
-             authorization is re-checked server-side on every scan call
-             itself). Shown in All-teams view too, since the nightly scan
-             (installed as a 1am daily trigger) spans every team in the same
-             shared scan state — monitoring/resuming it doesn't need one
-             real team selected; only STARTING a fresh manual scan does.
-             The button's label and enabled-ness track the persisted scan
-             state (Start / Resume / running), so the operator can always
-             tell whether a scan is moving without reading the log. -->
-        <div class="field hidden" id="adminScanField">
-          <button class="btn small" id="adminScanBtn" title="Scan this team's folders for Google Docs with actions that are not tracked yet">Scan for untracked docs</button>
-          <span id="adminScanStatus" class="scanstatus"></span>
-        </div>
         <!-- NT-g8v.29: admin tools. Same visibility as the scan panel (state.isAdmin, UX only; each route
              re-checks Config!AdminUsers server-side). -->
         <div class="field hidden" id="adminToolsField">
@@ -430,7 +411,6 @@
           <span id="adminToolsStatus" class="scanstatus"></span>
         </div>
       </div>
-      <div class="notice hidden" id="adminScanResults"></div>
       <!-- NT-eg2: tracking-system health panel (admin_health). Counts link to the filtered list (NT-56r). -->
       <div class="notice hidden" id="adminHealthPanel"></div>
       </div>
@@ -451,16 +431,20 @@
         <span id="ctxCounts"></span>
         <!-- [server?] last-synced time: list_team_actions does not return it, so this stays hidden (NT-2wr2.2/.3 notes). -->
         <span id="ctxSynced" class="hidden"></span>
-        <button class="linkbtn" id="ctxSeeAll" type="button" title="Remove the document scope and show the team's items">See all items</button>
       </div>
     </div>
 
     <!-- NT-2wr2.2: toolbar. Search, Filters button with the active-filter count, one chip per active filter. -->
     <div class="toolbar" id="filtersRow">
       <div class="toolrow">
-        <input class="sel searchbox" id="searchBox" type="search" placeholder="Search items, people, documents" aria-label="Search items, people, documents" autocomplete="off" />
-        <button class="btn" id="filtersBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="filtersPanel" title="Team, status, age, document, person and resolved-items window">Filters</button>
+        <div class="ms hidden" id="teamsMs"></div>
+        <div class="ms" id="peopleMs"></div>
+        <label class="grpsel" for="groupSel">Group by <select class="sel" id="groupSel" aria-label="Group by">
+          <option value="team">Team</option><option value="document">Document</option><option value="person">Person</option><option value="none">None</option></select></label>
+        <input class="sel searchbox" id="searchBox" type="search" placeholder="Search items, or paste a Doc link" aria-label="Search items, people, documents, or paste a Doc link" autocomplete="off" />
+        <button class="btn" id="filtersBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="filtersPanel" title="Status, document, age and resolved-items window">Filters</button>
       </div>
+      <span class="searcherr hidden" id="searchError" role="alert">Not a Google Doc link or ID</span>
       <div class="chiprow hidden" id="chipRow"></div>
       <div class="listhead"><div class="sub" id="countLabel" role="status"></div><span id="selectAllHost"></span></div>
     </div>
@@ -471,9 +455,6 @@
     <aside class="fpanel hidden" id="filtersPanel" role="dialog" aria-label="Filters">
       <div class="fphead"><h2>Filters</h2><button class="btn small" id="filtersDone" type="button">Done</button></div>
       <div class="fpbody">
-        <div class="fpfield hidden" id="teamField"><label for="teamSel">Team</label>
-          <select class="sel" id="teamSel"></select>
-        </div>
         <div class="fpfield"><label for="statusSel">Status</label>
           <select class="sel" id="statusSel">
             <option value="open">Open</option>
@@ -499,14 +480,8 @@
         </div>
         <div class="fpfield"><label for="docSearchPanel">Document</label>
           <input class="sel" id="docSearchPanel" type="search" list="docSearchList" placeholder="Search documents or paste a Doc link" autocomplete="off" />
+          <datalist id="docSearchList"></datalist>
           <span class="hidden" id="docSearchPanelError" role="alert" style="color:#b91c1c;font-size:12px">Not a Google Doc link or ID</span>
-        </div>
-        <!-- NT-tnh: person filter (Team view). res.assignees lists people with items in the teams shown; ?person=<email>
-             presets it. The server applies the filter (assigneeEmail). -->
-        <div class="fpfield" id="personField"><label for="personSelect">Person</label>
-          <select class="sel" id="personSelect" title="Show only items assigned to this person (people with items in the teams shown)">
-            <option value="">Anyone</option>
-          </select>
         </div>
         <!-- Names what the server actually does: the window ages out resolved rows only. An open action is never
              hidden by it, however stale (plan §12.1 invariant 1). -->
@@ -541,9 +516,8 @@
     <aside class="apanel hidden" id="actionPanel" role="dialog" aria-label="Update item"></aside>
     <p class="pagefoot sub"><button class="linkbtn" id="footerAbout" type="button" data-goto="about">About and privacy</button></p>
     <nav class="tabbar" id="tabBar" aria-label="Views">
-      <button class="viewbtn" type="button" data-view="mine" title="Items assigned to you">My items</button>
-      <button class="viewbtn" type="button" data-view="team" title="Everyone's items in your teams">Team</button>
-      <button class="viewbtn" type="button" data-view="find" title="Open or add a document">Find</button>
+      <button class="viewbtn" type="button" data-view="items" title="Action items in your teams' documents">Items</button>
+      <button class="viewbtn" type="button" data-view="documents" title="The documents in your teams' folders and whether Tracker reads them">Documents</button>
     </nav>
 
   </div>
@@ -574,7 +548,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.8";
+var STATIC_BUILD_VERSION_ = "0.1.28.9";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -685,22 +659,16 @@ const state = {
                        // isAdmin field) — gates the "Scan for untracked
                        // docs" button; never trusted for the scan call
                        // itself, which re-checks Config!AdminUsers server-side.
-  scanBusy: false,
   adminToolBusy: false,
   trackerUrl: null, trackerUrlLoading: false,  // NT-eg2: admin_tracker_url result
-  scan: null,          // gts-lgpx: last admin_scan_status payload
-                       // {phase,status,scanned,total,queued,matched,candidates,
-                       //  updatedAt,allTeams,teamsRemaining,...} — allTeams is
-                       //  true for the nightly all-teams scan, whose
-                       //  candidates each carry their own teamId/path.
-  scanPollTimer: null,
-  scanTeamShown: null,   // teamId whose scan status is currently displayed
-  scanSelected: new Set(),  // NT-3fj: docIds checked in the scan list; survives collapse re-renders
   teamTiers: {},       // {teamId: tier} — populated in ALL-teams mode from res.teams,
                         // used to gate each row/doc-group's Sync/Edit controls per its
                         // OWN team rather than one blended state.tier (gts-zm8w)
   status: 'open', scope: 'all', windowDays: 60, age: '',
-  person: '', assignees: [],  // NT-tnh: scope 'person' filter email; res.assignees for #personSelect
+  teamIds: [],         // NT-2wr2.13: Teams filter, shared by Items and Documents; [] = every team the person is on
+  people: [],          // NT-2wr2.13: People filter: 'me' and/or lower-cased emails; [] = Anyone
+  group: '',           // NT-2wr2.13: ?group=team|document|person|none (grouping control and rendering: NT-2wr2.14); '' = view default
+  assignees: [],       // res.assignees feeds the People picker
   docInvalid: false, docSynced: '', docAdded: false, resolvedHint: null, // NT-2wr2.4 state cards
   docTracked: null, docUrl: '', docStarting: false, // NT-o1zu.5: from the doc-mode response (tracked, docUrl)
   docId: '', docName: '',  // NT-71y.2: document filter (?doc=); docName arrives with each filtered response
@@ -727,6 +695,7 @@ const state = {
 let docOpenSet_ = new Set();
 const $ = (id) => document.getElementById(id);
 const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
+const multiPickers_ = [], teamListeners_ = []; // NT-2wr2.13: Teams/People pickers; Documents-view subscribers
 
 // ---- query-string routing (gts-79dw.4.24, extended by gts-79dw.4.23/Unit D) --
 // Two shapes already exist server-side: ?doc=<docId>&team=<teamId> (chip-link
@@ -740,7 +709,10 @@ const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
 // re-resolves team and tier from it, R8). &action=<ACT-N|AI-N|ACTION-N|Action Item-N>
 // focuses one row of that document.
 const QUERY_PARAMS = new URLSearchParams(location.search);
+// NT-2wr2.13: ?team=<id|all> (legacy) and ?teams=<id,id> both feed the Teams filter. Ids the person is not on are dropped
+// once the team list arrives (UX only; the server re-checks visibility on every call).
 const QUERY_TEAM = QUERY_PARAMS.get('team') || null;
+const QUERY_TEAMS = (QUERY_PARAMS.get('teams') || '').split(',').map(x => x.trim()).filter(Boolean);
 // NT-o1zu.5: ?doc= and the Document box take a Doc ID or a Docs URL (docs.google.com/document/[u/N/]d/<id>/...).
 // parseDocRef_ returns the id, or '' when the text is neither. Plausibility mirrors the server (>= 10 chars of [A-Za-z0-9_-]).
 function parseDocRef_(text){
@@ -766,15 +738,24 @@ const QUERY_ACTION = QUERY_PARAMS.get('action') || null;
 const QUERY_STATUS = ['open', 'closed', 'all', 'Open', 'In Progress', 'In Review', 'Done', 'Closed'].indexOf(QUERY_PARAMS.get('status')) !== -1 ? QUERY_PARAMS.get('status') : null;
 const QUERY_AGE = ['<1', '1-2', '3-5', '6-11', '12+'].indexOf(QUERY_PARAMS.get('age')) !== -1 ? QUERY_PARAMS.get('age') : null;
 const QUERY_FROM_HEALTH = QUERY_PARAMS.get('from') === 'health';
-// NT-tnh: ?person=<email> presets the scope control to that person (UX only; the server filters).
+// ?person=<email> (legacy) and ?people=<email,email|me> preset the People filter (UX only; the server filters).
 const QUERY_PERSON = (QUERY_PARAMS.get('person') || '').trim().toLowerCase();
-// NT-2wr2.1: ?view=mine|team|find|admin|about picks the view. ?doc= / ?action= always open the document context
-// (the list view), ?person= and ?from=health are Team views. All other parameters keep working unchanged.
-const QUERY_VIEW = ['mine', 'team', 'find', 'admin', 'about'].indexOf(QUERY_PARAMS.get('view')) !== -1 ? QUERY_PARAMS.get('view') : null;
-if (QUERY_PERSON) { state.scope = 'person'; state.person = QUERY_PERSON; }
-else if (QUERY_VIEW === 'mine' && !QUERY_DOC_RAW) state.scope = 'mine';
-state.view = (QUERY_DOC_RAW || QUERY_PERSON || QUERY_FROM_HEALTH) ? 'team' : (QUERY_VIEW || (state.scope === 'mine' ? 'mine' : 'team'));
-state.noLink = !QUERY_DOC_RAW && !QUERY_ACTION && !QUERY_PERSON && !QUERY_FROM_HEALTH && !QUERY_VIEW && !QUERY_STATUS && !QUERY_AGE && !QUERY_TEAM;
+const QUERY_PEOPLE = (QUERY_PARAMS.get('people') || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+const QUERY_GROUP = ['team', 'document', 'person', 'none'].indexOf(QUERY_PARAMS.get('group')) !== -1 ? QUERY_PARAMS.get('group') : null;
+// ?view=items|documents|admin|about picks the view; legacy mine|team map to items (mine = People Me), find to documents.
+// ?doc= / ?action= always open the document context in Items, whatever view says.
+const QUERY_VIEW_RAW = QUERY_PARAMS.get('view');
+const QUERY_VIEW = ({ items: 'items', mine: 'items', team: 'items', documents: 'documents', find: 'documents', admin: 'admin', about: 'about' })[QUERY_VIEW_RAW] || null;
+if (QUERY_TEAMS.length) state.teamIds = QUERY_TEAMS;
+else if (QUERY_TEAM && QUERY_TEAM.toLowerCase() !== 'all' && QUERY_TEAM !== ALL_TEAMS_ID) state.teamIds = [QUERY_TEAM];
+if (QUERY_PEOPLE.length) state.people = QUERY_PEOPLE;
+else if (QUERY_PERSON) state.people = [QUERY_PERSON];
+else if (QUERY_VIEW_RAW === 'mine' && !QUERY_DOC_RAW) state.people = ['me'];
+if (QUERY_GROUP) state.group = QUERY_GROUP;
+else if (QUERY_PERSON) state.group = 'document'; // E8
+state.view = QUERY_DOC_RAW || QUERY_ACTION ? 'items' : (QUERY_VIEW || 'items');
+state.noLink = !QUERY_DOC_RAW && !QUERY_ACTION && !QUERY_PERSON && !QUERY_FROM_HEALTH && (!QUERY_VIEW || QUERY_VIEW === 'items' && QUERY_VIEW_RAW === 'items') &&
+  !QUERY_STATUS && !QUERY_AGE && !QUERY_TEAM && !QUERY_TEAMS.length && !QUERY_PEOPLE.length && !QUERY_GROUP;
 if (QUERY_STATUS) { state.status = QUERY_STATUS; state.statusTouched = true; }
 if (QUERY_AGE) state.age = QUERY_AGE;
 if (QUERY_DOC) {
@@ -814,7 +795,7 @@ function clearCachedAuth(){
 // quota) just means the normal load. Cleared on sign-out and on unauthorized/rejected responses.
 const PORTAL_CACHE_PREFIX_ = 'nuuts.portal.v1.';
 function portalCacheKey_(sub){ return PORTAL_CACHE_PREFIX_ + STORAGE_SCOPE_ + '.' + sub; } // NT-8oa: per audience
-function portalFiltersAreDefault_(){ return state.status === 'open' && state.scope === 'all' && !state.age && !state.docId; }
+function portalFiltersAreDefault_(){ return state.status === 'open' && !state.people.length && !state.age && !state.docId && state.view === 'items'; }
 function readPortalCache_(){
   try {
     if (!state.sub) return null;
@@ -851,7 +832,8 @@ function setStale_(on, msg){
 function renderCachedPortal_(){
   const c = readPortalCache_();
   if (!c || !portalFiltersAreDefault_()) return;
-  if (QUERY_TEAM && QUERY_TEAM !== c.teamId) return; // the URL asks for a different team than the cache holds
+  // the cache holds one team's rows: replay it only when that is the team the filters ask for
+  if (state.teamIds.length ? !(state.teamIds.length === 1 && state.teamIds[0] === c.teamId) : c.teams.length !== 1) return;
   state.teams = c.teams;
   state.teamId = c.teamId;
   state.tier = c.tier || 'NONE';
@@ -860,7 +842,6 @@ function renderCachedPortal_(){
   state.isAdmin = false;
   state.teamTiers = {};
   setTeamOptions_();
-  $('teamSel').value = state.teamId;
   $('noTeamsNotice').classList.add('hidden');
   $('listWrap').classList.remove('hidden');
   $('filtersRow').classList.remove('hidden');
@@ -986,15 +967,17 @@ function signOut(){
 }
 $('signOutBtn').addEventListener('click', signOut);
 
-// ---- NT-2wr2.2: remembered view and filters; default view -----------------------------------------------------
-// A visit with no link (no doc, action, person, view, status, age or team parameter) starts from the last view and
-// filters this browser used; a deep link never inherits them and never overwrites them. With nothing remembered the
-// default is My items, falling back to Team once the first fresh response shows nothing open for the person
-// (list_team_actions returns no open-assigned count, so the page derives it from the rows it already fetches).
-// Every storage access is try/catch: without storage the defaults apply.
-const PREFS_KEY_ = 'nuuts.tracker.prefs.v1.' + STORAGE_SCOPE_;
+// ---- NT-2wr2.13: remembered filters and grouping; defaults (spec section 4, E1) ------------------------------
+// A visit with no link (no doc, action, person, view, status, age, teams, people or group parameter) starts from the
+// last Teams, People, grouping and filters this browser used; a deep link never inherits them and never overwrites them.
+// With nothing remembered the default is People = Me, Group = None, falling back to People = Anyone, Group = Document
+// once the first fresh response shows nothing open for the person (the default request is itself the "has an open
+// assigned item" query). Every storage access is try/catch: without storage the defaults apply.
+const PREFS_KEY_ = 'nuuts.tracker.prefs.v2.' + STORAGE_SCOPE_;
 const STATUS_VALUES_ = ['open', 'closed', 'all', 'Open', 'In Progress', 'In Review', 'Done', 'Closed'];
-function viewDefaultStatus_(){ return state.docId ? 'all' : (state.view === 'mine' ? 'all' : 'open'); }
+function peopleMeOnly_(){ return state.people.length === 1 && state.people[0] === 'me'; }
+function viewDefaultStatus_(){ return state.docId ? 'all' : (peopleMeOnly_() ? 'all' : 'open'); }
+function effGroup_(){ if (state.docId) return 'document'; return state.group || (peopleMeOnly_() ? 'none' : 'document'); }
 function readPrefs_(sub){
   try { const p = JSON.parse(localStorage.getItem(PREFS_KEY_ + '.' + sub) || 'null'); return p && typeof p === 'object' ? p : null; }
   catch (e) { return null; }
@@ -1003,7 +986,7 @@ function writePrefs_(){
   if (!state.noLink || !state.sub) return;
   try {
     localStorage.setItem(PREFS_KEY_ + '.' + state.sub, JSON.stringify({
-      view: state.view === 'mine' ? 'mine' : 'team', status: state.statusTouched ? state.status : '',
+      teamIds: state.teamIds, people: state.people, group: state.group, status: state.statusTouched ? state.status : '',
       age: state.age, windowDays: state.windowDays }));
   } catch (e) { /* storage unavailable: nothing remembered */ }
 }
@@ -1012,14 +995,15 @@ function writePrefs_(){
   const c = loadCachedAuth();
   const p = c && readPrefs_(c.sub);
   if (p) {
-    if (p.view === 'mine' || p.view === 'team') state.view = p.view;
+    const strs = a => Array.isArray(a) ? a.filter(x => typeof x === 'string' && x).slice(0, 40) : [];
+    state.teamIds = strs(p.teamIds); state.people = strs(p.people);
+    if (['team', 'document', 'person', 'none'].indexOf(p.group) !== -1) state.group = p.group;
     if (STATUS_VALUES_.indexOf(p.status) !== -1) { state.status = p.status; state.statusTouched = true; }
     if (['<1', '1-2', '3-5', '6-11', '12+'].indexOf(p.age) !== -1) state.age = p.age;
     if ([7, 30, 60, 180, 36500].indexOf(p.windowDays) !== -1) state.windowDays = p.windowDays;
   } else {
-    state.view = 'mine'; state.defaultPending = true;
+    state.people = ['me']; state.defaultPending = true;
   }
-  state.scope = state.view === 'mine' ? 'mine' : 'all';
   if (!state.statusTouched) state.status = viewDefaultStatus_();
 })();
 
@@ -1047,16 +1031,7 @@ function writePrefs_(){
 })();
 
 // ---- team discovery (R21, §12.3) ---------------------------------------
-function setTeamOptions_(){
-  $('teamField').classList.toggle('hidden', state.teams.length <= 1);
-  // gts-zm8w: 'All teams' aggregate option, only meaningful with 2+ teams
-  // to choose among (with exactly one team it would just duplicate that
-  // team's own listing).
-  const allTeamsOption = (state.teams.length > 1 || QUERY_TEAM === ALL_TEAMS_ID)
-    ? `<option value="${ALL_TEAMS_ID}">All teams</option>` : '';
-  $('teamSel').innerHTML = allTeamsOption + state.teams.map(t =>
-    `<option value="${escape(t.teamId)}">${escape(t.teamName)} (${t.tier})</option>`).join('');
-}
+function setTeamOptions_(){ renderPickers_(); }
 
 function loadTeams(opts){
   // NT-41i: opts.refreshAccess asks the server to bypass its access-fact cache for this caller
@@ -1071,7 +1046,8 @@ function loadTeams(opts){
   // out to be in the returned list (the server authorizes each call independently, so a wrong guess
   // is simply discarded). The guess is read from the cache record, never trusted for access.
   const cached = readPortalCache_();
-  const guessTeamId = QUERY_TEAM || (cached && cached.teamId) || null;
+  const guessTeamId = state.teamIds.length === 1 ? state.teamIds[0]
+    : (cached && cached.teams && cached.teams.length === 1 ? cached.teamId : ALL_TEAMS_ID);
   let prefetch = null;
   if (guessTeamId && !refreshAccess) {
     const payload = listPayload_(guessTeamId);
@@ -1110,7 +1086,7 @@ function loadTeams(opts){
         // NT-o1zu.5 AC2: a user with no team can still open a document by link (teamId '' list call).
         clearPortalCache_(state.sub);
         setStale_(false);
-        state.teamId = '';
+        state.teamId = ''; state.teamIds = [];
         $('noTeamsNotice').classList.add('hidden');
         $('listWrap').classList.remove('hidden');
         $('filtersRow').classList.remove('hidden');
@@ -1132,19 +1108,12 @@ function loadTeams(opts){
       $('listWrap').classList.remove('hidden');
       $('filtersRow').classList.remove('hidden');
 
+      // ?teams= / ?team= and remembered Teams apply only to teams the caller actually has (list_my_teams already
+      // scoped this to the caller; the server re-checks every call). Selecting every team means no subset.
+      state.teamIds = state.teamIds.filter(id => state.teams.some(t => t.teamId === id));
+      if (state.teamIds.length >= state.teams.length) state.teamIds = [];
+      state.teamId = teamScope_();
       setTeamOptions_();
-      // ?team= preselects only if the caller actually has access to that
-      // team (list_my_teams already scoped this to the caller — a ?team=
-      // for a team they can't see must not be trusted client-side); falls
-      // back to the existing default otherwise (regression guard, AC3).
-      // NT-8al: with no ?team=, the remembered last-used team is next if still listed.
-      state.teamId = (QUERY_TEAM && (QUERY_TEAM === ALL_TEAMS_ID || state.teams.some(t => t.teamId === QUERY_TEAM)))
-        ? QUERY_TEAM
-        : (cached && state.teams.some(t => t.teamId === cached.teamId))
-          ? cached.teamId
-          : state.teams[0].teamId;
-      if (state.view === 'mine' && !QUERY_TEAM && state.teams.length > 1) state.teamId = ALL_TEAMS_ID; // NT-2wr2.2: My items spans the teams
-      $('teamSel').value = state.teamId;
 
       if (prefetch && prefetch.teamId === state.teamId) {
         return prefetch.p.then(r => {
@@ -1176,47 +1145,70 @@ $('refreshAccessBtn').addEventListener('click', () => {
     .then(() => { btn.disabled = false; });
 });
 
-$('teamSel').addEventListener('change', e => {
-  state.teamId = e.target.value;
-  state.selected.clear(); state.selRows.clear(); // NT-71y.6: a team change clears the selection
-  clearRefSelection_(); // NT-71y.8
-  setDocFilter_('', ''); // NT-71y.2 C2: a team change drops the document filter
-  $('adminScanResults').classList.add('hidden');
-  writePrefs_();
-  refreshActions();
-});
-
 // ---- action listing (§12.1) --------------------------------------------
+// NT-2wr2.13: the team the request names. One team (the only one, or exactly one selected) is asked for by id; any
+// other selection is the 'ALL' aggregate, narrowed by teamIds (S1, NT-2wr2.9) and again client-side.
+function teamScope_(){
+  if (state.teamIds.length === 1) return state.teamIds[0];
+  if (state.teams.length === 1) return state.teams[0].teamId;
+  return ALL_TEAMS_ID;
+}
+function peopleEmails_(){ return state.people.filter(x => x !== 'me'); }
 function listPayload_(teamId){
   const payload = {
     assertion: state.assertion,
     teamId: teamId,
     statusFilter: state.status,
-    scope: state.scope === 'mine' ? 'mine' : 'all'
+    scope: 'all'
   };
-  if (state.scope === 'person' && state.person) payload.assigneeEmail = state.person; // NT-tnh
+  if (teamId === ALL_TEAMS_ID && state.teamIds.length > 1) payload.teamIds = state.teamIds;
+  // People: Me alone is the existing scope 'mine'; one other person the existing assigneeEmail; several people (or
+  // Me with others) the S1 fields assigneeEmails + includeMe. A server without S1 ignores them and answers with
+  // everyone; applyActions_ then filters the rows itself.
+  const emails = peopleEmails_();
+  if (peopleMeOnly_()) payload.scope = 'mine';
+  else if (emails.length === 1 && !state.people.includes('me')) payload.assigneeEmail = emails[0];
+  else if (state.people.length) { payload.assigneeEmails = emails; if (state.people.includes('me')) payload.includeMe = true; }
   // The resolved-age control is hidden (and therefore meaningless) once
   // statusFilter=open — windowDays never affects unresolved rows anyway
   // (plan §12.1 invariant 1), but omit it in that state for clarity.
   // NT-56r AC2: an age bucket replaces the closed-window default, so windowDays is not sent with it.
   if (state.docId) { // NT-71y.2 S1: the server ignores the age window for a document
     payload.docId = state.docId;
+    delete payload.teamIds;
     return payload;
   }
   if (state.age) payload.ageBucket = state.age;
   if (!state.age && !isExactStatus(state.status) && state.status !== 'open') payload.windowDays = state.windowDays;
   return payload;
 }
+// Rows the server may not have narrowed (a server without S1): keep to the selected teams and people. Rows whose
+// response echoes the filter (res.teamIds / res.assigneeEmails) are already narrowed.
+function rowHasPerson_(r, emails){
+  return assigneeItems_(r).some(a => a.email && emails.indexOf(a.text.toLowerCase()) !== -1);
+}
+function narrowRows_(rows, res){
+  if (state.docId) return rows;
+  if (state.teamIds.length > 1 && !Array.isArray(res.teamIds)) rows = rows.filter(r => state.teamIds.indexOf(r.team_id) !== -1);
+  const emails = peopleEmails_();
+  const multi = !peopleMeOnly_() && !(emails.length === 1 && !state.people.includes('me')) && state.people.length;
+  if (multi && !Array.isArray(res.assigneeEmails)) {
+    const want = emails.concat(state.people.includes('me') && state.email ? [state.email.toLowerCase()] : []);
+    rows = rows.filter(r => rowHasPerson_(r, want));
+  }
+  return rows;
+}
 
 // Applies a successful list_team_actions response: fresh data replaces any cached view and re-enables controls.
 function applyActions_(res){
   setStale_(false);
-  state.rows = res.actions || [];
-  if (state.defaultPending && state.view === 'mine' && !state.docId) { // NT-2wr2.2: confirm or drop the default My items view
+  state.rows = narrowRows_(res.actions || [], res);
+  if (state.defaultPending && !state.docId) { // E1: confirm the People = Me default, or fall back to Anyone grouped by document
     state.defaultPending = false;
     if (res.ok !== false && !state.rows.some(isOpenRow_)) {
-      if (state.teams.length > 1 && state.teamId === ALL_TEAMS_ID) { state.teamId = state.teams[0].teamId; $('teamSel').value = state.teamId; }
-      setView_('team', { noRefresh: true, keepScroll: true });
+      state.people = []; state.group = '';
+      if (!state.statusTouched) state.status = viewDefaultStatus_();
+      renderPickers_();
       refreshActions();
       return;
     }
@@ -1226,7 +1218,7 @@ function applyActions_(res){
   state.tier = res.tier || 'NONE';
   state.isAdmin = !!res.isAdmin;
   state.assignees = Array.isArray(res.assignees) ? res.assignees : []; // NT-tnh
-  renderPersonOptions_();
+  renderPickers_();
   // gts-zm8w: only the ALL-teams response carries `teams` — a per-team
   // tier map so each doc group can gate Sync/Edit by ITS OWN team's
   // tier rather than the single blended state.tier above.
@@ -1274,8 +1266,9 @@ function applyDocFilterResponse_(res){
   state.docSynced = state.docDenied ? '' : String(res.lastSynced || ''); // [server?] optional: list_team_actions does not return it today
   state.docName = state.docDenied ? '' : (res.docName || '');
   if (res.teamId && state.teams.some(t => t.teamId === res.teamId)) {
-    state.teamId = res.teamId;
-    $('teamSel').value = res.teamId;
+    state.teamId = res.teamId; // removing the Document chip widens to this team
+    state.teamIds = state.teams.length > 1 ? [res.teamId] : [];
+    renderPickers_();
   }
   if (state.focusPending) { // first fresh response only (cached views never reach here)
     state.focusPending = false;
@@ -1283,8 +1276,7 @@ function applyDocFilterResponse_(res){
       rows.find(r => r.doc_id === state.docId && Number((ACTION_REF_RE.exec(r.action_id || '') || [])[1]) === state.focusN);
     if (target) {
       state.focusGid = target.global_id;
-      state.collapsed['doc:' + target.doc_id] = false;
-      state.collapsed['team:' + target.team_id] = false;
+      state.collapsed[groupKey_('document', target.doc_id)] = false;
       if (!state.stale) { state.panelId = target.global_id; state.panelSaved = false; state.panelStatus = target.status || ''; }
       state.focusScroll = true;
     }
@@ -1300,15 +1292,14 @@ function scrollToFocusRow_(){
 
 function syncDocControls_(){
   const chip = !!(state.docId && state.docName);
-  $('docSearch').value = chip ? state.docName : '';
   $('docSearchPanel').value = chip ? state.docName : '';
-  if (state.view === 'mine' || state.view === 'team') renderToolbar_();
+  if (state.view === 'items') renderToolbar_();
   $('docNoAccess').classList.toggle('hidden', !state.docDenied);
   $('docSearchList').innerHTML = Object.keys(state.docIndex).sort().map(n => `<option value="${escape(n)}"></option>`).join('');
 }
 
 function clearDocFilter_(){
-  if (!state.docId) { $('docSearch').value = ''; $('docSearchPanel').value = ''; return; }
+  if (!state.docId) { $('docSearchPanel').value = ''; return; }
   setDocFilter_('', '');
   if (!state.teams.length) { // NT-o1zu.5: a no-team user opened a document by link; back to the no-teams notice
     state.rows = []; state.docTracked = null; state.docDenied = false;
@@ -1319,35 +1310,42 @@ function clearDocFilter_(){
     $('countLabel').textContent = '';
     return;
   }
+  if (!state.statusTouched) state.status = viewDefaultStatus_();
+  syncUrl_();
   refreshActions();
 }
-function onDocSearchInput_(e){ e.target.parentNode.querySelector('[role="alert"]').classList.add('hidden'); }
+// Opens one document's items (E2/E4): a pasted Doc link or ID, a document name picked from the list, or a link from
+// the Documents view. The document scope replaces People and grouping: People = Anyone, Group = Document.
+function openDoc_(ref, name, teamId){
+  if (!ref) return;
+  if (ref !== state.docId) setDocFilter_(ref, name || '');
+  if (teamId && state.teams.some(t => t.teamId === teamId)) {
+    state.teamIds = state.teams.length > 1 ? [teamId] : []; state.teamId = teamScope_();
+  }
+  state.people = []; state.group = 'document';
+  state.statusTouched = false; state.status = viewDefaultStatus_();
+  state.search = ''; $('searchBox').value = '';
+  state.defaultPending = false;
+  renderPickers_();
+  setView_('items', { noRefresh: true });
+  return refreshActions();
+}
 function onDocSearchChange_(e){
-  const errEl = e.target.parentNode.querySelector('[role="alert"]');
+  const errEl = $('docSearchPanelError');
   const v = e.target.value.trim();
   errEl.classList.add('hidden');
   if (!v) { clearDocFilter_(); return; }
   const id = state.docIndex[v];
-  if (id && id !== state.docId) {
-    setDocFilter_(id, v);
-    setView_('team', { noRefresh: true });
-    refreshActions();
-    return;
-  }
+  if (id && id !== state.docId) { openDoc_(id, v); return; }
   if (id) { e.target.value = state.docName; return; } // unchanged: keep the current filter
   // NT-o1zu.5 AC6: not a known name, so a pasted Docs URL or ID opens doc mode for that id.
   const ref = parseDocRef_(v);
-  if (ref) {
-    if (ref !== state.docId) { setDocFilter_(ref, ''); setView_('team', { noRefresh: true }); refreshActions(); }
-    return;
-  }
+  if (ref) { if (ref !== state.docId) openDoc_(ref, ''); return; }
   e.target.value = state.docName; // neither a known name nor a link/ID: keep the current filter
   errEl.classList.remove('hidden');
 }
-['docSearch', 'docSearchPanel'].forEach(id => {
-  $(id).addEventListener('input', onDocSearchInput_);
-  $(id).addEventListener('change', onDocSearchChange_);
-});
+$('docSearchPanel').addEventListener('input', () => $('docSearchPanelError').classList.add('hidden'));
+$('docSearchPanel').addEventListener('change', onDocSearchChange_);
 
 function refreshActions(){
   if (!state.teamId && !state.docId) return Promise.resolve();
@@ -1365,82 +1363,6 @@ function refreshActions(){
     })
     .finally(() => setBusy(false));
 }
-
-// ---- admin: scan for untracked docs (gts-gwyg, resumable per gts-lgpx) ---
-// The scan no longer runs inside this request. Clicking enqueues it
-// (admin_scan_start) and returns immediately; a self-rescheduling one-shot
-// trigger advances it server-side across as many executions as it needs.
-// This client just polls admin_scan_status and renders progress, so a scan
-// that outlives the browser tab keeps going and is still there on return.
-//
-// Client-side isAdmin only gates whether these controls are shown; the real
-// admin check (Config!AdminUsers) runs server-side on every call below,
-// including the read-only status poll.
-
-const SCAN_POLL_MS = 5000;
-
-function scanCall(action, teamId){
-  return postJson(GACTIONSHEET_URL, { action, assertion: state.assertion, teamId: teamId || state.teamId });
-}
-
-// Poll only while the scan is actually advancing. A done/idle/error scan
-// stops the timer so an idle tab isn't calling the backend forever.
-function scheduleScanPoll(){
-  clearTimeout(state.scanPollTimer);
-  const st = state.scan && state.scan.status;
-  if (st !== 'running' && st !== 'waiting') return;
-  state.scanPollTimer = setTimeout(refreshScanStatus, SCAN_POLL_MS);
-}
-
-// Status is read from ONE shared Script Property regardless
-// of which team is selected in the picker (a nightly all-teams scan spans
-// every team in that same state object), so monitoring it no longer needs a
-// specific real team — only Start (admin_scan_start) does, since it seeds
-// the scan from one team's registered folders.
-function refreshScanStatus(){
-  const findOn = state.view === 'find' && findScanVisible_();
-  if ((!state.isAdmin && !findOn) || !state.teamId) return Promise.resolve();
-  return scanCall('admin_scan_status', findOn ? state.findTeamId : '')
-    .then(res => {
-      if (!res.ok) { noteScanRefusal_(res); return; }               // forbidden — leave the panel blank
-      state.scan = res;
-      renderScanPanel();
-      scheduleScanPoll();
-    })
-    .catch(() => { /* a dropped poll is not worth a toast; the next one retries */ });
-}
-
-// Start a fresh scan, or resume the one already persisted. The button label
-// (renderScanPanel) tells the operator which of the two the click will do.
-function runAdminScan(){
-  if (state.scanBusy || !state.teamId) return;
-  const resumable = state.scan && (state.scan.status === 'waiting'
-    || state.scan.status === 'stale' || state.scan.status === 'error');
-  // Starting a FRESH scan needs one real team's registered folders
-  // (admin_scan_start). Resuming an already-persisted scan (manual or the
-  // nightly all-teams run) is fine from the All-teams view — it just
-  // reschedules whatever state is already there.
-  if (!resumable && state.teamId === ALL_TEAMS_ID) {
-    toast('Pick a specific team to start a manual scan. The nightly scan covers every team automatically at 1am.');
-    return;
-  }
-  const action = resumable ? 'admin_scan_resume' : 'admin_scan_start';
-
-  state.scanBusy = true;
-  renderScanPanel();
-  scanCall(action)
-    .then(res => {
-      if (!res.ok) { toast('Scan denied: ' + (res.reason || 'unknown error')); return; }
-      state.scan = res;
-    })
-    .catch(err => toast('Scan failed: ' + (err.message || err)))
-    .finally(() => {
-      state.scanBusy = false;
-      renderScanPanel();
-      scheduleScanPoll();
-    });
-}
-$('adminScanBtn').addEventListener('click', runAdminScan);
 
 // ---- admin tools (NT-g8v.29): Sync All, Ensure Sheet Structure, Run Archive ---
 // Same admin visibility as the scan panel; the server re-checks AdminUsers on every call.
@@ -1577,286 +1499,6 @@ function timeAgo(iso){
   return h + 'h ago';
 }
 
-// One line answering all the operator's questions at once: what is it
-// doing, how far along, is it moving right now or waiting on its trigger,
-// and — via "updated" — when it last actually reported in. `waiting` is
-// deliberately worded as queued-not-stalled — the one-shot fires about a
-// minute out, and without saying so the pause reads as a hang (which is
-// exactly how the old blocking scan failed). `stale` is the one status
-// where the auto-reschedule chain is actually broken (the pass crashed
-// mid-flight without persisting/rescheduling, or an error pass deleted its
-// own trigger) — that's the ONLY case Resume exists for; a normal scan
-// re-advances itself every ~60s with no operator action needed.
-function scanStatusLine(sc){
-  if (!sc || sc.status === 'idle') return '';
-  const n = sc.scanned || 0;
-  const updated = sc.updatedAt ? ` <span class="scanupdated">(updated ${timeAgo(sc.updatedAt)})</span>` : '';
-  const teamProgress = sc.allTeams
-    ? ` — team ${escape(teamDisplayName(sc.teamId))}${sc.teamsRemaining ? `, ${sc.teamsRemaining} more queued` : ''}`
-    : '';
-  if (sc.status === 'error') return `<span class="dot err"></span>Scan failed${sc.scanError ? ' (' + escape(sc.scanError) + ')' : ''} — Resume to retry${teamProgress}${updated}`;
-  if (sc.phase === 'enumerate') {
-    const found = sc.queued || 0;
-    const where = sc.status === 'running' ? 'Finding docs' : 'Finding docs (queued)';
-    return `<span class="dot ${sc.status === 'running' ? 'run' : 'wait'}"></span>${where} — ${found} found so far${teamProgress}${updated}`;
-  }
-  // NT-3x0: a completed scan can carry total null/0 (enumeration did not record it); never print 'of null'.
-  const knownTotal = (typeof sc.total === 'number' && sc.total > 0) ? sc.total : null;
-  if (sc.complete) return `<span class="dot"></span>Done — scanned ${n}${sc.allTeams ? ' across all teams' : (knownTotal !== null ? ' of ' + knownTotal : '')}, ${sc.matched || 0} match(es)${updated}`;
-  const total = knownTotal !== null ? knownTotal : '?';
-  if (sc.status === 'stale') return `<span class="dot err"></span>Stalled at ${n} of ${total} — no update in over 7 min, Resume to continue${teamProgress}${updated}`;
-  const verb = sc.status === 'running' ? 'Scanning' : 'Queued — next pass within a minute;';
-  return `<span class="dot ${sc.status === 'running' ? 'run' : 'wait'}"></span>${verb} ${n} of ${total}${teamProgress}${updated}`;
-}
-
-function renderScanPanel(){
-  const sc = state.scan;
-  const btn = $('adminScanBtn');
-  const running = !!sc && sc.status === 'running';
-  const resumable = !!sc && (sc.status === 'waiting' || sc.status === 'stale' || sc.status === 'error');
-
-  btn.textContent = running ? 'Scanning…'
-    : resumable ? 'Resume scan'
-    : 'Scan for untracked docs';
-  // Only a genuinely in-flight pass disables the button — a waiting scan
-  // stays clickable so the operator can pull the next pass forward instead
-  // of waiting out the trigger delay. Starting FRESH needs one real team
-  // (Resuming an existing scan does not — see runAdminScan).
-  btn.disabled = state.scanBusy || running || (!resumable && state.teamId === ALL_TEAMS_ID);
-  // NT-ja4: the tooltip says what a click will do, or why it can't.
-  btn.title = (state.scanBusy || running) ? 'A scan pass is running now'
-    : resumable ? 'Continue the saved scan from where it stopped'
-    : state.teamId === ALL_TEAMS_ID ? 'Pick a specific team to start a manual scan (the nightly scan covers every team)'
-    : "Scan this team's folders for Google Docs with actions that are not tracked yet";
-
-  $('adminScanStatus').innerHTML = scanStatusLine(sc);
-  renderAdminScanResults(sc);
-  renderFindScan_();
-}
-
-// Selection only makes sense once the candidate set is final (sc.complete) —
-// the panel re-renders every SCAN_POLL_MS while a scan is still running, which
-// would otherwise wipe checkbox state out from under the operator mid-click.
-//
-// NT-3fj: grouped team -> folder like the tracked-actions list below it, using the same
-// collapsibleGroupHtml; collapse keys 'scanteam:<teamId>' / 'scanfolder:<teamId>/<path>' live in
-// state.collapsed beside the action list's, so they survive the poll re-render. Selection lives in
-// state.scanSelected (docIds) so a collapse toggle's re-render keeps it.
-const scanPathDepth_ = c => (c.path ? String(c.path).split('/').length : 0);
-
-// NT-3fj AC5: a docId found under nested teams (an inner team's folder inside an outer team's) is
-// listed once, under the innermost team — the one whose team-relative path is shortest; a tie keeps
-// the first. AC3: then filtered to the #teamSel team unless ALL.
-function visibleScanCandidates_(candidates, teamId){
-  teamId = teamId || state.teamId;
-  const byDoc = new Map();
-  candidates.forEach(c => {
-    const prev = byDoc.get(c.docId);
-    if (!prev || scanPathDepth_(c) < scanPathDepth_(prev)) byDoc.set(c.docId, c);
-  });
-  const deduped = candidates.filter(c => byDoc.get(c.docId) === c);
-  return teamId === ALL_TEAMS_ID ? deduped : deduped.filter(c => c.teamId === teamId);
-}
-
-// {teamId: {path: [candidate...]}} in first-appearance order (Maps).
-function groupScanCandidates_(candidates){
-  const byTeam = new Map();
-  candidates.forEach(c => {
-    const teamId = c.teamId || '';
-    if (!byTeam.has(teamId)) byTeam.set(teamId, new Map());
-    const byPath = byTeam.get(teamId);
-    const path = c.path || '';
-    if (!byPath.has(path)) byPath.set(path, []);
-    byPath.get(path).push(c);
-  });
-  return byTeam;
-}
-const scanTeamKey_ = teamId => 'scanteam:' + teamId;
-const scanFolderKey_ = (teamId, path) => 'scanfolder:' + teamId + '/' + path;
-const docCount_ = n => n + (n === 1 ? ' doc' : ' docs');
-
-function scanCandidateLi_(c, selectable, member){
-  // NT-bg6: each candidate shows its Drive last-modified date.
-  const modified = c.modified ? `<span class="scanmodified">modified ${escape(shortDate(c.modified))}</span>` : '';
-  const link = `<a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.docName)}</a>`;
-  // Every li carries its input.trackCandidate (the NT-3fj DOM contract); while the scan is still
-  // running it is disabled, since selection only applies to a complete scan.
-  // NT-2wr2.6 (Find documents): owner and view-only are shown only when the endpoint returns them
-  // (c.owner / c.canEdit === false); a view-only document cannot be selected.
-  const viewOnly = !!member && c.canEdit === false;
-  const owner = member && c.owner ? `<span class="scanmodified">owner ${escape(c.owner)}</span>` : '';
-  const dis = viewOnly ? ' disabled title="You can only view this document"'
-    : (selectable ? (state.scanSelected.has(c.docId) ? ' checked' : '') : ' disabled title="Selectable once the scan completes"');
-  return `<li><label><input type="checkbox" class="trackCandidate" data-doc-id="${escape(c.docId)}" data-doc-name="${escape(c.docName)}" data-team-id="${escape(c.teamId || '')}" data-path="${escape(c.path || '')}"` +
-    dis + ` /> ` +
-    `${link}</label>${owner}${modified}${viewOnly ? '<span class="viewonly">View only</span>' : ''}</li>`;
-}
-
-function groupSelectAllHtml_(cands, selectable){
-  if (!selectable) return '';
-  const all = cands.length && cands.every(c => state.scanSelected.has(c.docId));
-  return `<input type="checkbox" class="groupSelectAll" aria-label="Select all in this group"${all ? ' checked' : ''} />`;
-}
-
-function scanGroupsHtml_(candidates, selectable){
-  let html = '';
-  groupScanCandidates_(candidates).forEach((byPath, teamId) => {
-    const teamCands = [].concat(...byPath.values());
-    let folders = '';
-    byPath.forEach((cands, path) => {
-      const key = scanFolderKey_(teamId, path);
-      folders += collapsibleGroupHtml({
-        cls: 'scanfolder', attrs: `data-path="${escape(path)}"`,
-        title: path || '(team root)', collapsed: !!state.collapsed[key],
-        toggleAttr: `data-toggle-scan="${escape(key)}"`,
-        headExtra: groupSelectAllHtml_(cands, selectable),
-        countText: docCount_(cands.length),
-        body: cands.map(c => scanCandidateLi_(c, selectable)).join('')
-      });
-    });
-    const key = scanTeamKey_(teamId);
-    html += collapsibleGroupHtml({
-      cls: 'scanteam', attrs: `data-team-id="${escape(teamId)}"`,
-      title: teamDisplayName(teamId) || '(no team)', collapsed: !!state.collapsed[key],
-      toggleAttr: `data-toggle-scan="${escape(key)}"`,
-      headExtra: groupSelectAllHtml_(teamCands, selectable),
-      countText: docCount_(teamCands.length),
-      body: folders
-    });
-  });
-  return html;
-}
-
-function renderAdminScanResults(sc){
-  const box = $('adminScanResults');
-  const allCandidates = (sc && sc.candidates) || [];
-  if (!sc || sc.status === 'idle' || (!allCandidates.length && !sc.complete)) {
-    box.classList.add('hidden');
-    return;
-  }
-  const candidates = visibleScanCandidates_(allCandidates);
-  const shownIds = new Set(candidates.map(c => c.docId));
-  state.scanSelected.forEach(id => { if (!shownIds.has(id)) state.scanSelected.delete(id); });
-  const where = sc.allTeams ? ' across all teams' : " under this team's folder(s)";
-  if (!allCandidates.length) {
-    box.innerHTML = `<p>Scanned ${sc.scanned} doc(s)${where} — no untracked action-looking docs found.</p>`;
-  } else if (!candidates.length) {
-    box.innerHTML = `<p>${allCandidates.length} untracked doc(s) found${sc.complete ? '' : ' so far'}, none in this team — choose All teams to see them.</p>`;
-  } else if (!sc.complete) {
-    box.innerHTML = `<p>${candidates.length} found so far (${sc.scanned} of ${sc.total || '?'} scanned) — still running:</p>` +
-      scanGroupsHtml_(candidates, false);
-  } else {
-    const allSel = candidates.every(c => state.scanSelected.has(c.docId));
-    box.innerHTML =
-      `<p>${candidates.length} untracked doc(s) look action-bearing (of ${sc.scanned} scanned):</p>` +
-      `<p><label><input type="checkbox" id="trackSelectAll"${allSel ? ' checked' : ''} /> Select all</label></p>` +
-      scanGroupsHtml_(candidates, true) +
-      `<p><button class="btn small" id="trackSelectedBtn" title="Register the selected documents for tracking">Track selected</button> ` +
-      `<button class="btn small" id="ignoreSelectedBtn" title="Hide the selected documents from scans until they are modified">Ignore selected</button></p>`;
-    const setSel = (cbs, on) => cbs.forEach(cb => {
-      cb.checked = on;
-      if (on) state.scanSelected.add(cb.dataset.docId); else state.scanSelected.delete(cb.dataset.docId);
-    });
-    $('trackSelectAll').addEventListener('change', (e) => {
-      setSel(box.querySelectorAll('.trackCandidate'), e.target.checked);
-      box.querySelectorAll('.groupSelectAll').forEach(g => { g.checked = e.target.checked; });
-    });
-    box.querySelectorAll('.groupSelectAll').forEach(g => g.addEventListener('change', () => {
-      setSel(g.closest('.teamgroup').querySelectorAll('.trackCandidate'), g.checked);
-      syncScanSelectAlls_(box);
-    }));
-    box.querySelectorAll('.trackCandidate').forEach(cb => cb.addEventListener('change', () => {
-      if (cb.checked) state.scanSelected.add(cb.dataset.docId); else state.scanSelected.delete(cb.dataset.docId);
-      syncScanSelectAlls_(box);
-    }));
-    $('trackSelectedBtn').addEventListener('click', trackSelectedDocs);
-    $('ignoreSelectedBtn').addEventListener('click', ignoreSelectedDocs);
-  }
-  box.querySelectorAll('[data-toggle-scan]').forEach(b => b.addEventListener('click', () => {
-    const key = b.dataset.toggleScan;
-    state.collapsed[key] = !state.collapsed[key];
-    renderAdminScanResults(state.scan);
-  }));
-  box.classList.remove('hidden');
-}
-
-// Group and overall select-alls read as checked exactly when every candidate under them is.
-function syncScanSelectAlls_(box){
-  const allChecked = cbs => cbs.length > 0 && Array.from(cbs).every(cb => cb.checked);
-  box.querySelectorAll('.groupSelectAll').forEach(g => {
-    g.checked = allChecked(g.closest('.teamgroup').querySelectorAll('.trackCandidate'));
-  });
-  const all = $('trackSelectAll');
-  if (all) all.checked = allChecked(box.querySelectorAll('.trackCandidate'));
-}
-
-// Track = cheap DocData registration only (admin_scan_track), not a full
-// doc sync — the next syncAll sweep (gts-qkev, DocData-walk) discovers and
-// syncs each tracked doc's Actions on its own.
-//
-// Tracking a doc removes ONLY that doc from the untracked list — it does
-// not clear the rest. The server already prunes just the tracked ids out of
-// the persisted candidate list (gts-f0vd); this mirrors that client-side
-// instead of nulling state.scan out, so untracked siblings found in the
-// same scan (single-team or nightly all-teams) stay visible and checkable
-// without forcing a re-scan to see them again.
-function trackSelectedDocs(){
-  scanSelectionAction_({
-    action: 'admin_scan_track', resultKey: 'tracked', btnId: 'trackSelectedBtn',
-    idle: 'Track selected', working: 'Tracking…', verb: 'track', fail: 'Track failed',
-    done: n => `Tracking ${n} document(s) — they'll pick up actions on the next background sync.`
-  });
-}
-
-// NT-bg6: Ignore = record the docs in the tracker's ScanIgnore sheet (admin_scan_ignore); later
-// scans skip each one until it is modified after the ignore. Same selection, request shape and
-// client-side pruning as Track.
-function ignoreSelectedDocs(){
-  scanSelectionAction_({
-    action: 'admin_scan_ignore', resultKey: 'ignored', btnId: 'ignoreSelectedBtn',
-    idle: 'Ignore selected', working: 'Ignoring…', verb: 'ignore', fail: 'Ignore failed',
-    done: n => `Ignoring ${n} document(s) until they are modified.`
-  });
-}
-
-// Shared by Track and Ignore: POST the checked candidates, then drop the docIds the server
-// reports back (res[resultKey]) from the displayed list and the selection.
-function scanSelectionAction_(o){
-  const box = $(o.boxId || 'adminScanResults');
-  const teamId = o.teamId || state.teamId;
-  const checked = Array.from(box.querySelectorAll('.trackCandidate:checked'));
-  if (!checked.length) { toast(`Select at least one document to ${o.verb}.`); return; }
-  const docs = checked.map(cb => ({ docId: cb.dataset.docId, docName: cb.dataset.docName,
-    teamId: cb.dataset.teamId, path: cb.dataset.path }));
-
-  const btn = $(o.btnId);
-  btn.disabled = true;
-  btn.textContent = o.working;
-  postJson(GACTIONSHEET_URL, { action: o.action, assertion: state.assertion, teamId, docs })
-    .then(res => {
-      if (!res.ok) { noteScanRefusal_(res); toast(o.fail + ': ' + (res.reason || 'unknown error')); return; }
-      const doneIds = res[o.resultKey] || [];
-      toast(o.done(doneIds.length));
-      if (o.after) o.after(doneIds);
-      const doneSet = new Set(doneIds);
-      doneIds.forEach(id => state.scanSelected.delete(id));
-      if (state.scan) {
-        const kept = state.scan.candidates.filter(c => !doneSet.has(c.docId));
-        state.scan = {
-          ...state.scan,
-          candidates: kept,
-          matched: Math.max(0, state.scan.matched - (state.scan.candidates.length - kept.length))
-        };
-      }
-      renderScanPanel();
-    })
-    .catch(err => toast(o.fail + ': ' + (err.message || err)))
-    .finally(() => {
-      const b = $(o.btnId); // renderScanPanel may have replaced the button
-      if (b) { b.disabled = false; b.textContent = o.idle; }
-    });
-}
-
 function setBusy(b){
   // Problem 3: the in-flight indicator lives on the title line, right of
   // "Team actions", not centered/blocking over the filters/count row.
@@ -1921,10 +1563,7 @@ function renderCtxHeader_(){
   const synced = state.docSynced ? syncedAgo_(state.docSynced) : ''; // [server?] hidden until the listing returns lastSynced
   $('ctxSynced').textContent = synced ? 'Last synced ' + synced : '';
   $('ctxSynced').classList.toggle('hidden', !synced);
-  $('ctxSeeAll').textContent = team ? 'See all ' + team + ' items' : 'See all items';
-  $('ctxSeeAll').classList.toggle('hidden', !state.teams.length);
 }
-$('ctxSeeAll').addEventListener('click', () => { state.panelId = null; clearDocFilter_(); });
 // ---- NT-2wr2.4: state cards (spec section 5). Each is a card in place of the list: headline, one sentence, one next step.
 function cardHtml_(o){
   return `<div class="statecard${o.cls ? ' ' + o.cls : ''}"${o.id ? ` id="${o.id}"` : ''}><h2>${escape(o.head)}</h2><p>${o.body}</p>${
@@ -1952,7 +1591,7 @@ function renderNoTeamsCard_(){
     el.classList.add('hidden');
     $('listWrap').classList.remove('hidden');
     $('filtersRow').classList.remove('hidden');
-    setView_('team', { noRefresh: true });
+    setView_('items', { noRefresh: true });
     state.teamId = '';
     refreshActions();
   });
@@ -1961,16 +1600,16 @@ function renderNoAccessCard_(){
   const el = $('docNoAccess');
   el.innerHTML = state.docInvalid
     ? cardHtml_({ head: "That isn't a Google Doc link or ID", body: 'Check the link and paste it again.',
-        actions: '<button class="btn primary" id="naMine" type="button">Go to My items</button>' })
+        actions: '<button class="btn primary" id="naMine" type="button">Items</button>' })
     : cardHtml_({ head: "You can't open this document here",
         body: `Signed in as ${escape(state.email)} · <button class="linkbtn" id="naSwitch" type="button">Switch account</button>.<br>Ask the document's owner or your team lead to share it with that account.`,
-        actions: '<button class="btn primary" id="naMine" type="button">Go to My items</button>' });
+        actions: '<button class="btn primary" id="naMine" type="button">Items</button>' });
   if ($('naSwitch')) $('naSwitch').addEventListener('click', () => signOut());
   $('naMine').addEventListener('click', () => {
     if (!state.teams.length) { clearDocFilter_(); return; }
     setDocFilter_('', ''); state.docDenied = false;
     $('docNoAccess').classList.add('hidden');
-    setView_('mine', { noRefresh: true });
+    setView_('items', { noRefresh: true });
     refreshActions();
   });
 }
@@ -1995,7 +1634,7 @@ function doSync_(docId, btn){
 }
 // "Nothing open for <team>": the resolved count needs the closed list, so it costs one extra request, made only in this state.
 function loadResolvedHint_(){
-  const key = state.teamId + '|' + state.scope + '|' + state.person;
+  const key = state.teamId + '|' + state.teamIds.join(',') + '|' + state.people.join(',');
   if (state.resolvedHint && state.resolvedHint.key === key) return;
   state.resolvedHint = { key, n: null };
   const p = { ...listPayload_(state.teamId), statusFilter: 'closed', windowDays: 30 };
@@ -2012,7 +1651,7 @@ function clearAllFilters_(){
 }
 function emptyCard_(){
   const searching = !!state.search.trim() && state.rows.length > 0;
-  const filtered = state.status !== viewDefaultStatus_() || !!state.age || (state.scope === 'person' && !!state.person) ||
+  const filtered = state.status !== viewDefaultStatus_() || !!state.age || state.people.length > (peopleMeOnly_() ? 1 : 0) || state.teamIds.length > 0 ||
     (windowApplies_() && state.windowDays !== 60);
   if (state.docId && state.docTracked === true && !searching && !filtered) {
     return { html: cardHtml_({ id: 'cardNoItems', head: 'No action items in this document yet',
@@ -2021,15 +1660,15 @@ function emptyCard_(){
       bind: () => { const b = $('cardSync'); if (b) b.addEventListener('click', () => doSync_(state.docId, b)); } };
   }
   if (!searching && !filtered && !state.docId) {
-    if (state.view === 'mine') {
+    if (peopleMeOnly_()) {
       return { html: cardHtml_({ id: 'cardNothingMine', head: 'Nothing open for you', body: 'Items assigned to you appear here.',
-        actions: '<button class="btn primary" id="cardTeamView" type="button">See the Team view</button>' }),
-        bind: () => $('cardTeamView').addEventListener('click', () => setView_('team')) };
+        actions: '<button class="btn primary" id="cardTeamView" type="button">Show items for anyone</button>' }),
+        bind: () => $('cardTeamView').addEventListener('click', () => setPeople_([])) };
     }
     if (state.status === 'open') {
       loadResolvedHint_();
       const n = state.resolvedHint && state.resolvedHint.n;
-      const team = state.teamId && state.teamId !== ALL_TEAMS_ID ? teamDisplayName(state.teamId) : 'your teams';
+      const team = state.teamId && state.teamId !== ALL_TEAMS_ID ? teamDisplayName(state.teamId) : (state.teamIds.length ? 'these teams' : 'your teams');
       const body = n == null ? 'Checking recently resolved items…'
         : n ? n + (n === 1 ? ' item' : ' items') + ' resolved in the last 30 days. <button class="linkbtn" id="cardShowResolved" type="button">Show</button>'
             : 'Nothing was resolved in the last 30 days either.';
@@ -2045,37 +1684,14 @@ function emptyCard_(){
 function renderList_(){
   const isAllTeams = state.teamId === ALL_TEAMS_ID;
   $('sub').textContent = (isAllTeams ? 'All teams' : state.teamId) + ' • signed in'; // hidden: kept for the page's own state
-  // The scan status itself lives in ONE shared Script Property regardless of
-  // which team is selected (a nightly all-teams scan spans every team), so
-  // the panel is visible for any admin, including in All-teams view — that's
-  // what makes the nightly scan monitorable at all without picking an
-  // arbitrary team. Only STARTING a fresh scan is team-specific (see
-  // runAdminScan/renderScanPanel's button gating).
-  const showScan = state.isAdmin;
-  $('adminScanField').classList.toggle('hidden', !showScan);
+  // (the untracked-document scan panel left the admin view in NT-2wr2.13; scanning moves to the Documents view)
   $('adminPanel').classList.toggle('hidden', !state.isAdmin); // NT-ja4
   $('adminMenuBtn').classList.toggle('hidden', !state.isAdmin); // NT-2wr2.1: UX only; admin routes re-check server-side
   $('accountBtn').textContent = (state.email || '?').charAt(0);
-  renderFindScan_(); // NT-2wr2.6: team chips follow state.teams
-  if (!state.stale && state.view === 'admin' && !state.isAdmin) setView_('team');
+  if (!state.stale && state.view === 'admin' && !state.isAdmin) setView_('items');
   $('adminToolsField').classList.toggle('hidden', !state.isAdmin);
   if (!state.isAdmin) $('adminHealthPanel').classList.add('hidden');
   loadAdminExtras();
-  // gts-lgpx: the scan lives server-side in a Script Property, so on load (and
-  // on every team switch) ask what it is doing rather than assuming idle — a
-  // scan started in a previous session may still be running right now.
-  if (showScan) {
-    if (state.scanTeamShown !== state.teamId) {
-      state.scanTeamShown = state.teamId;
-      state.scan = null;
-      $('adminScanStatus').innerHTML = '';
-      $('adminScanResults').classList.add('hidden');
-      refreshScanStatus();
-    }
-  } else {
-    state.scanTeamShown = null;
-    clearTimeout(state.scanPollTimer);
-  }
   // gts-zm8w: ALL-teams tier varies per document (state.teamTiers), so the
   // single title-line tag can't say EDIT/VIEW for the whole page — each doc
   // group's own controls are gated individually below instead.
@@ -2092,8 +1708,9 @@ function renderList_(){
     const note = document.createElement('div');
     note.className = 'notice';
     note.id = 'healthNote';
-    note.textContent = 'Showing actions visible to you';
+    note.innerHTML = 'From tracking health · <button class="linkbtn" id="healthBack" type="button">Back</button>';
     $('listView').insertAdjacentElement('afterbegin', note); // NT-ja4: outside the admin-only panel
+    $('healthBack').addEventListener('click', () => setView_('admin'));
   }
   const rows = shownRows_();
   // NT-ttl: the summary line always describes the rows this render draws (applyActions_ renders fresh rows
@@ -2116,7 +1733,8 @@ function renderList_(){
   }
 
   docOpenSet_ = new Set(rows.filter(isOpenRow_).map(r => r.doc_id));
-  if (state.view === 'mine' && !state.docId) { // NT-2wr2.2: My items is flat: open oldest first, resolved below a divider
+  const mode = effGroup_();
+  if (mode === 'none') { // Group by None is flat: open oldest first, resolved below a divider
     const open = rows.filter(isOpenRow_).sort((a, b) => String(a.created_date || '').localeCompare(String(b.created_date || '')));
     const done = rows.filter(r => !isOpenRow_(r)).sort((a, b) => String(b.modified_date || '').localeCompare(String(a.modified_date || '')));
     const one = r => rowHtml(r, rowTier_(r), { showDoc: true });
@@ -2127,54 +1745,43 @@ function renderList_(){
     return;
   }
 
-  // Team: group by document (the sync control is document-scoped). Documents with open items come first; the
-  // document named in the URL leads them.
-  const byDoc = new Map();
-  rows.forEach(r => { if(!byDoc.has(r.doc_id)) byDoc.set(r.doc_id, []); byDoc.get(r.doc_id).push(r); });
-  const docOrder = Array.from(byDoc.keys()).map((id, i) => ({ id, i }));
-  const docRank = id => (id === state.docId ? 0 : docOpenSet_.has(id) ? 1 : 2);
-  docOrder.sort((a, b) => docRank(a.id) - docRank(b.id) || a.i - b.i);
-  const sortedDocs = new Map(docOrder.map(d => [d.id, byDoc.get(d.id)]));
-
-  if (isAllTeams) {
-    // gts-zeti: group doc-groups under a collapsible team header, in the
-    // order teams first appear across rows (matches server aggregate order).
-    const byTeam = new Map();
-    sortedDocs.forEach((docRows, docId) => {
-      const teamId = docRows[0].team_id;
-      if (!byTeam.has(teamId)) byTeam.set(teamId, new Map());
-      byTeam.get(teamId).set(docId, docRows);
-    });
-    byTeam.forEach((docsInTeam, teamId) => {
-      const teamRowCount = Array.from(docsInTeam.values()).reduce((n, r) => n + r.length, 0);
-      listEl.insertAdjacentHTML('beforeend', collapsibleGroupHtml({
-        title: teamDisplayName(teamId), // shared with the scan panel
-        collapsed: !!state.collapsed['team:' + teamId],
-        toggleAttr: `data-toggle-team="${escape(teamId)}"`,
-        countText: teamRowCount + (teamRowCount === 1 ? ' action' : ' actions'),
-        bodyClass: 'teamdocs',
-        body: Array.from(docsInTeam.entries()).map(([docId, docRows]) => docGroupHtml(docId, docRows, true)).join('')
-      }));
-    });
-  } else {
-    sortedDocs.forEach((docRows, docId) => {
-      listEl.insertAdjacentHTML('beforeend', docGroupHtml(docId, docRows, false));
-    });
-  }
+  // One level of groups (spec section 4). Every group starts expanded; collapsed ones are remembered. Groups with
+  // open items come first (the document named in the URL leads), then by name.
+  const groups = new Map();
+  const keyOf = r => mode === 'team' ? (r.team_id || state.teamId || '')
+    : mode === 'person' ? (String(r.assignee_email || r.assignee_name || '').toLowerCase())
+    : r.doc_id;
+  rows.forEach(r => { const k = keyOf(r); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+  const nameOf = (k, rs) => mode === 'team' ? teamDisplayName(k)
+    : mode === 'person' ? (k ? (isMine(rs[0]) ? (rs[0].assignee_name || personName_(k)) + ' (me)' : (rs[0].assignee_name || rs[0].assignee_email)) : 'Unassigned')
+    : (rs[0].doc_name || '(untitled document)');
+  const list = Array.from(groups.entries()).map(([k, rs], i) => ({ k, rs, i, name: nameOf(k, rs),
+    rank: mode === 'person' ? (!k ? 3 : isMine(rs[0]) ? 0 : rs.some(isOpenRow_) ? 1 : 2)
+        : (k === state.docId ? 0 : rs.some(isOpenRow_) ? 1 : 2) }));
+  list.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name) || a.i - b.i);
+  const teamsInList = new Set(rows.map(r => r.team_id)).size;
+  list.forEach(g => {
+    if (mode === 'document') { listEl.insertAdjacentHTML('beforeend', docGroupHtml(g.k, g.rs, teamsInList > 1)); return; }
+    const sub = g.rs.length;
+    listEl.insertAdjacentHTML('beforeend', collapsibleGroupHtml({
+      title: g.name,
+      collapsed: groupCollapsed_(mode, g.k),
+      toggleAttr: `data-toggle-group="${escape(groupKey_(mode, g.k))}"`,
+      countText: docCountText_(g.rs) + (mode === 'person' && teamsInList > 1 ? '' : ''),
+      bodyClass: 'teamdocs',
+      body: `<div class="docgroup"><div class="docrows">${g.rs.map(r => rowHtml(r, rowTier_(r), { showDoc: true })).join('')}</div></div>`
+    }));
+  });
   bindListEvents_();
   renderReferences_();
 }
 
 function bindListEvents_(){
 
-  listEl.querySelectorAll('[data-toggle-team]').forEach(b => b.addEventListener('click', () => {
-    const key = 'team:' + b.dataset.toggleTeam;
+  listEl.querySelectorAll('[data-toggle-group]').forEach(b => b.addEventListener('click', () => {
+    const key = b.dataset.toggleGroup;
     state.collapsed[key] = !state.collapsed[key];
-    render();
-  }));
-  listEl.querySelectorAll('[data-toggle-doc]').forEach(b => b.addEventListener('click', () => {
-    const key = 'doc:' + b.dataset.toggleDoc;
-    state.collapsed[key] = !docIsCollapsed_(b.dataset.toggleDoc); // NT-o1zu.7 AC4: the user's choice persists
+    saveCollapsed_();
     render();
   }));
   listEl.querySelectorAll('[data-sync]').forEach(b => b.addEventListener('click', onSyncClick));
@@ -2190,12 +1797,20 @@ function bindListEvents_(){
 function renderUntrackedPanel_(){
   const canStart = state.tier === 'EDIT' && !state.stale && !state.docStarting && !state.docAdded;
   const hint = state.docAdded ? '' : state.tier === 'EDIT'
-    ? 'Action items in it will appear here after the next sync.' : 'Ask someone who can edit this document to add it.';
+    ? 'Its action items will appear here after the next sync.' : 'View only. Someone who can edit this document can add it.';
   listEl.innerHTML = cardHtml_({ id: 'docUntracked', head: "This document isn't in Tracker yet",
     body: state.docAdded ? 'Added. Waiting for the first sync…' : hint,
-    actions: state.docAdded ? '' : `<button class="btn primary" id="docStartTracking" type="button" ${canStart ? '' : 'disabled'}
+    actions: state.docAdded ? '' : (state.tier !== 'EDIT' ? '' : `<button class="btn primary" id="docStartTracking" type="button" ${canStart ? '' : 'disabled'}
       title="${state.tier !== 'EDIT' ? 'Adding a document needs edit access to it'
-              : state.stale ? 'Available once fresh data has loaded' : 'Add this document to Tracker'}">Add to Tracker</button>` });
+              : state.stale ? 'Available once fresh data has loaded' : 'Add this document to Tracker'}">Add</button>`) +
+      ` <button class="linkbtn" id="docFindInDocs" type="button">Find it in Documents</button>` });
+  if ($('docFindInDocs')) $('docFindInDocs').addEventListener('click', () => {
+    const id = state.docId;
+    try { history.pushState({ tv: 'items' }, '', location.href); } catch (e) { /* no history entry */ }
+    state.docsSearch = id; // read by documents.js on show(); TrackerDocs.setSearch(id) is called too when it exists
+    setView_('documents');
+    if (window.TrackerDocs && typeof window.TrackerDocs.setSearch === 'function') window.TrackerDocs.setSearch(id);
+  });
   if ($('docStartTracking')) $('docStartTracking').addEventListener('click', onStartTrackingClick_);
 }
 // Add to Tracker is the existing team_sync_document route with teamId '' (the server decides the team); EDIT needed,
@@ -2212,7 +1827,7 @@ function onStartTrackingClick_(){
   postJson(GACTIONSHEET_URL, { action: 'team_sync_document', assertion: state.assertion, teamId: '', docId })
     .then(res => {
       if (res && res.ok) {
-        state.collapsed['doc:' + docId] = false;
+        state.collapsed[groupKey_('document', docId)] = false;
         state.docStarting = false;
         state.docAdded = true;
         render();
@@ -2258,12 +1873,29 @@ function collapsibleGroupHtml(o){
 // nothing open collapses to one line, unless a search is active. The document named in the URL (document view)
 // and the &action= focus target always render expanded. docOpenSet_ is set per render by renderList_.
 function docIsCollapsed_(docId){
-  if (state.docId) return false;
-  if (state.focusGid && state.focusGid.indexOf(docId + '/') === 0) return false;
-  const v = state.collapsed['doc:' + docId];
-  if (v !== undefined) return !!v;
-  return state.search.trim() ? false : !docOpenSet_.has(docId); // NT-2wr2.2: collapsed when nothing in it is open
+  if (state.focusGid && state.focusGid.indexOf(docId + '/') === 0) return false; // the &action= target stays visible
+  return groupCollapsed_('document', docId);
 }
+// v2 section 4: every group starts expanded; the person's collapse choices are remembered per browser and grouping.
+const COLLAPSE_KEY_ = 'nuuts.tracker.collapsed.v2';
+let collapseLoaded_ = false;
+function groupKey_(mode, k){ return 'g:' + mode + ':' + k; }
+function loadCollapsed_(){
+  if (collapseLoaded_) return;
+  collapseLoaded_ = true;
+  try {
+    const o = JSON.parse(localStorage.getItem(COLLAPSE_KEY_) || 'null');
+    if (o && typeof o === 'object') Object.keys(o).forEach(k => { if (o[k] === true && k.indexOf('g:') === 0) state.collapsed[k] = true; });
+  } catch (e) { /* storage unavailable: groups start expanded */ }
+}
+function saveCollapsed_(){
+  try {
+    const o = {};
+    Object.keys(state.collapsed).forEach(k => { if (state.collapsed[k] === true && k.indexOf('g:') === 0) o[k] = true; });
+    localStorage.setItem(COLLAPSE_KEY_, JSON.stringify(o));
+  } catch (e) { /* nothing remembered */ }
+}
+function groupCollapsed_(mode, k){ loadCollapsed_(); return !!state.collapsed[groupKey_(mode, k)]; }
 
 function docCountText_(docRows){
   const open = docRows.filter(isOpenRow_).length, done = docRows.length - open;
@@ -2274,9 +1906,9 @@ function docGroupHtml(docId, docRows, inTeamGroup){
   // gts-zm8w: in ALL-teams mode each doc belongs to exactly one team
   // (uniform team_id across a doc's rows), so gate this group's controls
   // by THAT team's own tier rather than the blended state.tier.
-  const tier = inTeamGroup ? (state.teamTiers[first.team_id] || 'NONE') : state.tier;
+  const tier = rowTier_(first);
   const docCollapsed = docIsCollapsed_(docId);
-  const toggleBtn = `<button class="collapsebtn" data-toggle-doc="${escape(docId)}" aria-expanded="${!docCollapsed}"
+  const toggleBtn = `<button class="collapsebtn" data-toggle-group="${escape(groupKey_('document', docId))}" aria-expanded="${!docCollapsed}"
          title="${docCollapsed ? 'Expand' : 'Collapse'} this document">&#9662;</button>`; // NT-o1zu.7 AC1/7
   return `
     <div class="docgroup${docCollapsed ? ' collapsed' : ''}">
@@ -2284,7 +1916,7 @@ function docGroupHtml(docId, docRows, inTeamGroup){
         <div class="docname">${toggleBtn}<a href="${first.doc_url}" target="_blank" rel="noopener"
           >${escape(first.doc_name || '(untitled document)')}</a></div>
         <div class="controls">
-          <span class="tag">${docCountText_(docRows)}</span>
+          ${inTeamGroup ? `<span class="tag">${escape(teamDisplayName(first.team_id))}</span>` : ''}<span class="tag">${docCountText_(docRows)}</span>
           <button class="btn small" data-sync="${docId}" ${tier === 'EDIT' && !state.stale ? '' : 'disabled'}
             title="${state.stale ? 'Available once fresh data has loaded' : tier === 'EDIT' ? 'Re-sync this document with the sheet'
                                      : 'Syncing needs EDIT access to this document’s folder'}"
@@ -2981,20 +2613,17 @@ function windowApplies_(){ return !(state.docId || state.status === 'open' || st
 function activeChips_(){
   const c = [];
   if (state.docId) c.push({ k: 'doc', t: 'Document: ' + (state.docName || 'this document') });
-  if (!state.docId && state.teams.length > 1 && state.teamId && state.teamId !== ALL_TEAMS_ID) c.push({ k: 'team', t: 'Team: ' + teamDisplayName(state.teamId) });
+  if (!state.docId && state.teamIds.length) c.push({ k: 'teams', t: 'Teams: ' + state.teamIds.map(teamDisplayName).join(', ') });
+  if (state.people.length) c.push({ k: 'people', t: 'People: ' + peopleLabel_() });
   if (state.status !== viewDefaultStatus_()) c.push({ k: 'status', t: 'Status: ' + optText_('statusSel', state.status) });
   if (state.age) c.push({ k: 'age', t: 'Age: ' + (AGE_LABELS_[state.age] || state.age) });
-  if (state.scope === 'person' && state.person) {
-    const a = state.assignees.find(x => x.email === state.person);
-    c.push({ k: 'person', t: 'Person: ' + ((a && a.name) || state.person) });
-  }
   if (windowApplies_() && state.windowDays !== 60) c.push({ k: 'window', t: 'Resolved: ' + optText_('windowSel', String(state.windowDays)).replace(' (default)', '') });
   return c;
 }
 function summaryText_(rows){
   const open = rows.filter(isOpenRow_);
   if (state.docId) return rows.length ? rows.length + (rows.length === 1 ? ' item' : ' items') : '';
-  if (state.view === 'mine') {
+  if (peopleMeOnly_()) {
     if (!open.length) return rows.length ? 'Nothing open for you' : '';
     const old = open.filter(r => (daysSince_(r.created_date) || 0) > 30).length;
     return open.length + ' open for you' + (old ? ' · ' + old + ' older than 30 days' : '');
@@ -3014,23 +2643,23 @@ function renderToolbar_(rows){
   $('countLabel').textContent = summaryText_(rows);
   if ($('searchBox').value !== state.search) $('searchBox').value = state.search;
   $('statusSel').value = state.status;
+  $('groupSel').value = effGroup_();
+  $('groupSel').parentElement.classList.toggle('hidden', !!state.docId);
   $('ageSel').value = state.age;
   $('windowSel').value = String(state.windowDays);
-  if (state.teamId) $('teamSel').value = state.teamId;
   $('windowField').style.display = windowApplies_() ? '' : 'none';
-  $('personField').style.display = state.view === 'mine' ? 'none' : '';
 }
 function filtersChanged_(){
-  writePrefs_(); // NT-2wr2.5: a filter change keeps the selection ('N selected (M hidden by filters)')
+  writePrefs_(); // a filter change keeps the selection ('N selected (M hidden by filters)')
   renderToolbar_();
   return refreshActions();
 }
 function removeFilter_(k){
   if (k === 'doc') { clearDocFilter_(); return; }
-  if (k === 'team') { state.teamId = ALL_TEAMS_ID; clearRefSelection_(); }
-  else if (k === 'status') { state.status = viewDefaultStatus_(); state.statusTouched = false; }
+  if (k === 'teams') { setTeamIds_([]); return; }
+  if (k === 'people') { setPeople_([]); return; }
+  if (k === 'status') { state.status = viewDefaultStatus_(); state.statusTouched = false; }
   else if (k === 'age') state.age = '';
-  else if (k === 'person') { state.scope = 'all'; state.person = ''; renderPersonOptions_(); syncPersonUrl_(); }
   else if (k === 'window') state.windowDays = 60;
   filtersChanged_();
 }
@@ -3045,179 +2674,199 @@ $('filtersDone').addEventListener('click', () => setFiltersOpen_(false));
 $('filtersScrim').addEventListener('click', () => setFiltersOpen_(false));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') setFiltersOpen_(false); });
 $('filtersClear').addEventListener('click', () => {
-  state.status = viewDefaultStatus_(); state.statusTouched = false; state.age = ''; state.windowDays = 60;
-  state.scope = state.view === 'mine' ? 'mine' : 'all'; state.person = '';
-  renderPersonOptions_(); syncPersonUrl_();
-  if (state.docId) { setDocFilter_('', ''); }
-  if (state.teams.length > 1) state.teamId = ALL_TEAMS_ID;
+  state.age = ''; state.windowDays = 60; state.statusTouched = false;
+  state.people = []; state.teamIds = []; state.teamId = teamScope_();
+  state.status = viewDefaultStatus_();
+  if (state.docId) setDocFilter_('', '');
+  renderPickers_(); syncUrl_(); notifyTeams_();
   filtersChanged_();
 });
+
+// ---- search: item text, people, documents; a pasted Doc link or ID opens that document (E6) ----------------------
 let searchTimer_ = null;
+const LINKISH_RE_ = /^https?:\/\/|docs\.google\.com/i;
+// A Docs URL always counts; a bare id only when it is long and has a digit, so a word like "communications" stays a search.
+function docRefFromSearch_(text){
+  const t = text.trim();
+  if (!t || /\s/.test(t)) return { kind: 'none' };
+  const ref = parseDocRef_(t);
+  if (ref && (LINKISH_RE_.test(t) || (t.length >= 20 && /\d/.test(t)))) return { kind: 'doc', ref };
+  if (LINKISH_RE_.test(t)) return { kind: 'invalid' };
+  return { kind: 'none' };
+}
+function trySearchDoc_(){
+  const r = docRefFromSearch_($('searchBox').value);
+  $('searchError').classList.toggle('hidden', r.kind !== 'invalid');
+  if (r.kind === 'doc') { state.search = ''; $('searchBox').value = ''; openDoc_(r.ref, ''); return true; }
+  return false;
+}
 $('searchBox').addEventListener('input', e => {
   state.search = e.target.value;
+  $('searchError').classList.add('hidden');
   clearTimeout(searchTimer_);
   searchTimer_ = setTimeout(() => render(), 120);
 });
+$('searchBox').addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(searchTimer_); if (!trySearchDoc_()) render(); } });
+$('searchBox').addEventListener('paste', () => setTimeout(() => { state.search = $('searchBox').value; trySearchDoc_(); }, 0));
+$('searchBox').addEventListener('change', () => { trySearchDoc_(); });
+$('groupSel').addEventListener('change', e => { // Group by is a view choice: it keeps the selection and needs no new request
+  state.group = e.target.value;
+  syncUrl_(); writePrefs_(); render();
+});
 $('statusSel').addEventListener('change', e => { state.status = e.target.value; state.statusTouched = true; filtersChanged_(); });
 $('ageSel').addEventListener('change', e => { state.age = e.target.value; filtersChanged_(); });
-// NT-tnh: person picker (#personSelect); the server applies the filter (assigneeEmail).
-function syncPersonUrl_(){
-  try {
-    const u = new URL(location.href);
-    if (state.scope === 'person' && state.person) u.searchParams.set('person', state.person);
-    else u.searchParams.delete('person');
-    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
-  } catch (e) { /* history unavailable: the filter still works */ }
-}
-function renderPersonOptions_(){
-  const sel = $('personSelect');
-  const list = state.assignees.slice();
-  // A preset/selected email not among the assignees stays selectable so the filter stays applied.
-  if (state.person && !list.some(a => a.email === state.person)) list.push({ name: '', email: state.person });
-  sel.innerHTML = '<option value="">Anyone</option>' + list.map(a =>
-    `<option value="${escape(a.email)}" title="${escape(a.email)}">${escape(a.name || a.email)}</option>`).join('');
-  sel.value = state.person;
-}
-renderPersonOptions_();
-$('personSelect').addEventListener('change', e => {
-  state.person = e.target.value || '';
-  state.scope = state.person ? 'person' : (state.view === 'mine' ? 'mine' : 'all');
-  syncPersonUrl_();
-  filtersChanged_();
-});
 $('windowSel').addEventListener('change', e => {
   state.windowDays = Number(e.target.value) || 60;
   filtersChanged_();
 });
 
-// ---- NT-2wr2.6: Find documents - a member scans one of their own teams' folders ---------------------------
-// Reuses the admin scan's routes, state.scan, state.scanSelected, visibleScanCandidates_, scanCandidateLi_
-// and scanSelectionAction_ (I12); only the team choice, the container and the one "Add to Tracker" button
-// are new. UX only: the server decides who may scan (today the admin_scan_* routes answer 'forbidden' to
-// a non-admin, which hides this section). Tracking a document uses admin_scan_track.
-const FIND_TEAM_KEY_ = 'nuuts.tracker.findTeam.v1' + STORAGE_SCOPE_;
-function readFindTeam_(){ try { return localStorage.getItem(FIND_TEAM_KEY_) || ''; } catch (e) { return ''; } }
-function writeFindTeam_(t){ try { localStorage.setItem(FIND_TEAM_KEY_, t); } catch (e) { /* remembering is optional */ } }
-function findScanVisible_(){ return (state.isAdmin || state.findScanDenied !== true) && state.teams.length > 0; }
-// A refusal from the scan routes means this person may not scan: hide the section (admins are never refused).
-function noteScanRefusal_(res){
-  if (res && res.reason === 'forbidden' && !state.isAdmin && !state.findScanDenied) {
-    state.findScanDenied = true;
-    state.scan = null;
-    renderFindScan_();
-  }
+// ---- NT-2wr2.13: link state; Teams and People pickers --------------------------------------------------------------
+// The address bar mirrors Teams, People and grouping after a person changes them, so the page is shareable as a link.
+// 'doc' and 'action' are left to setDocFilter_; the legacy team / person parameters are superseded by these.
+function syncUrl_(){
+  try {
+    const u = new URL(location.href);
+    const put = (k, v) => { if (v) u.searchParams.set(k, v); else u.searchParams.delete(k); };
+    put('teams', state.teamIds.join(','));
+    put('people', state.people.join(','));
+    put('group', state.group);
+    u.searchParams.delete('team'); u.searchParams.delete('person');
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  } catch (e) { /* history unavailable: the filters still work */ }
 }
-function renderFindTeams_(){
-  const f = $('findScanField');
-  const show = findScanVisible_();
-  f.classList.toggle('hidden', !show);
-  if (!show) { $('findScanResults').classList.add('hidden'); return; }
-  const ids = state.teams.map(t => t.teamId);
-  if (ids.indexOf(state.findTeamId) === -1) {
-    const last = readFindTeam_();
-    state.findTeamId = ids.indexOf(last) !== -1 ? last : ids[0];
-  }
-  const chips = $('findTeamChips');
-  chips.classList.toggle('hidden', ids.length < 2);
-  chips.innerHTML = ids.length < 2 ? '' : state.teams.map(t =>
-    `<button type="button" data-find-team="${escape(t.teamId)}" aria-pressed="${t.teamId === state.findTeamId}">${escape(t.teamName || t.teamId)}</button>`).join('');
-  chips.querySelectorAll('[data-find-team]').forEach(b => b.addEventListener('click', () => {
-    if (state.scanBusy || (state.scan && state.scan.status === 'running')) return; // one team at a time
-    state.findTeamId = b.dataset.findTeam;
-    renderFindTeams_();
-    renderFindScan_();
-  }));
+function notifyTeams_(){ teamListeners_.forEach(fn => { try { fn(state.teamIds.slice()); } catch (e) { /* a subscriber's error is its own */ } }); }
+function setTeamIds_(ids, o){
+  ids = (ids || []).filter((id, i, a) => a.indexOf(id) === i && state.teams.some(t => t.teamId === id));
+  if (ids.length >= state.teams.length) ids = [];
+  const same = ids.length === state.teamIds.length && ids.every(id => state.teamIds.indexOf(id) !== -1);
+  if (same) return;
+  state.teamIds = ids;
+  state.teamId = teamScope_();
+  if (state.docId) setDocFilter_('', ''); // a Teams change leaves the single-document scope
+  if (!state.statusTouched) state.status = viewDefaultStatus_();
+  renderPickers_(); syncUrl_(); notifyTeams_();
+  if (!(o && o.silent) && state.view === 'items') filtersChanged_(); else writePrefs_();
 }
-function renderFindScan_(){
-  renderFindTeams_();
-  if (!findScanVisible_()) return;
-  const sc = state.scan && state.scan.teamId === state.findTeamId ? state.scan : null;
-  const running = !!sc && sc.status === 'running';
-  const btn = $('findScanBtn');
-  btn.textContent = running ? 'Scanning…' : 'Scan';
-  btn.disabled = state.scanBusy || running;
-  $('findScanStatus').innerHTML = scanStatusLine(sc);
-  renderFindResults_(sc);
+function setPeople_(list){
+  state.people = list.map(x => x.toLowerCase() === (state.email || '').toLowerCase() ? 'me' : x).filter((x, i, a) => a.indexOf(x) === i);
+  if (!state.statusTouched) state.status = viewDefaultStatus_();
+  state.defaultPending = false;
+  renderPickers_(); syncUrl_();
+  filtersChanged_();
 }
-function renderFindResults_(sc){
-  const box = $('findScanResults');
-  const all = (sc && sc.candidates) || [];
-  if (!sc || sc.status === 'idle' || (!all.length && !sc.complete)) { box.classList.add('hidden'); return; }
-  const cands = visibleScanCandidates_(all, state.findTeamId);
-  const shown = new Set(cands.map(c => c.docId));
-  state.scanSelected.forEach(id => { if (!shown.has(id)) state.scanSelected.delete(id); });
-  const selectable = !!sc.complete;
-  if (!cands.length) {
-    box.innerHTML = sc.complete ? `<p>No untracked documents found in ${escape(teamDisplayName(state.findTeamId) || 'this team')}.</p>` : '';
-  } else {
-    box.innerHTML = `<p>${cands.length} untracked ${cands.length === 1 ? 'document' : 'documents'}${sc.complete ? '' : ' found so far'}:</p>` +
-      `<ul class="scanlist" style="list-style:none;padding:0;margin:0 0 8px">` + cands.map(c => scanCandidateLi_(c, selectable, true)).join('') + `</ul>` +
-      (selectable ? `<p><button class="btn small" id="findAddBtn" title="Add the selected documents to Tracker">Add to Tracker</button></p>` : '');
-    box.querySelectorAll('.trackCandidate').forEach(cb => cb.addEventListener('change', () => {
-      if (cb.checked) state.scanSelected.add(cb.dataset.docId); else state.scanSelected.delete(cb.dataset.docId);
-    }));
-    const add = $('findAddBtn');
-    if (add) add.addEventListener('click', () => scanSelectionAction_({
-      action: 'admin_scan_track', resultKey: 'tracked', btnId: 'findAddBtn', boxId: 'findScanResults', teamId: state.findTeamId,
-      idle: 'Add to Tracker', working: 'Adding…', verb: 'add', fail: 'Add failed',
-      done: n => `Added ${n} ${n === 1 ? 'document' : 'documents'}. They appear in Tracker after the next sync.`
-    }));
-  }
-  box.classList.remove('hidden');
+function personName_(email){
+  const a = state.assignees.find(x => x.email === email);
+  return (a && a.name) || email;
 }
-function runFindScan_(){
-  if (state.scanBusy || !state.findTeamId) return;
-  writeFindTeam_(state.findTeamId);
-  state.scanBusy = true;
-  renderFindScan_();
-  scanCall('admin_scan_start', state.findTeamId)
-    .then(res => {
-      if (!res.ok) {
-        noteScanRefusal_(res);
-        if (res.reason !== 'forbidden') toast('Scan failed: ' + (res.reason === 'no folders registered for team' ? 'this team has no folder registered' : (res.reason || 'unknown error')));
-        return;
-      }
-      state.scanSelected.clear();
-      state.scan = res;
-    })
-    .catch(err => toast('Scan failed: ' + (err.message || err)))
-    .finally(() => { state.scanBusy = false; renderScanPanel(); scheduleScanPoll(); });
+function peopleLabel_(){
+  return state.people.map(x => x === 'me' ? 'Me' : personName_(x)).join(', ');
 }
-$('findScanBtn').addEventListener('click', runFindScan_);
-// ---- NT-2wr2.1: views (My items | Team | Find documents | Admin tools | About and privacy) -----------------
-// UX routing only: the server decides what each call returns. My items = scope 'mine'; Team = scope 'all'
-// (a ?person= scope stays a Team view); Find / Admin / About replace the list area without clearing its state.
+function teamsLabel_(){
+  return state.teamIds.length ? state.teamIds.map(teamDisplayName).join(', ') : 'All';
+}
+// One multi-select: a button that shows the choice and a checkbox list under it. cfg: {title, options(), selected(),
+// anyLabel, toggle(value, checked), clear(), summary()}. Stays open while ticking; closes on an outside click or Escape.
+function buildPicker_(host, cfg){
+  const inst = { host, cfg, open: false };
+  host.innerHTML = '<button class="btn msbtn" type="button" aria-haspopup="true" aria-expanded="false"></button><div class="mspop hidden" role="group"></div>';
+  inst.btn = host.firstChild; inst.pop = host.lastChild;
+  inst.btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const was = inst.open;
+    multiPickers_.forEach(i => { i.open = false; });
+    inst.open = !was; renderPickers_();
+  });
+  inst.pop.addEventListener('click', e => e.stopPropagation());
+  inst.pop.addEventListener('change', e => {
+    const cb = e.target;
+    if (cb.dataset.any) cfg.clear(); else cfg.toggle(cb.value, cb.checked);
+  });
+  multiPickers_.push(inst);
+  return inst;
+}
+function renderPicker_(inst){
+  const cfg = inst.cfg, sel = cfg.selected();
+  inst.btn.textContent = cfg.title + ': ' + cfg.summary() + ' ▾';
+  inst.btn.setAttribute('aria-expanded', String(inst.open));
+  inst.pop.classList.toggle('hidden', !inst.open);
+  if (!inst.open) return;
+  inst.pop.innerHTML = cfg.options().map(o => `<label><input type="checkbox" value="${escape(o.value)}"${sel.indexOf(o.value) !== -1 ? ' checked' : ''} /> ${escape(o.label)}</label>`).join('') +
+    '<div class="msdiv"></div>' +
+    `<label><input type="checkbox" data-any="1"${sel.length ? '' : ' checked'} /> ${escape(cfg.anyLabel)}</label>`;
+}
+const teamsCfg_ = {
+  title: 'Teams', anyLabel: 'All teams',
+  options: () => state.teams.map(t => ({ value: t.teamId, label: t.teamName || t.teamId })),
+  selected: () => state.teamIds,
+  summary: () => teamsLabel_(),
+  toggle: (v, on) => setTeamIds_(on ? state.teamIds.concat([v]) : state.teamIds.filter(x => x !== v)),
+  clear: () => setTeamIds_([])
+};
+const peopleCfg_ = {
+  title: 'People', anyLabel: 'Anyone',
+  options: () => {
+    const mine = (state.email || '').toLowerCase();
+    const list = [{ value: 'me', label: 'Me' }];
+    const seen = new Set(['me', mine]);
+    state.assignees.forEach(a => { const e = String(a.email || '').toLowerCase(); if (e && !seen.has(e)) { seen.add(e); list.push({ value: e, label: a.name || e }); } });
+    state.people.forEach(e => { if (!seen.has(e)) { seen.add(e); list.push({ value: e, label: e }); } }); // a linked person stays selectable
+    return list;
+  },
+  selected: () => state.people,
+  summary: () => state.people.length ? peopleLabel_() : 'Anyone',
+  toggle: (v, on) => setPeople_(on ? state.people.concat([v]) : state.people.filter(x => x !== v)),
+  clear: () => setPeople_([])
+};
+buildPicker_($('teamsMs'), teamsCfg_);
+buildPicker_($('peopleMs'), peopleCfg_);
+function renderPickers_(){
+  $('teamsMs').classList.toggle('hidden', state.teams.length < 2);
+  multiPickers_.forEach(renderPicker_);
+}
+document.addEventListener('click', () => { if (multiPickers_.some(i => i.open)) { multiPickers_.forEach(i => { i.open = false; }); renderPickers_(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && multiPickers_.some(i => i.open)) { multiPickers_.forEach(i => { i.open = false; }); renderPickers_(); } });
+renderPickers_();
+
+// ---- views (Items | Documents | Admin tools | About and privacy) ---------------------------------------------------
+// UX routing only: the server decides what each call returns. Admin and About replace the list area without clearing
+// its state. Documents is rendered by documents.js (NT-2wr2.15) through window.TrackerShell.
 function setAccountMenuOpen_(open){
   $('accountBox').classList.toggle('hidden', !open);
   $('accountBtn').setAttribute('aria-expanded', String(open));
 }
+function showDocumentsView_(){
+  const docs = window.TrackerDocs;
+  const ready = !!(docs && typeof docs.show === 'function');
+  const ph = $('documentsPlaceholder'); if (ph) ph.classList.toggle('hidden', ready); // documents.js replaces it once it builds
+  if (ready) docs.show();
+}
 function setView_(v, opts){
-  if (['mine', 'team', 'find', 'admin', 'about'].indexOf(v) === -1) v = 'team';
+  v = ({ mine: 'items', team: 'items', find: 'documents' })[v] || v;
+  if (['items', 'documents', 'admin', 'about'].indexOf(v) === -1) v = 'items';
   state.view = v;
-  if (v === 'find') { renderFindScan_(); refreshScanStatus(); }
-  const listy = v === 'mine' || v === 'team';
-  $('listView').classList.toggle('hidden', !listy);
-  $('findView').classList.toggle('hidden', v !== 'find');
+  $('listView').classList.toggle('hidden', v !== 'items');
+  $('documentsView').classList.toggle('hidden', v !== 'documents');
   $('adminView').classList.toggle('hidden', v !== 'admin');
   $('aboutView').classList.toggle('hidden', v !== 'about');
   document.querySelectorAll('[data-view]').forEach(b => {
     if (b.dataset.view === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   let changed = false;
-  if (v === 'mine' && state.scope !== 'mine') { state.scope = 'mine'; state.person = ''; changed = true; }
-  else if (v === 'team' && state.scope === 'mine') { state.scope = 'all'; changed = true; }
-  if (listy && !state.statusTouched && state.status !== viewDefaultStatus_()) { state.status = viewDefaultStatus_(); changed = true; }
-  if (v === 'mine' && changed && state.teams.length > 1 && !state.docId && state.teamId !== ALL_TEAMS_ID) { // My items spans the teams
-    state.teamId = ALL_TEAMS_ID; $('teamSel').value = state.teamId;
-  }
-  if (changed) { renderPersonOptions_(); syncPersonUrl_(); }
-  if (listy) { writePrefs_(); renderToolbar_(); }
+  if (v === 'items' && !state.statusTouched && state.status !== viewDefaultStatus_()) { state.status = viewDefaultStatus_(); changed = true; }
+  if (v === 'items') { writePrefs_(); renderToolbar_(); }
   try {
     const u = new URL(location.href);
-    u.searchParams.set('view', v);
-    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    if (v === 'items') {
+      u.searchParams.delete('view');
+      if (state.docId) u.searchParams.set('doc', state.docId);
+    } else {
+      u.searchParams.set('view', v);
+      if (v === 'documents') { u.searchParams.delete('doc'); u.searchParams.delete('action'); } // 'doc' always opens Items
+    }
+    history.replaceState(Object.assign({}, history.state, { tv: v }), '', u.pathname + u.search + u.hash);
   } catch (e) { /* history unavailable: the view still switches */ }
   setAccountMenuOpen_(false);
+  if (v === 'documents') showDocumentsView_();
   if (changed && !(opts && opts.noRefresh) && (state.teamId || state.docId)) refreshActions();
   if (!(opts && opts.keepScroll)) window.scrollTo(0, 0);
 }
@@ -3227,7 +2876,42 @@ $('accountBtn').addEventListener('click', e => { e.stopPropagation(); setAccount
 document.addEventListener('click', e => { if (!$('accountBox').contains(e.target)) setAccountMenuOpen_(false); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') setAccountMenuOpen_(false); });
 $('switchAccountBtn').addEventListener('click', () => { setAccountMenuOpen_(false); signOut(); });
+// Back from a document's items (opened from Documents) returns to Documents; anything else reloads from the address bar.
+window.addEventListener('popstate', e => {
+  const tv = e.state && e.state.tv;
+  if (tv === 'documents') setView_('documents', { keepScroll: true });
+  else if (tv) location.reload();
+});
 setView_(state.view, { noRefresh: true, keepScroll: true });
+
+// ---- NT-2wr2.13: the hook the Documents view (documents.js, NT-2wr2.15) builds on -----------------------------------
+// postJson(payload) posts to the Tracker web app with the assertion and client version added (postJson(url, payload)
+// also works). selectedTeamIds() is the Teams filter resolved to ids (every team when none is chosen).
+// mountTeamsPicker(el) renders the shared Teams picker into el. onTeamsChange(fn) calls fn(teamIds) after any change.
+// openItemsForDoc(docId, teamId) switches to Items scoped to one document and pushes a history entry, so Back
+// returns to the Documents view (its own in-memory filters and scroll are untouched). show() may be called more than
+// once (also after the team list arrives), so it must be idempotent.
+window.TrackerShell = {
+  state, escape, toast, timeAgo, webappUrl: GACTIONSHEET_URL,
+  postJson(a, b){
+    if (typeof a === 'string') return postJson(a, b);
+    return postJson(GACTIONSHEET_URL, Object.assign({ assertion: state.assertion }, a));
+  },
+  setView(v){ setView_(v); },
+  openItemsForDoc(docId, teamId){
+    try { history.pushState({ tv: 'items' }, '', location.href); } catch (e) { /* no history entry: Back leaves the page */ }
+    return openDoc_(docId, '', teamId);
+  },
+  selectedTeamIds(){ return state.teamIds.length ? state.teamIds.slice() : state.teams.map(t => t.teamId); },
+  setTeamIds(ids){ setTeamIds_(ids); },
+  mountTeamsPicker(el){
+    const inst = buildPicker_(el, teamsCfg_);
+    renderPickers_();
+    return inst;
+  },
+  onTeamsChange(fn){ if (typeof fn === 'function') teamListeners_.push(fn); }
+};
 </script>
+<script src="documents.js" defer></script>
 </body>
 </html>
