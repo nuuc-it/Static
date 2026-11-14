@@ -18,7 +18,8 @@
     show: { tracked: true, not_tracked: true, excluded: false },
     search: '', group: 'folder', mod: '', collapsed: {}, selected: {},      // selected: docId -> teamId
     scanning: {}, scanMsg: {}, busy: false, bulkMsg: '', seq: 0, clearing: false,
-    excludeOk: true, scanOk: true, pendingScroll: null, addedPending: {}
+    excludeOk: true, scanOk: true, pendingScroll: null, addedPending: {},
+    auto: null, tried: {}   // auto-scan queue of unscanned roots (NT-2wr2.29); tried: roots already attempted this session
   };
   try {
     var saved = JSON.parse(localStorage.getItem(LS) || '{}');
@@ -57,10 +58,11 @@
         '<button class="btn" id="dvScanAll" type="button">Scan all shown</button>' +
       '</div>' +
       '<div id="dvStatus" class="sub"></div>' +
+      '<div id="dvProg" class="dv-prog hidden" role="status"></div>' +
       '<div id="dvList"></div>' +
       '<div class="bulkhost"><div class="bulkbar hidden" id="dvBar"></div><div class="bulkmsg hidden" id="dvMsg"></div></div>' +
       '<div id="dvModal"></div>';
-    ['dvTeams', 'dvShowBtn', 'dvShowMenu', 'dvMod', 'dvGroup', 'dvSearch', 'dvScanAll', 'dvStatus', 'dvList', 'dvBar', 'dvMsg', 'dvModal']
+    ['dvTeams', 'dvShowBtn', 'dvShowMenu', 'dvMod', 'dvGroup', 'dvSearch', 'dvScanAll', 'dvStatus', 'dvProg', 'dvList', 'dvBar', 'dvMsg', 'dvModal']
       .forEach(function (id) { el[id] = document.getElementById(id); });
     try { SH().mountTeamsPicker(el.dvTeams); } catch (e) {}
     try { SH().onTeamsChange(function () { if (!root.classList.contains('hidden')) load(); }); } catch (e) {}
@@ -84,6 +86,7 @@
     el.dvSearch.addEventListener('input', function () { st.search = el.dvSearch.value.trim().toLowerCase(); render(); });
     el.dvScanAll.addEventListener('click', scanAllShown);
     el.dvList.addEventListener('click', onListClick);
+    el.dvProg.addEventListener('click', function (ev) { if (ev.target.closest('[data-act="autostop"]')) stopAuto(); });
     el.dvList.addEventListener('change', onListChange);
     el.dvBar.addEventListener('click', onBarClick);
   }
@@ -97,6 +100,7 @@
     if (!force && !st.loading && st.loaded && key === st.loadedKey) return Promise.resolve();
     if (!force && st.loading && key === st.loadingKey) return st.loadP || Promise.resolve();
     if (!key) { st.loaded = false; st.error = ''; render(); return Promise.resolve(); } // teams not known yet; show() runs again when they arrive
+    st.auto = null;
     var seq = ++st.seq, same = st.loaded && key === st.loadedKey;
     st.loading = true; st.loadingKey = key; st.error = ''; st.clearing = !same; render();
     var teamIds = SH().selectedTeamIds();
@@ -108,6 +112,7 @@
         st.teams = res.teams || []; st.folders = res.folders || []; st.loaded = true; st.loadedKey = key;
         st.selected = {}; st.addedPending = {};
         render(); restoreScroll();
+        startAuto(seq);
       }).catch(function (err) {
         if (seq !== st.seq) return;
         st.loading = false; st.clearing = false; st.error = 'Could not load documents: ' + (err.message || err); render();
@@ -121,12 +126,19 @@
     return 'Could not load documents' + (r ? ' (' + r + ')' : '') + '.';
   }
   function teamName(id) { var t = st.teams.filter(function (x) { return x.teamId === id; })[0]; return t ? (t.teamName || t.teamId) : id; }
-  // Drive folder link: built only from the server-supplied folderId, and only when it looks like a Drive id.
-  function folderUrl(f) { var id = f && f.folderId; return id && /^[A-Za-z0-9_-]{4,128}$/.test(String(id)) ? 'https://drive.google.com/drive/folders/' + id : ''; }
+  // Drive folder link (NT-2wr2.29). Linked only when folderId looks like a Drive id. The server url is used only when it is
+  // a Drive folder url; otherwise the url is built from the id. Link text is never empty.
+  var DRIVE_FOLDER_URL = /^https:\/\/drive\.google\.com\/drive\/folders\/[A-Za-z0-9_-]+$/;
+  function folderUrl(f) {
+    var id = f && f.folderId;
+    if (!id || !/^[A-Za-z0-9_-]{4,128}$/.test(String(id))) return '';
+    return f.url && DRIVE_FOLDER_URL.test(String(f.url)) ? String(f.url) : 'https://drive.google.com/drive/folders/' + id;
+  }
+  function folderLabel(f) { return f.path || f.name || ('Team folder (' + teamName(f.teamId) + ')'); }
   function folderLink(f, cls) {
-    var u = folderUrl(f);
-    return u ? '<a class="' + cls + '" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer" title="Open this folder in Google Drive">' + esc(f.path) + '</a>'
-      : '<span class="' + cls + '">' + esc(f.path) + '</span>';
+    var u = folderUrl(f), label = folderLabel(f);
+    return u ? '<a class="' + cls + '" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer" title="Open this folder in Google Drive">' + esc(label) + '</a>'
+      : '<span class="' + cls + '">' + esc(label) + '</span>';
   }
   function isRoot(f) { return f.folderId && f.folderId === f.rootFolderId; }
 
@@ -151,7 +163,8 @@
       var n = visibleDocs(f).length;
       if (n) return true;
       if (st.search || st.mod) return false;
-      return f.folderId && !(f.docs || []).length; // an empty/unscanned folder still gets its header with Scan
+      if (!f.folderId || (f.docs || []).length) return false;
+      return isRoot(f) || !f.scannedAt; // a root keeps its header; a scanned subfolder with no Docs is hidden
     });
   }
   function ago(iso) { return iso ? 'Scanned ' + SH().timeAgo(iso) : 'Not scanned yet'; }
@@ -185,17 +198,20 @@
   function folderHtml(f) {
     var id = f.teamId + '|' + (f.folderId || 'other'), docs = visibleDocs(f), collapsed = !!st.collapsed[id];
     var pathHtml = folderLink(f, 'dv-path');
+    var chip = st.group === 'folder' && st.teams.length > 1 && f.teamId ? '<span class="dv-chip">' + esc(teamName(f.teamId)) + '</span>' : '';
+    var queued = !!(st.auto && st.auto.pending[id]);
     var scan = '';
     if (f.folderId) {
       var busy = !!st.scanning[id];
-      scan = '<span class="dv-scan"><span>' + esc(st.scanMsg[id] || ago(f.scannedAt)) + '</span>' +
+      scan = '<span class="dv-scan"><span>' + esc(st.scanMsg[id] || (queued ? 'Listing…' : ago(f.scannedAt))) + '</span>' +
         (st.scanOk ? '<button class="btn small" data-act="scan" data-fid="' + esc(f.folderId) + '" data-team="' + esc(f.teamId) + '"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Scanning…' : 'Scan') + '</button>' : '') + '</span>';
     }
     var body = docs.length ? docs.map(function (d) { return rowHtml(f, d); }).join('')
-      : '<div class="dv-empty">' + (f.scannedAt || !f.folderId ? 'No documents match the Show filter.' : 'Not scanned yet. Scan to list its documents.') + '</div>';
+      : '<div class="dv-empty">' + (queued ? 'Listing…' : (f.scannedAt && !(f.docs || []).length ? 'No Google Docs in this folder'
+        : (f.scannedAt || !f.folderId ? 'No documents match the Show filter.' : 'Not scanned yet. Scan to list its documents.'))) + '</div>';
     return '<section class="dv-folder' + (collapsed ? ' collapsed' : '') + '" data-fkey="' + esc(id) + '"><div class="dv-fhead">' +
       '<button class="dv-toggle" data-act="toggle" data-fkey="' + esc(id) + '" aria-expanded="' + !collapsed + '" aria-label="Collapse or expand folder">' + (collapsed ? '▸' : '▾') + '</button>' +
-      pathHtml + '<span class="sub" style="margin:0">' + docs.length + ' shown</span>' + scan + '</div><div class="dv-rows">' + body + '</div></section>';
+      pathHtml + chip + '<span class="sub" style="margin:0">' + docs.length + ' shown</span>' + scan + '</div><div class="dv-rows">' + body + '</div></section>';
   }
   // Group by Team: a team header over that team's folder sections (each keeps its own Scan).
   function teamHtml(teamId, fs) {
@@ -241,6 +257,7 @@
     else if (!st.folders.length) el.dvList.innerHTML = '<div class="empty"><strong>No documents yet</strong><br>Your teams have no folders you can see here. Ask your team lead to share the team folder with your account.</div>';
     else if (!folders.length) el.dvList.innerHTML = '<div class="empty"><strong>Nothing matches these filters</strong><br>Change Show or Modified, or clear the search.</div>';
     else el.dvList.innerHTML = listHtml(folders);
+    renderProg();
     renderBar();
     SH().reapplyBusy();
   }
@@ -395,23 +412,33 @@
   }
 
   // ---- Scan (team_scan_folder, repeated until complete) -----------------------------------------------------------
+  // A scan returns every entry of its root: they replace that root's old entries in place (server order kept).
   function mergeFolders(returned) {
+    var seenRoot = {};
     returned.forEach(function (nf) {
-      var idx = -1;
-      st.folders.forEach(function (f, i) { if (f.teamId === nf.teamId && f.folderId === nf.folderId) idx = i; });
-      if (idx >= 0) st.folders[idx] = nf; else st.folders.push(nf);
+      var k = nf.teamId + '|' + nf.rootFolderId;
+      if (seenRoot[k]) return; seenRoot[k] = true;
+      var mine = returned.filter(function (x) { return x.teamId === nf.teamId && x.rootFolderId === nf.rootFolderId; });
+      var at = -1, kept = [];
+      st.folders.forEach(function (f) {
+        if (f.teamId === nf.teamId && f.rootFolderId === nf.rootFolderId) { if (at < 0) at = kept.length; return; }
+        kept.push(f);
+      });
+      if (at < 0) at = kept.length;
+      kept.splice.apply(kept, [at, 0].concat(mine));
+      st.folders = kept;
     });
-    st.folders.sort(function (a, b) { return (a.teamId + '|' + a.path).localeCompare(b.teamId + '|' + b.path); });
   }
   function scanFolder(teamId, folderId) {
     var id = teamId + '|' + folderId;
     if (st.scanning[id]) return Promise.resolve();
     st.scanning[id] = true; st.scanMsg[id] = 'Scanning…'; render();
-    var runStartedAt = null, rounds = 0;
+    var runStartedAt = null, rounds = 0, mySeq = st.seq;
     function step() {
       var p = { action: 'team_scan_folder', teamId: teamId, folderId: folderId };
       if (runStartedAt) p.runStartedAt = runStartedAt;
       return SH().postJson(p, { background: true }).then(function (res) {
+        if (mySeq !== st.seq) { st.scanMsg[id] = ''; return; } // list reloaded or teams changed meanwhile: drop this reply
         if (!res || res.ok === false) {
           var r = res && (res.reason || res.error);
           st.scanMsg[id] = r === 'forbidden' ? 'Scan not allowed' : 'Scan failed';
@@ -422,7 +449,7 @@
         mergeFolders(res.folders || []);
         st.scanMsg[id] = res.complete ? '' : 'Scanning… ' + (res.remaining != null ? res.remaining + ' left' : '');
         render();
-        if (!res.complete && ++rounds < 40) return step();
+        if (!res.complete && ++rounds < 40 && !(st.auto && st.auto.stopped && st.auto.current === id)) return step();
         if (!res.complete) st.scanMsg[id] = 'Scan incomplete, try again';
       });
     }
@@ -433,6 +460,36 @@
       return step().catch(function (err) { st.scanMsg[id] = 'Scan failed: ' + (err.message || err); })
         .then(function () { delete st.scanning[id]; if (st.scanMsg[id] === '') delete st.scanMsg[id]; render(); });
     });
+  }
+  // ---- Auto-scan of unscanned roots (NT-2wr2.29), one root at a time, cancelled by st.seq change or Stop ----
+  function startAuto(seq) {
+    if (!st.scanOk || seq !== st.seq) return;
+    var queue = [];
+    st.folders.forEach(function (f) {
+      var k = f.teamId + '|' + f.folderId;
+      if (isRoot(f) && !f.scannedAt && !st.tried[k] && !st.scanning[k]) queue.push({ teamId: f.teamId, folderId: f.folderId, key: k, label: f.path || f.name || teamName(f.teamId) });
+    });
+    if (!queue.length) { st.auto = null; renderProg(); return; }
+    var a = st.auto = { seq: seq, total: queue.length, done: 0, stopped: false, current: '', pending: {}, label: '' };
+    queue.forEach(function (q) { a.pending[q.key] = true; });
+    render();
+    (function next() {
+      if (st.auto !== a || a.stopped || a.seq !== st.seq || !queue.length) { finish(); return; }
+      var q = queue.shift();
+      a.current = q.key; a.label = q.label; st.tried[q.key] = true; renderProg();
+      scanFolder(q.teamId, q.folderId).then(function () {
+        delete a.pending[q.key]; a.done++; a.current = ''; next();
+      }, function () { delete a.pending[q.key]; a.done++; a.current = ''; next(); });
+    })();
+    function finish() { if (st.auto === a) { a.pending = {}; st.auto = null; } render(); }
+  }
+  function stopAuto() { if (st.auto) { st.auto.stopped = true; st.auto.pending = {}; render(); } }
+  function renderProg() {
+    if (!el.dvProg) return;
+    var a = st.auto;
+    el.dvProg.classList.toggle('hidden', !a);
+    el.dvProg.innerHTML = a ? '<span class="spinner" aria-hidden="true"></span> <span>Listing folders: ' + Math.min(a.done + 1, a.total) + ' of ' + a.total +
+      (a.label ? ', ' + esc(a.label) : '') + '…</span> <button class="linkbtn" data-act="autostop" type="button">Stop</button>' : '';
   }
   function scanAllShown() {
     var seen = {}, roots = visibleFolders().filter(function (f) {
