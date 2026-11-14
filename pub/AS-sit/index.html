@@ -405,7 +405,7 @@
     <!-- NT-2wr2.13: Documents view hook. documents.js (NT-2wr2.15) renders into this section through
          window.TrackerShell; this page never edits it. Until that script is present a placeholder shows. -->
     <section class="view hidden" id="documentsView" aria-label="Documents">
-      <p class="sub" id="documentsPlaceholder">The Documents view is not available yet.</p>
+      <div class="statecard busyph" id="documentsPlaceholder" role="status"><h2><span class="busylbl">Loading documents…</span></h2><p><span class="spinner" aria-hidden="true"></span></p></div>
     </section>
 
     <section class="view hidden" id="aboutView">
@@ -587,7 +587,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.14";
+var STATIC_BUILD_VERSION_ = "0.1.28.15";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -3236,6 +3236,26 @@ window.TrackerShell = {
   onTeamsChange(fn){ if (typeof fn === 'function') teamListeners_.push(fn); }
 };
 </script>
-<script src="documents.js" defer></script>
+<script>
+// Documents view script loader: the placeholder says "Loading documents…" until documents.js attaches; if the script fails
+// to load, the placeholder becomes an error with Retry (a fresh script element, so a cached failure is not replayed).
+function loadDocumentsScript_(){
+  const s = document.createElement('script');
+  s.src = 'documents.js' + (loadDocumentsScript_.n ? '?r=' + Date.now() : '');
+  loadDocumentsScript_.n = (loadDocumentsScript_.n || 0) + 1;
+  s.onerror = () => {
+    const ph = $('documentsPlaceholder'); if (!ph) return;
+    ph.classList.remove('busyph'); ph.classList.add('err');
+    ph.innerHTML = '<h2>Documents could not be loaded</h2><p>Check your connection, then try again.</p><div class="scact"><button class="btn" type="button" id="documentsRetry">Retry</button></div>';
+    $('documentsRetry').addEventListener('click', () => {
+      ph.classList.remove('err'); ph.classList.add('busyph');
+      ph.innerHTML = '<h2><span class="busylbl">Loading documents…</span></h2><p><span class="spinner" aria-hidden="true"></span></p>';
+      loadDocumentsScript_();
+    });
+  };
+  document.body.appendChild(s);
+}
+loadDocumentsScript_();
+</script>
 </body>
 </html>

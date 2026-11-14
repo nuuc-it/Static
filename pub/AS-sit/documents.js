@@ -48,7 +48,7 @@
     st.built = true;
     root.innerHTML =
       '<div class="dv-toolbar">' +
-        '<span id="dvTeams"></span>' +
+        '<span id="dvTeams" class="ms"></span>' +
         '<span class="dv-show"><button class="btn" id="dvShowBtn" type="button" aria-haspopup="true" aria-expanded="false"></button>' +
         '<div class="dv-showmenu hidden" id="dvShowMenu"></div></span>' +
         '<label class="dv-sel">Modified <select id="dvMod"></select></label>' +
@@ -121,6 +121,13 @@
     return 'Could not load documents' + (r ? ' (' + r + ')' : '') + '.';
   }
   function teamName(id) { var t = st.teams.filter(function (x) { return x.teamId === id; })[0]; return t ? (t.teamName || t.teamId) : id; }
+  // Drive folder link: built only from the server-supplied folderId, and only when it looks like a Drive id.
+  function folderUrl(f) { var id = f && f.folderId; return id && /^[A-Za-z0-9_-]{4,128}$/.test(String(id)) ? 'https://drive.google.com/drive/folders/' + id : ''; }
+  function folderLink(f, cls) {
+    var u = folderUrl(f);
+    return u ? '<a class="' + cls + '" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer" title="Open this folder in Google Drive">' + esc(f.path) + '</a>'
+      : '<span class="' + cls + '">' + esc(f.path) + '</span>';
+  }
   function isRoot(f) { return f.folderId && f.folderId === f.rootFolderId; }
 
   // ---- render -----------------------------------------------------------------------------------------------------
@@ -160,6 +167,7 @@
     var tracked = d.state === 'tracked', pending = !!st.addedPending[d.docId];
     var canAdd = d.state !== 'tracked' && !pending;
     if (tracked) acts += '<button class="btn small" data-act="view" data-doc="' + key + '" data-team="' + tid + '">View items</button>';
+    if (tracked && d.canEdit !== false) acts += '<button class="btn small" data-act="sync" data-doc="' + key + '" data-team="' + tid + '">Sync</button>';
     if (canAdd) {
       acts += d.canEdit === false ? '<span class="dv-viewonly">View only</span>'
         : '<button class="btn small" data-act="add" data-doc="' + key + '" data-team="' + tid + '">Add</button>';
@@ -167,16 +175,16 @@
     if (st.excludeOk && d.state !== 'excluded' && !pending) acts += '<button class="btn small" data-act="exclude" data-doc="' + key + '" data-team="' + tid + '">Exclude</button>';
     var sel = st.selected[d.docId] != null;
     var meta = [d.modified ? 'Edited ' + fmtDate(d.modified) : '', st.teams.length > 1 && st.group !== 'team' ? teamName(f.teamId) : ''].filter(Boolean).join(' · ');
-    var where = f.url ? '<a class="dv-where" href="' + esc(f.url) + '" target="_blank" rel="noopener" title="Open this folder in Drive">' + esc(f.path) + '</a>'
-      : '<span class="dv-where">' + esc(f.path) + '</span>';
+    // The folder is named on the row only when no folder header sits above it (Group by None).
+    var folderLine = st.group === 'none' ? '<div class="dv-folderline"><span aria-hidden="true">📁</span> ' + folderLink(f, 'dv-where') + '</div>' : '';
     return '<div class="dv-row' + (sel ? ' sel' : '') + '"><input type="checkbox" class="rowsel" data-sel="' + key + '" data-team="' + tid + '"' +
       (sel ? ' checked' : '') + ' aria-label="Select ' + esc(d.docName) + '">' +
       '<div class="dv-title"><a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.docName || '(untitled)') + '</a>' +
-      '<div class="dv-meta">' + esc(meta) + '</div><div class="dv-folderline"><span aria-hidden="true">📁</span> ' + where + '</div></div>' + pill(d) + '<div class="dv-acts">' + acts + '</div></div>';
+      '<div class="dv-meta">' + esc(meta) + '</div>' + folderLine + '</div>' + pill(d) + '<div class="dv-acts">' + acts + '</div></div>';
   }
   function folderHtml(f) {
     var id = f.teamId + '|' + (f.folderId || 'other'), docs = visibleDocs(f), collapsed = !!st.collapsed[id];
-    var pathHtml = f.url ? '<a class="dv-path" href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.path) + '</a>' : '<span class="dv-path">' + esc(f.path) + '</span>';
+    var pathHtml = folderLink(f, 'dv-path');
     var scan = '';
     if (f.folderId) {
       var busy = !!st.scanning[id];
@@ -248,8 +256,10 @@
     el.dvBar.classList.toggle('hidden', !n);
     if (n) {
       var f = allDocs(); var addable = ids.filter(function (i) { var d = f[i]; return d && d.state !== 'tracked' && d.canEdit !== false; }).length;
+      var syncable = ids.filter(function (i) { var d = f[i]; return d && d.state === 'tracked' && d.canEdit !== false; }).length;
       el.dvBar.innerHTML = '<strong>' + n + ' selected</strong>' +
-        '<button class="btn small primary" data-bar="add"' + (addable && !st.busy ? '' : ' disabled') + '>Add' + (addable ? ' (' + addable + ')' : '') + '</button>' +
+        (syncable ? '<button class="btn small primary" data-bar="sync"' + (st.busy ? ' disabled' : '') + '>Sync (' + syncable + ')</button>' : '') +
+        (addable || !syncable ? '<button class="btn small' + (syncable ? '' : ' primary') + '" data-bar="add"' + (addable && !st.busy ? '' : ' disabled') + '>Add' + (addable ? ' (' + addable + ')' : '') + '</button>' : '') +
         (st.excludeOk ? '<button class="btn small" data-bar="exclude"' + (st.busy ? ' disabled' : '') + '>Exclude</button>' : '') +
         '<button class="linkbtn" data-bar="clear">Clear</button>';
     }
@@ -275,6 +285,7 @@
     else if (act === 'retry') load(true);
     else if (act === 'scan') scanFolder(team, b.getAttribute('data-fid'));
     else if (act === 'view') { st.pendingScroll = window.scrollY; SH().openItemsForDoc(doc, team); }
+    else if (act === 'sync') syncDocs([{ docId: doc, teamId: team }]);
     else if (act === 'add') addDocs([{ docId: doc, teamId: team }]);
     else if (act === 'exclude') excludeDocs([{ docId: doc, teamId: team }]);
   }
@@ -283,6 +294,7 @@
     var items = Object.keys(st.selected).map(function (i) { return { docId: i, teamId: st.selected[i] }; });
     if (a === 'clear') { st.selected = {}; render(); }
     else if (a === 'dismiss') { st.bulkMsg = ''; renderBar(); }
+    else if (a === 'sync') syncDocs(items);
     else if (a === 'add') addDocs(items);
     else if (a === 'exclude') excludeDocs(items);
   }
@@ -309,6 +321,29 @@
           if (res && res.ok) { added++; st.addedPending[it.docId] = true; } else denied++;
         }).catch(function () { denied++; });
       }, { live: false }).then(function () { render(); next(); });
+    }
+    render(); next();
+  }
+
+  // ---- Sync (team_sync_document for tracked documents, sequential, each with the document's own teamId) -----------
+  function syncDocs(items) {
+    items = items.filter(function (i) { var d = findDoc(i.docId); return d && d.state === 'tracked' && d.canEdit !== false; });
+    if (!items.length || st.busy) return;
+    st.busy = true; var synced = 0, failed = 0, i = 0;
+    function next() {
+      if (i >= items.length) {
+        st.busy = false; st.selected = {};
+        st.bulkMsg = synced + ' synced' + (failed ? ', ' + failed + ' not allowed/failed' : '');
+        if (failed && !synced) SH().toastError(st.bulkMsg); else SH().toast(st.bulkMsg);
+        render(); load(true); return;
+      }
+      var it = items[i++];
+      st.bulkMsg = 'Syncing ' + i + ' of ' + items.length + '…'; renderBar();
+      SH().withBusy(rowsFor([it.docId]), 'row', 'Syncing…', function () {
+        return SH().postJson({ action: 'team_sync_document', teamId: it.teamId, docId: it.docId }).then(function (res) {
+          if (res && res.ok !== false && !res.error) synced++; else failed++;
+        }).catch(function () { failed++; });
+      }, { live: false }).then(function () { next(); });
     }
     render(); next();
   }
@@ -429,4 +464,15 @@
       restoreScroll();
     }
   };
+  // documents.js loads deferred, after the page has already chosen a view. When Documents is already the active view
+  // (a ?view=documents link, a reload), show it now; the team list may still be on its way, so wait for it.
+  var sh = SH();
+  if (sh && sh.state && sh.state.view === 'documents') {
+    window.TrackerDocs.show();
+    var waited = 0, t = setInterval(function () {
+      waited += 250;
+      if (st.loaded || waited > 60000 || root.classList.contains('hidden')) { clearInterval(t); return; }
+      if (SH().selectedTeamIds().length) { clearInterval(t); load(); render(); }
+    }, 250);
+  }
 })();
