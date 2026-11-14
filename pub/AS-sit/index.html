@@ -548,7 +548,7 @@
     <!-- NT-2wr2.3: action panel (E3). Right side panel on desktop, full-screen sheet on phone. UX only: the server
          decides who may edit; controls are hidden or disabled by the access the listing reports. -->
     <aside class="apanel hidden" id="actionPanel" role="dialog" aria-label="Update item"></aside>
-    <p class="pagefoot sub"><button class="linkbtn" id="footerAbout" type="button" data-goto="about">About and privacy</button></p>
+    <p class="pagefoot sub"><button class="linkbtn" id="footerAbout" type="button" title="About Tracker and privacy" data-goto="about">About and privacy</button></p>
     <nav class="tabbar" id="tabBar" aria-label="Views">
       <button class="viewbtn" type="button" data-view="items" title="Action items in your teams' documents">Items</button>
       <button class="viewbtn" type="button" data-view="documents" title="The documents in your teams' folders and whether Tracker reads them">Documents</button>
@@ -584,7 +584,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.11";
+var STATIC_BUILD_VERSION_ = "0.1.28.13";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -707,7 +707,7 @@ const state = {
   assignees: [],       // res.assignees feeds the People picker
   docInvalid: false, docSynced: '', docAdded: false, resolvedHint: null, // NT-2wr2.4 state cards
   docTracked: null, docUrl: '', docStarting: false, // NT-o1zu.5: from the doc-mode response (tracked, docUrl)
-  docId: '', docName: '',  // NT-71y.2: document filter (?doc=); docName arrives with each filtered response
+  docId: '', docName: '', docTeam: '',  // NT-71y.2: document filter (?doc=); docName arrives with each filtered response
   docDenied: false,        // NT-71y.2 C4: last filtered response was tier NONE
   docIndex: {},            // doc_name -> doc_id for the #docSearch datalist
   focusN: null, focusGid: '', focusPending: false, focusScroll: false,  // NT-71y.2 C3: &action= deep link
@@ -732,6 +732,7 @@ const state = {
 // NT-2wr2.2: doc ids with at least one open row in the current render; docIsCollapsed_ reads it (set per render by renderList_).
 let docOpenSet_ = new Set();
 const CLEAR_ON_LOAD_ = false; // true: the saved-data replay is cleared instead of dimmed (owner preference, design D2)
+const COLLAPSE_KEY_ = 'nuuts.tracker.collapsed.v2'; // NT-ol4k: declared with the flag; below the first render it was a TDZ error the try/catch swallowed
 let collapseLoaded_ = false; // NT-2wr2.20: declared before the first (saved-data) render; it was a TDZ error at its old place further down
 const $ = (id) => document.getElementById(id);
 const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
@@ -1443,7 +1444,7 @@ function applyDocFilterResponse_(res){
   const rows = state.rows;
   if (!state.docId) state.docIndex = {};
   rows.forEach(r => { if (r.doc_name && !state.docIndex[r.doc_name]) state.docIndex[r.doc_name] = r.doc_id; });
-  if (!state.docId || (res && res.ok === false)) { state.docDenied = false; state.docTracked = null; state.docUrl = ''; return; }
+  if (!state.docId || (res && res.ok === false)) { state.docTeam = ''; state.docDenied = false; state.docTracked = null; state.docUrl = ''; return; }
   state.docDenied = (res.tier || 'NONE') === 'NONE';
   state.docTracked = state.docDenied ? null : (typeof res.tracked === 'boolean' ? res.tracked : null); // NT-o1zu.5
   state.docUrl = state.docDenied ? '' : (res.docUrl || '');
@@ -1452,6 +1453,7 @@ function applyDocFilterResponse_(res){
   state.docInvalid = state.docDenied && res.reason === 'invalid_document'; // input validation only; every other denial reads the same
   state.docSynced = state.docDenied ? '' : String(res.lastSynced || ''); // [server?] optional: list_team_actions does not return it today
   state.docName = state.docDenied ? '' : (res.docName || '');
+  state.docTeam = state.docDenied ? '' : String(res.teamId || ''); // NT-2wr2.23: the document's own team; '' = teamless
   if (res.teamId && state.teams.some(t => t.teamId === res.teamId)) {
     state.teamId = res.teamId; // removing the Document chip widens to this team
     state.teamIds = state.teams.length > 1 ? [res.teamId] : [];
@@ -1765,7 +1767,7 @@ function renderCtxHeader_(){
   const show = !!state.docId && !state.docDenied;
   $('ctxHeader').classList.toggle('hidden', !show);
   if (!show) return;
-  const team = state.teamId && state.teamId !== ALL_TEAMS_ID ? teamDisplayName(state.teamId) : '';
+  const team = state.docTeam ? teamDisplayName(state.docTeam) : '';
   $('ctxCrumb').textContent = (team ? team + ' › ' : '') + (state.docName || 'Document');
   const link = $('ctxOpenDocs');
   link.href = state.docUrl || ('https://docs.google.com/document/d/' + encodeURIComponent(state.docId) + '/edit');
@@ -1898,6 +1900,7 @@ function renderList_(){
   $('adminPanel').classList.toggle('hidden', !state.isAdmin); // NT-ja4
   $('adminMenuBtn').classList.toggle('hidden', !state.isAdmin); // NT-2wr2.1: UX only; admin routes re-check server-side
   $('accountBtn').textContent = (state.email || '?').charAt(0);
+  $('accountBtn').setAttribute('aria-label', 'Account'); $('accountBtn').title = 'Account' + (state.email ? ': ' + state.email : '');
   if (!state.stale && state.view === 'admin' && !state.isAdmin) setView_('items');
   $('adminToolsField').classList.toggle('hidden', !state.isAdmin);
   if (!state.isAdmin) $('adminHealthPanel').classList.add('hidden');
@@ -2121,7 +2124,6 @@ function docIsCollapsed_(docId){
   return groupCollapsed_('document', docId);
 }
 // v2 section 4: every group starts expanded; the person's collapse choices are remembered per browser and grouping.
-const COLLAPSE_KEY_ = 'nuuts.tracker.collapsed.v2';
 function groupKey_(mode, k){ return 'g:' + mode + ':' + k; }
 function loadCollapsed_(){
   if (collapseLoaded_) return;
@@ -2268,7 +2270,7 @@ function renderActionPanel_(){
   if (!r || state.docDenied) { el.classList.add('hidden'); el.innerHTML = ''; document.body.classList.remove('apanel-open'); return; }
   const canEdit = rowTier_(r) === 'EDIT' && !r.removed && !state.stale;
   const canStatus = canSetStatus_(r) && !state.stale;
-  const team = r.team_id ? teamDisplayName(r.team_id) : (state.teamId && state.teamId !== ALL_TEAMS_ID ? teamDisplayName(state.teamId) : '');
+  const team = r.team_id ? teamDisplayName(r.team_id) : ''; // NT-7r0i: a teamless document names no team
   const opts = state.statusOptions.map(o => o.status);
   if (r.status && opts.indexOf(r.status) === -1) opts.push(r.status);
   const typing = el.contains(document.activeElement) && document.activeElement.id === 'apText' ? document.activeElement : null;
@@ -2280,11 +2282,11 @@ function renderActionPanel_(){
       <div class="sub">${escape(r.action_id || '')} · ${escape(r.assignee_name || r.assignee_email || 'Unassigned')}${isMine(r) ? ' (you)' : ''}</div>
       <div class="aplabel" id="apStatusLabel">Status</div>
       <div class="apstatus" role="group" aria-labelledby="apStatusLabel">${opts.map(o =>
-        `<button type="button" class="pill" data-apstatus="${escape(o)}" aria-pressed="${o === state.panelStatus}"${canStatus ? '' : ' disabled'}>${escape(o)}</button>`).join('')}</div>
+        `<button type="button" class="pill" data-apstatus="${escape(o)}" title="Set status to ${escape(o)}" aria-pressed="${o === state.panelStatus}"${canStatus ? '' : ' disabled'}>${escape(o)}</button>`).join('')}</div>
       <label class="aplabel" for="apText">Action</label>
       <textarea class="sel aptext" id="apText" rows="3"${canEdit ? '' : ' readonly'}>${escape(softToLines(r.action_text))}</textarea>
       ${canEdit || canStatus
-        ? `<button class="btn primary apsave" id="apSave" type="button"${state.panelBusy ? ' disabled' : ''}>Save</button>`
+        ? `<button class="btn primary apsave" id="apSave" type="button" title="Save changes to this item"${state.panelBusy ? ' disabled' : ''}>Save</button>`
         : '<div class="sub">You can view this item. Only its assignee or someone who can edit the document can change it.</div>'}
       <div class="apmsg" id="apMsg" role="status" aria-live="polite">${state.panelSaved ? 'Saved' : ''}</div>
       <a class="linkbtn" id="apWhole" href="#">See the whole document</a>
@@ -2577,9 +2579,9 @@ function selectedAllRows_(){ // visible ones in list order, then the hidden ones
 }
 function bulkWritable_(rows){ return rows.filter(r => r.canWrite === true && r.removed !== true); }
 function itemsWord_(n){ return n + (n === 1 ? ' item' : ' items'); }
-function setBulkMsg_(text, undo){
+function setBulkMsg_(text, undo, isError){
   clearTimeout(setBulkMsg_.t);
-  state.bulkMsg = text ? { text, undo: undo || null } : null;
+  state.bulkMsg = text ? { text, undo: undo || null, error: !!isError } : null;
   if (text) setBulkMsg_.t = setTimeout(() => { state.bulkMsg = null; syncBulkUi_(); }, 20000);
 }
 function clearSelection_(){
@@ -2605,7 +2607,7 @@ function syncBulkUi_(){
   });
   const host = $('bulkHost');
   const msg = state.bulkMsg;
-  let html = msg ? `<div class="bulkmsg" id="bulkMsg" role="status"><span>${escape(msg.text)}</span>${
+  let html = msg ? `<div class="bulkmsg" id="bulkMsg" role="${msg.error ? 'alert' : 'status'}"><span>${escape(msg.text)}</span>${
     msg.undo ? ' <button class="linkbtn" id="bulkUndo" type="button">Undo</button>' : ''}</div>` : '';
   if (n) {
     const rows = selectedAllRows_();
@@ -2707,7 +2709,7 @@ function runBulkStatus_(status){
     ((res && res.results) || []).forEach(x => { if (x && x.global_id) byGid[x.global_id] = x; });
     const done = send.filter(r => { const x = byGid[r.global_id]; return res && (x ? x.ok : res.ok === true && !(res.results || []).length); });
     state.bulkBusy = false;
-    if (!res) setBulkMsg_('Status was not changed. Check your connection and try again.');
+    if (!res) setBulkMsg_('Status was not changed. Check your connection and try again.', null, true);
     else {
       const refused = rows.length - done.length;
       const undo = done.length ? { teamRow: done[0], items: done.map(r => ({ global_id: r.global_id, status: prev[r.global_id] })) } : null;
@@ -2727,7 +2729,7 @@ function undoBulkStatus_(){
     .then(res => res, () => null).then(res => {
       state.bulkBusy = false;
       const ok = res ? ((res.results || []).length ? res.results.filter(x => x && x.ok).length : (res.ok ? u.items.length : 0)) : 0;
-      setBulkMsg_(!res ? 'Could not undo. Check your connection and try again.' : ok === u.items.length ? 'Restored ' + itemsWord_(ok) : ok + ' restored, ' + (u.items.length - ok) + ' not allowed');
+      setBulkMsg_(!res ? 'Could not undo. Check your connection and try again.' : ok === u.items.length ? 'Restored ' + itemsWord_(ok) : ok + ' restored, ' + (u.items.length - ok) + ' not allowed', null, !res);
       syncBulkUi_();
       return refreshActions({ quiet: true });
     }));
@@ -3050,7 +3052,7 @@ function teamsLabel_(){
 // anyLabel, toggle(value, checked), clear(), summary()}. Stays open while ticking; closes on an outside click or Escape.
 function buildPicker_(host, cfg){
   const inst = { host, cfg, open: false };
-  host.innerHTML = '<button class="btn msbtn" type="button" aria-haspopup="true" aria-expanded="false"></button><div class="mspop hidden" role="group"></div>';
+  host.innerHTML = '<button class="btn msbtn" type="button" aria-haspopup="true" aria-expanded="false" title="' + escape('Choose ' + cfg.title.toLowerCase()) + '"></button><div class="mspop hidden" role="group"></div>';
   inst.btn = host.firstChild; inst.pop = host.lastChild;
   inst.btn.addEventListener('click', e => {
     e.stopPropagation();
