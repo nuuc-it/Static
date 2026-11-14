@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Team Action Portal — NUUC Action Sheet</title>
+<title>Tracker — NUUC Action Sheet</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   /* Visual idiom carried over verbatim from the human-reviewed slice,
@@ -47,8 +47,88 @@
   .adminpanel .scanstatus{white-space:normal}
   .adminpanel .notice{margin-top:10px}
 
-  .filters{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px;
-           padding-top:12px;border-top:1px solid var(--line)}
+  /* NT-2wr2.1 (Tracker UX phase 1): app bar, view switch, account menu, phone tab bar */
+  .appbar{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);
+          border-radius:16px;box-shadow:var(--shadow);padding:10px 16px;margin-bottom:12px;position:relative}
+  .appbar h1{font-size:19px;margin:0;white-space:nowrap}
+  .viewswitch{display:flex;gap:4px;margin-right:auto}
+  .viewbtn{border:0;background:none;padding:6px 12px;border-radius:9px;cursor:pointer;font:inherit;color:var(--muted)}
+  .viewbtn[aria-current="page"]{background:var(--blue2);color:#1e3a8a;font-weight:600}
+  .acctwrap{position:relative}
+  .avatar{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--blue2);
+          color:#1e3a8a;cursor:pointer;font:inherit;font-weight:700;text-transform:uppercase}
+  .accountbox.acctmenu{position:absolute;right:0;top:42px;z-index:30;background:var(--panel);
+          border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px;
+          min-width:250px;max-width:none;align-items:stretch;text-align:left;gap:8px}
+  .acctmenu .menuitem{display:block;text-align:left;width:100%}
+  .tabbar{display:none}
+  .view{margin-bottom:14px}
+  .viewhead{font-size:16px;margin:0 0 10px}
+  .pagefoot{margin-top:18px;text-align:center;font-size:12.5px}
+  @media (max-width:640px){
+    .viewswitch{display:none}
+    .appbar{justify-content:space-between}
+    .page{padding-bottom:76px}
+    .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--panel);
+            border-top:1px solid var(--line)}
+    .tabbar .viewbtn{flex:1;padding:14px 0;border-radius:0}
+    .buildbadge{bottom:62px !important}
+  }
+
+  /* NT-2wr2.2: toolbar (search, Filters button, chips) and the Filters panel / sheet */
+  .toolbar{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);
+           padding:10px 14px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px}
+  .toolrow{display:flex;gap:8px;align-items:center}
+  .searchbox{flex:1;min-width:0}
+  .chiprow{display:flex;gap:6px;flex-wrap:wrap}
+  .fchip{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 10px;border:1px solid #bfdbfe;
+         border-radius:999px;background:var(--blue2);font-size:13px}
+  .fchip button{border:0;background:transparent;cursor:pointer;font-size:15px;line-height:1;color:var(--muted);padding:0 4px}
+  .scrim{position:fixed;inset:0;background:rgba(17,24,39,.25);z-index:44}
+  .fpanel{position:fixed;top:0;right:0;bottom:0;width:340px;max-width:100vw;background:var(--panel);
+          border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:45;display:flex;flex-direction:column}
+  .fphead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .fphead h2{font-size:16px;margin:0}
+  .fpbody{padding:12px 16px;overflow:auto;flex:1;display:flex;flex-direction:column;gap:12px}
+  .fpfield{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+  .fpfield .sel{width:100%}
+  .fpfoot{padding:10px 16px;border-top:1px solid var(--line)}
+  /* NT-2wr2.3: document context header (E2) and action panel (E3) */
+  .ctxhead{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);
+           padding:10px 16px;margin-bottom:12px;display:flex;flex-direction:column;gap:4px}
+  .ctxline{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+  .ctxcrumb{font-weight:600;font-size:16px;overflow-wrap:anywhere}
+  .ctxline .linkbtn:last-child{margin-left:auto}
+  .apanel{position:fixed;top:0;right:0;bottom:0;width:380px;max-width:100vw;background:var(--panel);
+          border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:46;display:flex;flex-direction:column;overflow:auto}
+  .aphead{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .apcrumb{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+  .apbody{padding:12px 16px 20px;display:flex;flex-direction:column;gap:6px}
+  .aplabel{color:var(--muted);font-size:12.5px;margin-top:6px}
+  .apstatus{display:flex;gap:6px;flex-wrap:wrap}
+  .apstatus .pill{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 14px;cursor:pointer}
+  .apstatus .pill[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+  .apstatus .pill[disabled]{opacity:.5;cursor:not-allowed}
+  .aptext{width:100%;min-height:80px;resize:vertical}
+  .apsave{width:100%;padding:11px;margin-top:8px;font-size:15px}
+  .apmsg{min-height:20px;font-size:13px}
+  .apmore summary{cursor:pointer;color:var(--muted);font-size:13px;margin:8px 0 4px}
+  .apmore input{width:100%;margin:3px 0}
+  @media (min-width:641px){ body.apanel-open .page{margin-left:16px;margin-right:396px} }
+  @media (max-width:640px){ .apanel{width:auto;left:0;border-left:0} }
+  /* phone: rows become cards, the status button gets its own full-width line */
+  @media (max-width:640px){
+    .row{flex-wrap:wrap}
+    .row .rowmain{flex:1 1 60%}
+    .row .controls{flex:1 0 100%;justify-content:flex-start;padding-left:0}
+    .row .status{padding:8px 16px;font-size:14px}
+    .ctxline .linkbtn:last-child{margin-left:0}
+  }
+  .divider{padding:8px 14px;font-size:12px;color:var(--muted);background:#fbfcfe;border-top:1px solid var(--line)}
+  @media (max-width:640px){
+    .fpanel{top:auto;left:0;width:auto;max-height:85vh;border-left:0;border-top:1px solid var(--line);border-radius:16px 16px 0 0}
+    .searchbox{font-size:16px}
+  }
   .field{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
   select,input,button{font:inherit}
   .sel{border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 8px;color:var(--text)}
@@ -81,6 +161,11 @@
   .scanfolder{gap:2px;margin-left:24px}
   .scanfolder .teamname{font-weight:600}
   .scanfolder > li{list-style:none;margin-left:30px}
+  .teamchips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+  .teamchips button{border:1px solid #bfdbfe;background:#fff;border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer;color:inherit}
+  .teamchips button[aria-pressed="true"]{background:#dbeafe;border-color:#2563eb;font-weight:600}
+  #findScanStatus{white-space:normal;margin-left:6px}
+  .viewonly{margin-left:8px;font-size:12px;color:var(--muted)}
   .scanmodified{margin-left:8px;font-size:12px;color:var(--muted)}
   .collapsebtn{border:1px solid var(--line);background:#fff;border-radius:6px;width:22px;height:22px;
                padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
@@ -108,8 +193,21 @@
   .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
   .btn.small{padding:4px 8px;font-size:12px;border-radius:8px}
   .btn[disabled]{opacity:.45;cursor:not-allowed}
-  .bulkbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:13px}
-  .bulkresults{margin:6px 0;padding-left:18px;font-size:12.5px;color:var(--muted)}
+  /* NT-2wr2.5: selection bar. position:sticky (not fixed) at the bottom of the list; only present with >= 1 selected */
+  .listhead{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .listhead label{font-size:13px;color:var(--text);cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+  .bulkhost{position:sticky;bottom:0;z-index:15;display:flex;flex-direction:column;gap:6px;padding-top:6px}
+  .bulkbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;background:var(--panel);border:1px solid var(--line);
+           border-radius:12px;padding:9px 12px;box-shadow:var(--shadow)}
+  .bulkmsg{background:#111827;color:#fff;border-radius:12px;padding:9px 12px;font-size:13px;display:flex;gap:10px;align-items:center}
+  .bulkmsg .linkbtn{color:#93c5fd;font-weight:600}
+  .bulkhint{flex:1 0 100%;color:var(--muted);font-size:12px}
+  .bulk-phone{display:none}
+  @media (max-width:640px){
+    .bulkhost{bottom:var(--tabh,52px)}
+    .bulk-desk,.bulkhint{display:none}
+    .bulk-phone{display:inline-block}
+  }
   .rowsel{margin-top:3px}
   .row.reference{opacity:.6;color:var(--muted)}
   .row.reference .ref-home{margin-left:6px;font-size:12px}
@@ -118,6 +216,15 @@
   .refhead{font-size:12.5px;color:var(--muted);margin:6px 0}
 
   .empty{padding:22px 14px;text-align:center;color:var(--muted)}
+  /* NT-2wr2.4: a state card stands in place of the list: headline, one sentence, one next step */
+  .statecard{margin-top:14px;padding:28px 20px;border:1px solid var(--line);border-radius:14px;background:var(--panel);text-align:center}
+  .statecard h2{margin:0 0 8px;font-size:18px}
+  .statecard p{margin:0 auto 14px;max-width:46ch;color:var(--muted);line-height:1.5}
+  .statecard .scact{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap}
+  .statecard .schint{margin:10px auto 0;font-size:13px}
+  .statecard.err{border-color:#fecaca;background:#fef2f2}
+  .statecard.err h2{color:#991b1b}
+  .statecard input.sel{width:min(380px,100%)}
   .row-focus{outline:2px solid var(--blue);outline-offset:-2px;border-radius:8px;background:var(--blue2)}
   .docchip{display:inline-flex;align-items:center;gap:6px;padding:3px 6px 3px 10px;border:1px solid #bfdbfe;
            border-radius:999px;background:var(--blue2);font-size:13px}
@@ -200,7 +307,7 @@
 
   <!-- ============ Signed-out view ============ -->
   <div id="signinView" class="top signin">
-    <h1>Team actions</h1>
+    <h1>Tracker</h1>
     <p>Sign in with the Google account your team lead added to a NUUC team folder.
        Your identity is verified by NUUC-Dispatch; this page keeps you signed in for up to
        45 days by saving that verified identity token in your browser's local storage.</p>
@@ -225,96 +332,77 @@
 
   <!-- ============ Signed-in view ============ -->
   <div id="appView" class="hidden">
-    <div class="top">
-      <div class="title">
-        <div>
-          <h1>Team actions <span id="titleSpinner" class="spinner hidden" style="margin-left:8px;vertical-align:middle"></span></h1>
-          <div class="sub" id="sub">—</div>
-          <div class="sub hidden" id="staleTag" role="status">Showing your last saved data — refreshing…</div>
-        </div>
-        <!-- NT-ja4: signed-in identity, Refresh my access and Sign out stacked in the top-right corner. -->
-        <div class="accountbox" id="accountBox">
+    <!-- NT-2wr2.1: app bar. View switch (desktop) and tab bar (phone) share data-view; the account menu holds the
+         identity controls. All view/menu state is UX only: the server decides access on every call. -->
+    <header class="appbar" id="appBar">
+      <h1>Tracker <span id="titleSpinner" class="spinner hidden" style="margin-left:8px;vertical-align:middle"></span></h1>
+      <nav class="viewswitch" id="viewSwitch" aria-label="Views">
+        <button class="viewbtn" type="button" data-view="mine" title="Items assigned to you">My items</button>
+        <button class="viewbtn" type="button" data-view="team" title="Everyone's items in your teams">Team</button>
+        <button class="viewbtn" type="button" data-view="find" title="Open or add a document">Find documents</button>
+      </nav>
+      <div class="acctwrap">
+        <button class="avatar" id="accountBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="accountBox" title="Account menu">?</button>
+        <div class="accountbox acctmenu hidden" id="accountBox">
           <span class="email" id="whoEmail"></span>
           <span class="tag" id="tierTag">—</span>
-          <button class="btn small" id="refreshAccessBtn" title="Re-read your Drive access now (normally cached for up to 6 hours)">Refresh my access</button>
+          <button class="btn small menuitem" id="refreshAccessBtn" title="Re-read your Drive access now (normally cached for up to 6 hours)">Refresh my access</button>
           <span class="email" id="refreshAccessMsg" role="status" aria-live="polite"></span>
-          <button class="linkbtn" id="signOutBtn" title="Sign out and forget the saved sign-in on this browser">Sign out</button>
+          <button class="btn small menuitem" id="switchAccountBtn" type="button" title="Sign out and choose a different Google account">Switch account</button>
+          <button class="btn small menuitem" id="signOutBtn" title="Sign out and forget the saved sign-in on this browser">Sign out</button>
+          <button class="btn small menuitem" id="aboutMenuBtn" type="button" data-goto="about" title="How sign-in and this page work">About and privacy</button>
+          <button class="btn small menuitem hidden" id="adminMenuBtn" type="button" data-goto="admin" title="Admin tools (admins only)">Admin tools</button>
         </div>
       </div>
+    </header>
 
-      <div class="filters" id="filtersRow">
-        <div class="field hidden" id="teamField"><label for="teamSel">Team</label>
-          <select class="sel" id="teamSel"></select>
-        </div>
-        <div class="field"><label for="statusSel">Status</label>
-          <select class="sel" id="statusSel">
-            <option value="open">Open</option>
-            <option value="closed">Closed</option>
-            <option value="all">All</option>
-            <option value="Open">Open only</option>
-            <option value="In Progress">In Progress</option>
-            <option value="In Review">In Review</option>
-            <option value="Done">Done</option>
-            <option value="Closed">Closed only</option>
-          </select>
-        </div>
-        <!-- NT-56r: age filter, whole months since created_date (server buckets; '' = Any). -->
-        <div class="field"><label for="ageSel">Age</label>
-          <select class="sel" id="ageSel">
-            <option value="">Any</option>
-            <option value="&lt;1">&lt; 1 month</option>
-            <option value="1-2">1-2 months</option>
-            <option value="3-5">3-5 months</option>
-            <option value="6-11">6-11 months</option>
-            <option value="12+">12+ months</option>
-          </select>
-        </div>
-        <!-- NT-71y.2: document filter. #docSearch lists the doc names of the loaded rows (#docSearchList);
-             #docFilterChip names the active document and #docFilterClear removes the filter. -->
-        <div class="field"><label for="docSearch">Document</label>
-          <input class="sel" id="docSearch" type="search" list="docSearchList" placeholder="Search documents or paste a Doc link" autocomplete="off" />
-          <datalist id="docSearchList"></datalist>
-          <span class="hidden" id="docSearchError" role="alert" style="color:#b91c1c;font-size:12px">Not a Google Doc link or ID</span>
-          <span class="docchip hidden" id="docFilterChip"><span id="docFilterName"></span>
-            <button id="docFilterClear" type="button" aria-label="Clear document filter" title="Clear document filter">&times;</button></span>
-        </div>
-        <!-- NT-tnh: scope control. 'person' reveals #personSelect, listing res.assignees (people with actions
-             in the teams shown); ?person=<email> presets it. The server applies the filter (assigneeEmail). -->
-        <div class="field"><label for="scopeSelect">Show</label>
-          <select class="sel" id="scopeSelect" title="Whose actions to show">
-            <option value="everyone" title="Show everyone's actions">Everyone</option>
-            <option value="mine" title="Show only actions assigned to you">Mine</option>
-            <option value="person" title="Show only actions assigned to a person you choose">A person…</option>
-          </select>
-          <select class="sel hidden" id="personSelect" title="Show only actions assigned to this person (people with actions in the teams shown)">
-            <option value="">Choose a person…</option>
-          </select>
-        </div>
-        <!-- Names what the server actually does: the window ages out resolved
-             rows only. An open action is never hidden by it, however stale
-             (plan §12.1 invariant 1 — decided at the 2026-07-27 review gate). -->
-        <div class="field" id="windowField">Include resolved from
-          <select class="sel" id="windowSel">
-            <option value="7">the last 7 days</option>
-            <option value="30">the last 30 days</option>
-            <option value="60" selected>the last 60 days (default)</option>
-            <option value="180">the last 180 days</option>
-            <option value="36500">forever</option>
-          </select>
-        </div>
-        <div class="field hidden" id="collapseAllField" style="margin-left:auto">
-          <button class="btn small" id="expandAllBtn" title="Expand every team, document and folder group">Expand all</button>
-          <button class="btn small" id="collapseAllBtn" title="Collapse every team, document and folder group">Collapse all</button>
-        </div>
-        <div class="field" id="countLabel"></div>
+    <!-- NT-2wr2.1: Find documents view. The Document box moved here from the filter row (ids unchanged). -->
+    <section class="top view hidden" id="findView">
+      <h2 class="viewhead">Find documents</h2>
+      <div class="field"><label for="docSearch">Document</label>
+        <input class="sel" id="docSearch" type="search" list="docSearchList" placeholder="Search documents or paste a Doc link" autocomplete="off" />
+        <datalist id="docSearchList"></datalist>
+        <span class="hidden" id="docSearchError" role="alert" style="color:#b91c1c;font-size:12px">Not a Google Doc link or ID</span>
       </div>
+      <!-- NT-2wr2.6: members scan their own team's folder. UX only: the server decides who may scan (the scan
+           routes are admin-only today, so this section hides itself on a 'forbidden' answer). -->
+      <div class="field hidden" id="findScanField" style="flex-direction:column;align-items:flex-start">
+        <label id="findScanLabel">Find documents in a team folder</label>
+        <div class="teamchips hidden" id="findTeamChips" role="group" aria-labelledby="findScanLabel"></div>
+        <div><button class="btn small" id="findScanBtn" title="Scan the team folder for documents that are not in Tracker yet">Scan</button>
+          <span id="findScanStatus" class="scanstatus"></span></div>
+      </div>
+      <div class="notice hidden" id="findScanResults"></div>
+    </section>
+
+    <section class="view hidden" id="aboutView">
+      <h2 class="viewhead">About and privacy</h2>
+      <div class="caveats">
+      <ul>
+        <li>Sign-in is a real Google identity, verified server-side by NUUC-Dispatch and
+          exchanged for a signed identity assertion scoped to this portal — this page never
+          sees or stores your raw Google credential beyond the sign-in moment. The assertion
+          itself is saved in your browser's local storage for up to 45 days so you aren't
+          re-prompted on every visit; <strong>Sign out</strong> deletes it immediately.</li>
+        <li>Each row arrives already carrying the server's own status display answer
+          (bucket, resolved, icon) — this page re-derives nothing, so it cannot disagree
+          with the sheet or the add-on sidebar about what a status means.</li>
+        <li><strong>Read and write paths are wired.</strong> The <strong>sync</strong>
+          control, per-row <strong>Edit</strong>, and the assignee <strong>status-change</strong>
+          control all call the live backend and refresh the list in place — no page reload.</li>
+        <li>The window ages out <strong>resolved rows only</strong> — an open action is
+          never hidden by it, however long since it was touched, at any window setting.</li>
+        <li>If you belong to more than one team, a <strong>Team</strong> switcher appears
+          above; if you belong to exactly one, no switcher is shown.</li>
+      </ul>
     </div>
+      <p class="sub"><a href="privacy/">Privacy policy</a> · <a href="terms/">Terms</a></p>
+    </section>
 
-    <div class="banner" id="loadError"></div>
-    <!-- NT-ja4: every admin-only control and its output lives in this one labelled panel, shown only when
-         state.isAdmin (UX only; every admin route re-checks Config!AdminUsers server-side). -->
+    <section class="view hidden" id="adminView">
     <div class="adminpanel hidden" id="adminPanel">
       <h2 class="adminhead">Admin tools (admins only)</h2>
+      <div class="adminbody" id="adminBody">
       <div class="adminrow">
         <!-- gts-gwyg/gts-lgpx/nightly-all-teams: admin-only. Hidden from a
              non-admin caller (state.isAdmin comes from list_team_actions's
@@ -345,42 +433,119 @@
       <div class="notice hidden" id="adminScanResults"></div>
       <!-- NT-eg2: tracking-system health panel (admin_health). Counts link to the filtered list (NT-56r). -->
       <div class="notice hidden" id="adminHealthPanel"></div>
+      </div>
     </div>
-    <!-- NT-56r AC6: the 'Showing actions visible to you' note (#healthNote) is added by script only when opened
-         from an admin health-panel link (?from=health). -->
-    <div class="notice hidden" id="noTeamsNotice">
-      You don't currently have access to any team's actions. If you believe this is wrong,
-      contact your team lead — they add members to the team's shared Drive folder.
-    </div>
-    <div class="notice hidden" id="docNoAccess">
-      <span id="docNoAccessMsg">You don't have access to this document's actions.</span>
-      <button class="btn small" id="docNoAccessClear" type="button" title="Remove the document filter and show the team's actions">Clear document filter</button>
-    </div>
-    <div id="listWrap">
-      <div id="bulkHost"></div>
-      <div class="list" id="list"></div>
+    </section>
+
+    <div id="listView">
+    <div class="sub hidden" id="sub">—</div>
+    <div class="sub hidden" id="staleTag" role="status">Showing your last saved data — refreshing…</div>
+
+    <!-- NT-2wr2.3: document context header (E2). Shown only while a document is in scope (?doc= / ?action=). -->
+    <div class="ctxhead hidden" id="ctxHeader">
+      <div class="ctxline">
+        <span class="ctxcrumb" id="ctxCrumb"></span>
+        <a class="ctxopen" id="ctxOpenDocs" href="#" target="_blank" rel="noopener" title="Open this document in Google Docs">Open in Docs</a>
+      </div>
+      <div class="ctxline sub">
+        <span id="ctxCounts"></span>
+        <!-- [server?] last-synced time: list_team_actions does not return it, so this stays hidden (NT-2wr2.2/.3 notes). -->
+        <span id="ctxSynced" class="hidden"></span>
+        <button class="linkbtn" id="ctxSeeAll" type="button" title="Remove the document scope and show the team's items">See all items</button>
+      </div>
     </div>
 
-    <div class="caveats">
-      <h2>About this page</h2>
-      <ul>
-        <li>Sign-in is a real Google identity, verified server-side by NUUC-Dispatch and
-          exchanged for a signed identity assertion scoped to this portal — this page never
-          sees or stores your raw Google credential beyond the sign-in moment. The assertion
-          itself is saved in your browser's local storage for up to 45 days so you aren't
-          re-prompted on every visit; <strong>Sign out</strong> deletes it immediately.</li>
-        <li>Each row arrives already carrying the server's own status display answer
-          (bucket, resolved, icon) — this page re-derives nothing, so it cannot disagree
-          with the sheet or the add-on sidebar about what a status means.</li>
-        <li><strong>Read and write paths are wired.</strong> The <strong>sync</strong>
-          control, per-row <strong>Edit</strong>, and the assignee <strong>status-change</strong>
-          control all call the live backend and refresh the list in place — no page reload.</li>
-        <li>The window ages out <strong>resolved rows only</strong> — an open action is
-          never hidden by it, however long since it was touched, at any window setting.</li>
-        <li>If you belong to more than one team, a <strong>Team</strong> switcher appears
-          above; if you belong to exactly one, no switcher is shown.</li>
-      </ul>
+    <!-- NT-2wr2.2: toolbar. Search, Filters button with the active-filter count, one chip per active filter. -->
+    <div class="toolbar" id="filtersRow">
+      <div class="toolrow">
+        <input class="sel searchbox" id="searchBox" type="search" placeholder="Search items, people, documents" aria-label="Search items, people, documents" autocomplete="off" />
+        <button class="btn" id="filtersBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="filtersPanel" title="Team, status, age, document, person and resolved-items window">Filters</button>
+      </div>
+      <div class="chiprow hidden" id="chipRow"></div>
+      <div class="listhead"><div class="sub" id="countLabel" role="status"></div><span id="selectAllHost"></span></div>
     </div>
+
+    <!-- NT-2wr2.2: Filters panel (side panel on desktop, bottom sheet on phone). The old filter-row controls keep
+         their ids; every change applies at once. -->
+    <div class="scrim hidden" id="filtersScrim"></div>
+    <aside class="fpanel hidden" id="filtersPanel" role="dialog" aria-label="Filters">
+      <div class="fphead"><h2>Filters</h2><button class="btn small" id="filtersDone" type="button">Done</button></div>
+      <div class="fpbody">
+        <div class="fpfield hidden" id="teamField"><label for="teamSel">Team</label>
+          <select class="sel" id="teamSel"></select>
+        </div>
+        <div class="fpfield"><label for="statusSel">Status</label>
+          <select class="sel" id="statusSel">
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+            <option value="all">All</option>
+            <option value="Open">Open only</option>
+            <option value="In Progress">In Progress</option>
+            <option value="In Review">In Review</option>
+            <option value="Done">Done</option>
+            <option value="Closed">Closed only</option>
+          </select>
+        </div>
+        <!-- NT-56r: age filter, whole months since created_date (server buckets; '' = Any). -->
+        <div class="fpfield"><label for="ageSel">Age</label>
+          <select class="sel" id="ageSel">
+            <option value="">Any</option>
+            <option value="&lt;1">&lt; 1 month</option>
+            <option value="1-2">1-2 months</option>
+            <option value="3-5">3-5 months</option>
+            <option value="6-11">6-11 months</option>
+            <option value="12+">12+ months</option>
+          </select>
+        </div>
+        <div class="fpfield"><label for="docSearchPanel">Document</label>
+          <input class="sel" id="docSearchPanel" type="search" list="docSearchList" placeholder="Search documents or paste a Doc link" autocomplete="off" />
+          <span class="hidden" id="docSearchPanelError" role="alert" style="color:#b91c1c;font-size:12px">Not a Google Doc link or ID</span>
+        </div>
+        <!-- NT-tnh: person filter (Team view). res.assignees lists people with items in the teams shown; ?person=<email>
+             presets it. The server applies the filter (assigneeEmail). -->
+        <div class="fpfield" id="personField"><label for="personSelect">Person</label>
+          <select class="sel" id="personSelect" title="Show only items assigned to this person (people with items in the teams shown)">
+            <option value="">Anyone</option>
+          </select>
+        </div>
+        <!-- Names what the server actually does: the window ages out resolved rows only. An open action is never
+             hidden by it, however stale (plan §12.1 invariant 1). -->
+        <div class="fpfield" id="windowField"><label for="windowSel">Resolved items from</label>
+          <select class="sel" id="windowSel">
+            <option value="7">the last 7 days</option>
+            <option value="30">the last 30 days</option>
+            <option value="60" selected>the last 60 days (default)</option>
+            <option value="180">the last 180 days</option>
+            <option value="36500">forever</option>
+          </select>
+        </div>
+      </div>
+      <div class="fpfoot"><button class="btn small" id="filtersClear" type="button">Clear filters</button></div>
+    </aside>
+
+    <div id="loadError" style="display:none"></div>
+    <!-- NT-ja4: every admin-only control and its output lives in this one labelled panel, shown only when
+         state.isAdmin (UX only; every admin route re-checks Config!AdminUsers server-side). -->
+    <!-- NT-56r AC6: the 'Showing actions visible to you' note (#healthNote) is added by script only when opened
+         from an admin health-panel link (?from=health). -->
+    <!-- NT-2wr2.4: state cards. Filled by script (renderNoTeamsCard_, renderNoAccessCard_); the server decides access. -->
+    <div class="hidden" id="noTeamsNotice"></div>
+    <div class="hidden" id="docNoAccess"></div>
+    <div id="listWrap">
+      <div class="list" id="list"></div>
+      <div class="bulkhost" id="bulkHost"></div>
+    </div>
+    </div><!-- /#listView -->
+    <!-- NT-2wr2.3: action panel (E3). Right side panel on desktop, full-screen sheet on phone. UX only: the server
+         decides who may edit; controls are hidden or disabled by the access the listing reports. -->
+    <aside class="apanel hidden" id="actionPanel" role="dialog" aria-label="Update item"></aside>
+    <p class="pagefoot sub"><button class="linkbtn" id="footerAbout" type="button" data-goto="about">About and privacy</button></p>
+    <nav class="tabbar" id="tabBar" aria-label="Views">
+      <button class="viewbtn" type="button" data-view="mine" title="Items assigned to you">My items</button>
+      <button class="viewbtn" type="button" data-view="team" title="Everyone's items in your teams">Team</button>
+      <button class="viewbtn" type="button" data-view="find" title="Open or add a document">Find</button>
+    </nav>
+
   </div>
 
 </div>
@@ -409,7 +574,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.4";
+var STATIC_BUILD_VERSION_ = "0.1.28.7";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -536,6 +701,7 @@ const state = {
                         // OWN team rather than one blended state.tier (gts-zm8w)
   status: 'open', scope: 'all', windowDays: 60, age: '',
   person: '', assignees: [],  // NT-tnh: scope 'person' filter email; res.assignees for #personSelect
+  docInvalid: false, docSynced: '', docAdded: false, resolvedHint: null, // NT-2wr2.4 state cards
   docTracked: null, docUrl: '', docStarting: false, // NT-o1zu.5: from the doc-mode response (tracked, docUrl)
   docId: '', docName: '',  // NT-71y.2: document filter (?doc=); docName arrives with each filtered response
   docDenied: false,        // NT-71y.2 C4: last filtered response was tier NONE
@@ -543,10 +709,13 @@ const state = {
   focusN: null, focusGid: '', focusPending: false, focusScroll: false,  // NT-71y.2 C3: &action= deep link
   rows: [], statusOptions: [],
   busy: false,
-  selected: new Set(), bulkStatus: '', bulkBusy: false, bulkResults: [],  // NT-71y.6 bulk status
+  selected: new Set(), selRows: new Map(), bulkBusy: false, bulkMsg: null, // NT-71y.6 / NT-2wr2.5: selRows keeps a copy of each selected row so selected items hidden by filters can still be copied or set
   references: [], refSelected: new Set(), refBusy: false, refResults: [],  // NT-71y.8 References (document view only)
   stale: false,        // NT-8al: true while the rendered teams/rows came from local storage and fresh data has not arrived yet; Edit, status and Sync stay disabled
-  editingId: null,     // global_id of the row currently showing the edit form, or null
+  panelId: null, panelStatus: '', panelSaved: false, panelBusy: false, // NT-2wr2.3: action panel (E3)
+  search: '',          // NT-2wr2.2: client-side text filter over the rows the view and filters returned
+  statusTouched: false, // NT-2wr2.2: the person picked a status; otherwise the view's default status applies
+  noLink: false, defaultPending: false, // NT-2wr2.2: visit with no link / default view not yet confirmed by data
   // gts-zeti: collapse state for All-teams grouping, keyed 'team:<teamId>' /
   // 'doc:<docId>'. Absent = expanded (default). Kept across render()/
   // refreshActions() calls within a session so a filter change or poll
@@ -554,8 +723,8 @@ const state = {
   collapsed: {}
 };
 
-// NT-4siu: declared before initAuth() runs renderCachedPortal_(); docIsCollapsed_ reads it (set per render by renderList_).
-let docDefaultCollapsed_ = false;
+// NT-2wr2.2: doc ids with at least one open row in the current render; docIsCollapsed_ reads it (set per render by renderList_).
+let docOpenSet_ = new Set();
 const $ = (id) => document.getElementById(id);
 const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
 
@@ -599,8 +768,14 @@ const QUERY_AGE = ['<1', '1-2', '3-5', '6-11', '12+'].indexOf(QUERY_PARAMS.get('
 const QUERY_FROM_HEALTH = QUERY_PARAMS.get('from') === 'health';
 // NT-tnh: ?person=<email> presets the scope control to that person (UX only; the server filters).
 const QUERY_PERSON = (QUERY_PARAMS.get('person') || '').trim().toLowerCase();
+// NT-2wr2.1: ?view=mine|team|find|admin|about picks the view. ?doc= / ?action= always open the document context
+// (the list view), ?person= and ?from=health are Team views. All other parameters keep working unchanged.
+const QUERY_VIEW = ['mine', 'team', 'find', 'admin', 'about'].indexOf(QUERY_PARAMS.get('view')) !== -1 ? QUERY_PARAMS.get('view') : null;
 if (QUERY_PERSON) { state.scope = 'person'; state.person = QUERY_PERSON; }
-if (QUERY_STATUS) state.status = QUERY_STATUS;
+else if (QUERY_VIEW === 'mine' && !QUERY_DOC_RAW) state.scope = 'mine';
+state.view = (QUERY_DOC_RAW || QUERY_PERSON || QUERY_FROM_HEALTH) ? 'team' : (QUERY_VIEW || (state.scope === 'mine' ? 'mine' : 'team'));
+state.noLink = !QUERY_DOC_RAW && !QUERY_ACTION && !QUERY_PERSON && !QUERY_FROM_HEALTH && !QUERY_VIEW && !QUERY_STATUS && !QUERY_AGE && !QUERY_TEAM;
+if (QUERY_STATUS) { state.status = QUERY_STATUS; state.statusTouched = true; }
 if (QUERY_AGE) state.age = QUERY_AGE;
 if (QUERY_DOC) {
   state.docId = QUERY_DOC;
@@ -668,7 +843,7 @@ function setStale_(on, msg){
   if (on) $('appView').setAttribute('data-refreshing', 'true'); else $('appView').removeAttribute('data-refreshing');
   $('staleTag').classList.toggle('hidden', !on);
   if (on && msg) $('staleTag').textContent = msg;
-  updateBulkApply_();
+  syncBulkUi_();
 }
 // Renders the cached view (teams, selected team, rows) and marks it refreshing. Edit/status/Sync stay
 // disabled (state.stale) until applyActions_/the no-teams branch clears it. isAdmin is deliberately
@@ -811,6 +986,43 @@ function signOut(){
 }
 $('signOutBtn').addEventListener('click', signOut);
 
+// ---- NT-2wr2.2: remembered view and filters; default view -----------------------------------------------------
+// A visit with no link (no doc, action, person, view, status, age or team parameter) starts from the last view and
+// filters this browser used; a deep link never inherits them and never overwrites them. With nothing remembered the
+// default is My items, falling back to Team once the first fresh response shows nothing open for the person
+// (list_team_actions returns no open-assigned count, so the page derives it from the rows it already fetches).
+// Every storage access is try/catch: without storage the defaults apply.
+const PREFS_KEY_ = 'nuuts.tracker.prefs.v1.' + STORAGE_SCOPE_;
+const STATUS_VALUES_ = ['open', 'closed', 'all', 'Open', 'In Progress', 'In Review', 'Done', 'Closed'];
+function viewDefaultStatus_(){ return state.docId ? 'all' : (state.view === 'mine' ? 'all' : 'open'); }
+function readPrefs_(sub){
+  try { const p = JSON.parse(localStorage.getItem(PREFS_KEY_ + '.' + sub) || 'null'); return p && typeof p === 'object' ? p : null; }
+  catch (e) { return null; }
+}
+function writePrefs_(){
+  if (!state.noLink || !state.sub) return;
+  try {
+    localStorage.setItem(PREFS_KEY_ + '.' + state.sub, JSON.stringify({
+      view: state.view === 'mine' ? 'mine' : 'team', status: state.statusTouched ? state.status : '',
+      age: state.age, windowDays: state.windowDays }));
+  } catch (e) { /* storage unavailable: nothing remembered */ }
+}
+(function applyRememberedView_(){
+  if (!state.noLink) return;
+  const c = loadCachedAuth();
+  const p = c && readPrefs_(c.sub);
+  if (p) {
+    if (p.view === 'mine' || p.view === 'team') state.view = p.view;
+    if (STATUS_VALUES_.indexOf(p.status) !== -1) { state.status = p.status; state.statusTouched = true; }
+    if (['<1', '1-2', '3-5', '6-11', '12+'].indexOf(p.age) !== -1) state.age = p.age;
+    if ([7, 30, 60, 180, 36500].indexOf(p.windowDays) !== -1) state.windowDays = p.windowDays;
+  } else {
+    state.view = 'mine'; state.defaultPending = true;
+  }
+  state.scope = state.view === 'mine' ? 'mine' : 'all';
+  if (!state.statusTouched) state.status = viewDefaultStatus_();
+})();
+
 // ---- resume a cached session (skip Google + verify_identity entirely) --
 // loadTeams() never rejects (transport errors are caught internally and
 // surface as a banner). A cached assertion the server no longer accepts
@@ -909,7 +1121,7 @@ function loadTeams(opts){
         clearPortalCache_(state.sub);
         setStale_(false);
         state.rows = []; state.teamId = null; state.tier = 'NONE';
-        $('noTeamsNotice').classList.remove('hidden');
+        renderNoTeamsCard_();
         $('listWrap').classList.add('hidden');
         $('filtersRow').classList.add('hidden');
         $('countLabel').textContent = '';
@@ -931,6 +1143,7 @@ function loadTeams(opts){
         : (cached && state.teams.some(t => t.teamId === cached.teamId))
           ? cached.teamId
           : state.teams[0].teamId;
+      if (state.view === 'mine' && !QUERY_TEAM && state.teams.length > 1) state.teamId = ALL_TEAMS_ID; // NT-2wr2.2: My items spans the teams
       $('teamSel').value = state.teamId;
 
       if (prefetch && prefetch.teamId === state.teamId) {
@@ -947,8 +1160,7 @@ function loadTeams(opts){
       return refreshActions();
     })
     .catch(err => {
-      $('loadError').style.display = 'block';
-      $('loadError').textContent = 'Could not load your teams: ' + (err.message || err);
+      showLoadError_('Could not load your teams', err, () => loadTeams());
       if (state.stale) setStale_(true, 'Showing your last saved data — could not refresh');
       setBusy(false);
     });
@@ -966,30 +1178,13 @@ $('refreshAccessBtn').addEventListener('click', () => {
 
 $('teamSel').addEventListener('change', e => {
   state.teamId = e.target.value;
-  state.selected.clear(); state.bulkResults = []; // NT-71y.6: a team change clears the selection
+  state.selected.clear(); state.selRows.clear(); // NT-71y.6: a team change clears the selection
   clearRefSelection_(); // NT-71y.8
   setDocFilter_('', ''); // NT-71y.2 C2: a team change drops the document filter
   $('adminScanResults').classList.add('hidden');
+  writePrefs_();
   refreshActions();
 });
-
-// gts-zeti: Expand/Collapse-all set every currently-known team/doc group's
-// collapse state, keyed the same way render() reads it, then re-render.
-function setAllGroupsCollapsed(collapsed){
-  state.rows.forEach(r => {
-    state.collapsed['team:' + r.team_id] = collapsed;
-    state.collapsed['doc:' + r.doc_id]   = collapsed;
-  });
-  // NT-3fj: and the scan list's team/folder groups.
-  ((state.scan && state.scan.candidates) || []).forEach(c => {
-    state.collapsed[scanTeamKey_(c.teamId || '')] = collapsed;
-    state.collapsed[scanFolderKey_(c.teamId || '', c.path || '')] = collapsed;
-  });
-  render();
-  if (state.scan) renderAdminScanResults(state.scan);
-}
-$('expandAllBtn').addEventListener('click', () => setAllGroupsCollapsed(false));
-$('collapseAllBtn').addEventListener('click', () => setAllGroupsCollapsed(true));
 
 // ---- action listing (§12.1) --------------------------------------------
 function listPayload_(teamId){
@@ -1017,6 +1212,15 @@ function listPayload_(teamId){
 function applyActions_(res){
   setStale_(false);
   state.rows = res.actions || [];
+  if (state.defaultPending && state.view === 'mine' && !state.docId) { // NT-2wr2.2: confirm or drop the default My items view
+    state.defaultPending = false;
+    if (res.ok !== false && !state.rows.some(isOpenRow_)) {
+      if (state.teams.length > 1 && state.teamId === ALL_TEAMS_ID) { state.teamId = state.teams[0].teamId; $('teamSel').value = state.teamId; }
+      setView_('team', { noRefresh: true, keepScroll: true });
+      refreshActions();
+      return;
+    }
+  }
   state.references = (state.docId && res.ok !== false && Array.isArray(res.references)) ? res.references : []; // NT-71y.8
   state.statusOptions = res.statusOptions || [];
   state.tier = res.tier || 'NONE';
@@ -1039,9 +1243,10 @@ function applyActions_(res){
 // Sets (or clears, with '') the document filter and keeps the address bar in step: 'doc' is set or
 // removed, and clearing also removes 'action'. Does not refresh; callers do.
 function setDocFilter_(docId, docName){
-  if ((docId || '') !== state.docId) { state.references = []; clearRefSelection_(); } // NT-71y.8
+  if ((docId || '') !== state.docId) { state.references = []; clearRefSelection_(); state.docAdded = false; } // NT-71y.8
   const switched = !!docId && docId !== state.docId; // NT-71y.2 C5: a different document drops 'action'
   state.docId = docId || '';
+  state.panelId = null;
   state.docName = docId ? (docName || '') : '';
   state.docDenied = false;
   if (!docId || switched) { state.focusPending = false; state.focusGid = ''; state.focusN = null; }
@@ -1065,9 +1270,8 @@ function applyDocFilterResponse_(res){
   state.docUrl = state.docDenied ? '' : (res.docUrl || '');
   // NT-o1zu.5 AC7 / D5: an invalid id is named; every other denial (no access, not found, unreadable by the
   // tracker) reads the same.
-  $('docNoAccessMsg').textContent = state.docDenied && res.reason === 'invalid_document'
-    ? "That isn't a valid Google Doc link or ID."
-    : "You can't open this document, or it isn't shared where the action tracker can read it.";
+  state.docInvalid = state.docDenied && res.reason === 'invalid_document'; // input validation only; every other denial reads the same
+  state.docSynced = state.docDenied ? '' : String(res.lastSynced || ''); // [server?] optional: list_team_actions does not return it today
   state.docName = state.docDenied ? '' : (res.docName || '');
   if (res.teamId && state.teams.some(t => t.teamId === res.teamId)) {
     state.teamId = res.teamId;
@@ -1081,7 +1285,7 @@ function applyDocFilterResponse_(res){
       state.focusGid = target.global_id;
       state.collapsed['doc:' + target.doc_id] = false;
       state.collapsed['team:' + target.team_id] = false;
-      if (state.tier === 'EDIT' && !state.stale) state.editingId = target.global_id;
+      if (!state.stale) { state.panelId = target.global_id; state.panelSaved = false; state.panelStatus = target.status || ''; }
       state.focusScroll = true;
     }
   }
@@ -1096,19 +1300,19 @@ function scrollToFocusRow_(){
 
 function syncDocControls_(){
   const chip = !!(state.docId && state.docName);
-  $('docFilterChip').classList.toggle('hidden', !chip);
-  $('docFilterName').textContent = chip ? state.docName : '';
   $('docSearch').value = chip ? state.docName : '';
+  $('docSearchPanel').value = chip ? state.docName : '';
+  if (state.view === 'mine' || state.view === 'team') renderToolbar_();
   $('docNoAccess').classList.toggle('hidden', !state.docDenied);
   $('docSearchList').innerHTML = Object.keys(state.docIndex).sort().map(n => `<option value="${escape(n)}"></option>`).join('');
 }
 
 function clearDocFilter_(){
-  if (!state.docId) { $('docSearch').value = ''; return; }
+  if (!state.docId) { $('docSearch').value = ''; $('docSearchPanel').value = ''; return; }
   setDocFilter_('', '');
   if (!state.teams.length) { // NT-o1zu.5: a no-team user opened a document by link; back to the no-teams notice
     state.rows = []; state.docTracked = null; state.docDenied = false;
-    $('noTeamsNotice').classList.remove('hidden');
+    renderNoTeamsCard_();
     $('docNoAccess').classList.add('hidden');
     $('listWrap').classList.add('hidden');
     $('filtersRow').classList.add('hidden');
@@ -1117,16 +1321,16 @@ function clearDocFilter_(){
   }
   refreshActions();
 }
-$('docFilterClear').addEventListener('click', clearDocFilter_);
-$('docNoAccessClear').addEventListener('click', clearDocFilter_);
-$('docSearch').addEventListener('input', () => $('docSearchError').classList.add('hidden'));
-$('docSearch').addEventListener('change', e => {
+function onDocSearchInput_(e){ e.target.parentNode.querySelector('[role="alert"]').classList.add('hidden'); }
+function onDocSearchChange_(e){
+  const errEl = e.target.parentNode.querySelector('[role="alert"]');
   const v = e.target.value.trim();
-  $('docSearchError').classList.add('hidden');
+  errEl.classList.add('hidden');
   if (!v) { clearDocFilter_(); return; }
   const id = state.docIndex[v];
   if (id && id !== state.docId) {
     setDocFilter_(id, v);
+    setView_('team', { noRefresh: true });
     refreshActions();
     return;
   }
@@ -1134,17 +1338,21 @@ $('docSearch').addEventListener('change', e => {
   // NT-o1zu.5 AC6: not a known name, so a pasted Docs URL or ID opens doc mode for that id.
   const ref = parseDocRef_(v);
   if (ref) {
-    if (ref !== state.docId) { setDocFilter_(ref, ''); refreshActions(); }
+    if (ref !== state.docId) { setDocFilter_(ref, ''); setView_('team', { noRefresh: true }); refreshActions(); }
     return;
   }
   e.target.value = state.docName; // neither a known name nor a link/ID: keep the current filter
-  $('docSearchError').classList.remove('hidden');
+  errEl.classList.remove('hidden');
+}
+['docSearch', 'docSearchPanel'].forEach(id => {
+  $(id).addEventListener('input', onDocSearchInput_);
+  $(id).addEventListener('change', onDocSearchChange_);
 });
 
 function refreshActions(){
   if (!state.teamId && !state.docId) return Promise.resolve();
   setBusy(true);
-  $('loadError').style.display = 'none';
+  hideLoadError_();
 
   return postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...listPayload_(state.teamId) })
     .then(res => {
@@ -1152,8 +1360,7 @@ function refreshActions(){
       applyActions_(res);
     })
     .catch(err => {
-      $('loadError').style.display = 'block';
-      $('loadError').textContent = 'Could not load actions: ' + (err.message || err);
+      showLoadError_('Could not load your items', err, () => refreshActions());
       if (state.stale) setStale_(true, 'Showing your last saved data — could not refresh');
     })
     .finally(() => setBusy(false));
@@ -1172,8 +1379,8 @@ function refreshActions(){
 
 const SCAN_POLL_MS = 5000;
 
-function scanCall(action){
-  return postJson(GACTIONSHEET_URL, { action, assertion: state.assertion, teamId: state.teamId });
+function scanCall(action, teamId){
+  return postJson(GACTIONSHEET_URL, { action, assertion: state.assertion, teamId: teamId || state.teamId });
 }
 
 // Poll only while the scan is actually advancing. A done/idle/error scan
@@ -1191,10 +1398,11 @@ function scheduleScanPoll(){
 // specific real team — only Start (admin_scan_start) does, since it seeds
 // the scan from one team's registered folders.
 function refreshScanStatus(){
-  if (!state.isAdmin || !state.teamId) return Promise.resolve();
-  return scanCall('admin_scan_status')
+  const findOn = state.view === 'find' && findScanVisible_();
+  if ((!state.isAdmin && !findOn) || !state.teamId) return Promise.resolve();
+  return scanCall('admin_scan_status', findOn ? state.findTeamId : '')
     .then(res => {
-      if (!res.ok) return;               // forbidden — leave the panel blank
+      if (!res.ok) { noteScanRefusal_(res); return; }               // forbidden — leave the panel blank
       state.scan = res;
       renderScanPanel();
       scheduleScanPoll();
@@ -1423,6 +1631,7 @@ function renderScanPanel(){
 
   $('adminScanStatus').innerHTML = scanStatusLine(sc);
   renderAdminScanResults(sc);
+  renderFindScan_();
 }
 
 // Selection only makes sense once the candidate set is final (sc.complete) —
@@ -1438,14 +1647,15 @@ const scanPathDepth_ = c => (c.path ? String(c.path).split('/').length : 0);
 // NT-3fj AC5: a docId found under nested teams (an inner team's folder inside an outer team's) is
 // listed once, under the innermost team — the one whose team-relative path is shortest; a tie keeps
 // the first. AC3: then filtered to the #teamSel team unless ALL.
-function visibleScanCandidates_(candidates){
+function visibleScanCandidates_(candidates, teamId){
+  teamId = teamId || state.teamId;
   const byDoc = new Map();
   candidates.forEach(c => {
     const prev = byDoc.get(c.docId);
     if (!prev || scanPathDepth_(c) < scanPathDepth_(prev)) byDoc.set(c.docId, c);
   });
   const deduped = candidates.filter(c => byDoc.get(c.docId) === c);
-  return state.teamId === ALL_TEAMS_ID ? deduped : deduped.filter(c => c.teamId === state.teamId);
+  return teamId === ALL_TEAMS_ID ? deduped : deduped.filter(c => c.teamId === teamId);
 }
 
 // {teamId: {path: [candidate...]}} in first-appearance order (Maps).
@@ -1465,15 +1675,21 @@ const scanTeamKey_ = teamId => 'scanteam:' + teamId;
 const scanFolderKey_ = (teamId, path) => 'scanfolder:' + teamId + '/' + path;
 const docCount_ = n => n + (n === 1 ? ' doc' : ' docs');
 
-function scanCandidateLi_(c, selectable){
+function scanCandidateLi_(c, selectable, member){
   // NT-bg6: each candidate shows its Drive last-modified date.
   const modified = c.modified ? `<span class="scanmodified">modified ${escape(shortDate(c.modified))}</span>` : '';
   const link = `<a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.docName)}</a>`;
   // Every li carries its input.trackCandidate (the NT-3fj DOM contract); while the scan is still
   // running it is disabled, since selection only applies to a complete scan.
+  // NT-2wr2.6 (Find documents): owner and view-only are shown only when the endpoint returns them
+  // (c.owner / c.canEdit === false); a view-only document cannot be selected.
+  const viewOnly = !!member && c.canEdit === false;
+  const owner = member && c.owner ? `<span class="scanmodified">owner ${escape(c.owner)}</span>` : '';
+  const dis = viewOnly ? ' disabled title="You can only view this document"'
+    : (selectable ? (state.scanSelected.has(c.docId) ? ' checked' : '') : ' disabled title="Selectable once the scan completes"');
   return `<li><label><input type="checkbox" class="trackCandidate" data-doc-id="${escape(c.docId)}" data-doc-name="${escape(c.docName)}" data-team-id="${escape(c.teamId || '')}" data-path="${escape(c.path || '')}"` +
-    (selectable ? (state.scanSelected.has(c.docId) ? ' checked' : '') : ' disabled title="Selectable once the scan completes"') + ` /> ` +
-    `${link}</label>${modified}</li>`;
+    dis + ` /> ` +
+    `${link}</label>${owner}${modified}${viewOnly ? '<span class="viewonly">View only</span>' : ''}</li>`;
 }
 
 function groupSelectAllHtml_(cands, selectable){
@@ -1511,21 +1727,11 @@ function scanGroupsHtml_(candidates, selectable){
   return html;
 }
 
-// #collapseAllField serves both grouped lists: All-teams actions, and any rendered scan groups.
-function syncCollapseAllField_(){
-  const scanGroups = !$('adminScanResults').classList.contains('hidden') &&
-    !!$('adminScanResults').querySelector('.scanteam');
-  // NT-o1zu.7 AC2: also whenever 2+ document groups are rendered (single-team view included).
-  const docGroups = state.docDenied || state.docTracked === false ? 0 : new Set(state.rows.map(r => r.doc_id)).size;
-  $('collapseAllField').classList.toggle('hidden', !(state.teamId === ALL_TEAMS_ID || scanGroups || docGroups >= 2));
-}
-
 function renderAdminScanResults(sc){
   const box = $('adminScanResults');
   const allCandidates = (sc && sc.candidates) || [];
   if (!sc || sc.status === 'idle' || (!allCandidates.length && !sc.complete)) {
     box.classList.add('hidden');
-    syncCollapseAllField_();
     return;
   }
   const candidates = visibleScanCandidates_(allCandidates);
@@ -1572,7 +1778,6 @@ function renderAdminScanResults(sc){
     renderAdminScanResults(state.scan);
   }));
   box.classList.remove('hidden');
-  syncCollapseAllField_();
 }
 
 // Group and overall select-alls read as checked exactly when every candidate under them is.
@@ -1617,7 +1822,8 @@ function ignoreSelectedDocs(){
 // Shared by Track and Ignore: POST the checked candidates, then drop the docIds the server
 // reports back (res[resultKey]) from the displayed list and the selection.
 function scanSelectionAction_(o){
-  const box = $('adminScanResults');
+  const box = $(o.boxId || 'adminScanResults');
+  const teamId = o.teamId || state.teamId;
   const checked = Array.from(box.querySelectorAll('.trackCandidate:checked'));
   if (!checked.length) { toast(`Select at least one document to ${o.verb}.`); return; }
   const docs = checked.map(cb => ({ docId: cb.dataset.docId, docName: cb.dataset.docName,
@@ -1626,11 +1832,12 @@ function scanSelectionAction_(o){
   const btn = $(o.btnId);
   btn.disabled = true;
   btn.textContent = o.working;
-  postJson(GACTIONSHEET_URL, { action: o.action, assertion: state.assertion, teamId: state.teamId, docs })
+  postJson(GACTIONSHEET_URL, { action: o.action, assertion: state.assertion, teamId, docs })
     .then(res => {
-      if (!res.ok) { toast(o.fail + ': ' + (res.reason || 'unknown error')); return; }
+      if (!res.ok) { noteScanRefusal_(res); toast(o.fail + ': ' + (res.reason || 'unknown error')); return; }
       const doneIds = res[o.resultKey] || [];
       toast(o.done(doneIds.length));
+      if (o.after) o.after(doneIds);
       const doneSet = new Set(doneIds);
       doneIds.forEach(id => state.scanSelected.delete(id));
       if (state.scan) {
@@ -1693,11 +1900,151 @@ function rowByDocId(docId){ return state.rows.find(r => r.doc_id === docId); }
 // ---- render ---------------------------------------------------------------
 function render(){
   renderList_();
+  renderCtxHeader_();
+  renderActionPanel_();
   syncBulkUi_();
+}
+// NT-2wr2.3: document context header (E2). Only while a document is in scope (?doc= / ?action=); the no-access
+// card (E5) stands alone. Counts come from the document's own rows; last-synced time is not returned by the
+// listing, so #ctxSynced stays hidden.
+function renderCtxHeader_(){
+  const show = !!state.docId && !state.docDenied;
+  $('ctxHeader').classList.toggle('hidden', !show);
+  if (!show) return;
+  const team = state.teamId && state.teamId !== ALL_TEAMS_ID ? teamDisplayName(state.teamId) : '';
+  $('ctxCrumb').textContent = (team ? team + ' › ' : '') + (state.docName || 'Document');
+  const link = $('ctxOpenDocs');
+  link.href = state.docUrl || ('https://docs.google.com/document/d/' + encodeURIComponent(state.docId) + '/edit');
+  const tracked = state.docTracked !== false;
+  const open = state.rows.filter(isOpenRow_).length, done = state.rows.length - open;
+  $('ctxCounts').textContent = tracked && state.rows.length ? open + ' open · ' + done + ' done' : '';
+  const synced = state.docSynced ? syncedAgo_(state.docSynced) : ''; // [server?] hidden until the listing returns lastSynced
+  $('ctxSynced').textContent = synced ? 'Last synced ' + synced : '';
+  $('ctxSynced').classList.toggle('hidden', !synced);
+  $('ctxSeeAll').textContent = team ? 'See all ' + team + ' items' : 'See all items';
+  $('ctxSeeAll').classList.toggle('hidden', !state.teams.length);
+}
+$('ctxSeeAll').addEventListener('click', () => { state.panelId = null; clearDocFilter_(); });
+// ---- NT-2wr2.4: state cards (spec section 5). Each is a card in place of the list: headline, one sentence, one next step.
+function cardHtml_(o){
+  return `<div class="statecard${o.cls ? ' ' + o.cls : ''}"${o.id ? ` id="${o.id}"` : ''}><h2>${escape(o.head)}</h2><p>${o.body}</p>${
+    o.actions ? `<div class="scact">${o.actions}</div>` : ''}${o.hint ? `<p class="schint">${o.hint}</p>` : ''}</div>`;
+}
+function showLoadError_(head, err, retry){
+  const el = $('loadError');
+  el.style.display = 'block';
+  el.innerHTML = cardHtml_({ cls: 'err', head, body: 'Check your connection, then try again. ' + escape((err && err.message) || err || ''),
+    actions: '<button class="btn primary" id="loadRetry" type="button">Try again</button>' });
+  $('loadRetry').addEventListener('click', () => { hideLoadError_(); retry(); });
+}
+function hideLoadError_(){ const el = $('loadError'); el.style.display = 'none'; el.innerHTML = ''; }
+function renderNoTeamsCard_(){
+  const el = $('noTeamsNotice');
+  el.classList.remove('hidden');
+  el.innerHTML = cardHtml_({ head: "You're not on a team in Tracker yet",
+    body: 'Ask your team lead to share the team folder with ' + escape(state.email) + '.',
+    actions: `<input class="sel" id="noTeamDoc" type="search" placeholder="Paste a document link" aria-label="Paste a document link" autocomplete="off" />`,
+    hint: '<span id="noTeamDocErr" class="hidden" role="alert" style="color:#b91c1c">Not a Google Doc link or ID</span>' });
+  $('noTeamDoc').addEventListener('change', e => {
+    const ref = parseDocRef_(e.target.value.trim());
+    if (!ref) { $('noTeamDocErr').classList.toggle('hidden', !e.target.value.trim()); return; }
+    setDocFilter_(ref, '');
+    el.classList.add('hidden');
+    $('listWrap').classList.remove('hidden');
+    $('filtersRow').classList.remove('hidden');
+    setView_('team', { noRefresh: true });
+    state.teamId = '';
+    refreshActions();
+  });
+}
+function renderNoAccessCard_(){
+  const el = $('docNoAccess');
+  el.innerHTML = state.docInvalid
+    ? cardHtml_({ head: "That isn't a Google Doc link or ID", body: 'Check the link and paste it again.',
+        actions: '<button class="btn primary" id="naMine" type="button">Go to My items</button>' })
+    : cardHtml_({ head: "You can't open this document here",
+        body: `Signed in as ${escape(state.email)} · <button class="linkbtn" id="naSwitch" type="button">Switch account</button>.<br>Ask the document's owner or your team lead to share it with that account.`,
+        actions: '<button class="btn primary" id="naMine" type="button">Go to My items</button>' });
+  if ($('naSwitch')) $('naSwitch').addEventListener('click', () => signOut());
+  $('naMine').addEventListener('click', () => {
+    if (!state.teams.length) { clearDocFilter_(); return; }
+    setDocFilter_('', ''); state.docDenied = false;
+    $('docNoAccess').classList.add('hidden');
+    setView_('mine', { noRefresh: true });
+    refreshActions();
+  });
+}
+function syncedAgo_(iso){
+  const ms = Date.now() - Date.parse(iso);
+  if (!(ms >= 0)) return '';
+  return ms >= 2 * 86400000 ? Math.floor(ms / 86400000) + ' days ago' : timeAgo(iso);
+}
+function lastSyncedText_(){
+  const t = state.docSynced ? syncedAgo_(state.docSynced) : '';
+  return t ? ' Last synced ' + escape(t) + '.' : '';
+}
+function doSync_(docId, btn){
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  return postJson(GACTIONSHEET_URL, { action: 'team_sync_document', assertion: state.assertion, teamId: teamIdForWrite(rowByDocId(docId)), docId })
+    .then(res => {
+      if (res && res.ok) { toast('Synced.'); return refreshActions(); }
+      toast('Sync did not run: ' + ((res && res.outcome) || 'unknown'));
+    })
+    .catch(err => toast('Sync failed: ' + (err.message || err)))
+    .finally(() => { if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = 'Sync now'; } });
+}
+// "Nothing open for <team>": the resolved count needs the closed list, so it costs one extra request, made only in this state.
+function loadResolvedHint_(){
+  const key = state.teamId + '|' + state.scope + '|' + state.person;
+  if (state.resolvedHint && state.resolvedHint.key === key) return;
+  state.resolvedHint = { key, n: null };
+  const p = { ...listPayload_(state.teamId), statusFilter: 'closed', windowDays: 30 };
+  delete p.ageBucket;
+  postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...p }).then(res => {
+    if (!state.resolvedHint || state.resolvedHint.key !== key) return;
+    state.resolvedHint.n = (res && res.ok !== false && Array.isArray(res.actions)) ? res.actions.length : 0;
+    if (!state.rows.length && !state.docId) renderList_();
+  }).catch(() => {});
+}
+function clearAllFilters_(){
+  state.search = ''; $('searchBox').value = '';
+  $('filtersClear').click();
+}
+function emptyCard_(){
+  const searching = !!state.search.trim() && state.rows.length > 0;
+  const filtered = state.status !== viewDefaultStatus_() || !!state.age || (state.scope === 'person' && !!state.person) ||
+    (windowApplies_() && state.windowDays !== 60);
+  if (state.docId && state.docTracked === true && !searching && !filtered) {
+    return { html: cardHtml_({ id: 'cardNoItems', head: 'No action items in this document yet',
+      body: 'Items appear after someone writes an action item and the document syncs.' + lastSyncedText_(),
+      actions: state.tier === 'EDIT' ? `<button class="btn primary" id="cardSync" type="button"${state.stale ? ' disabled' : ''}>Sync now</button>` : '' }),
+      bind: () => { const b = $('cardSync'); if (b) b.addEventListener('click', () => doSync_(state.docId, b)); } };
+  }
+  if (!searching && !filtered && !state.docId) {
+    if (state.view === 'mine') {
+      return { html: cardHtml_({ id: 'cardNothingMine', head: 'Nothing open for you', body: 'Items assigned to you appear here.',
+        actions: '<button class="btn primary" id="cardTeamView" type="button">See the Team view</button>' }),
+        bind: () => $('cardTeamView').addEventListener('click', () => setView_('team')) };
+    }
+    if (state.status === 'open') {
+      loadResolvedHint_();
+      const n = state.resolvedHint && state.resolvedHint.n;
+      const team = state.teamId && state.teamId !== ALL_TEAMS_ID ? teamDisplayName(state.teamId) : 'your teams';
+      const body = n == null ? 'Checking recently resolved items…'
+        : n ? n + (n === 1 ? ' item' : ' items') + ' resolved in the last 30 days. <button class="linkbtn" id="cardShowResolved" type="button">Show</button>'
+            : 'Nothing was resolved in the last 30 days either.';
+      return { html: cardHtml_({ id: 'cardNothingOpen', head: 'Nothing open for ' + team, body }),
+        bind: () => { const b = $('cardShowResolved'); if (b) b.addEventListener('click', () => {
+          state.status = 'closed'; state.statusTouched = true; state.windowDays = 30; filtersChanged_(); }); } };
+    }
+  }
+  return { html: cardHtml_({ id: 'cardNoMatch', head: 'Nothing matches these filters', body: searching && !filtered ? 'No item matches this search.' : 'No item matches the filters that are set.',
+    actions: '<button class="btn primary" id="cardClear" type="button">Clear filters</button>' }),
+    bind: () => $('cardClear').addEventListener('click', clearAllFilters_) };
 }
 function renderList_(){
   const isAllTeams = state.teamId === ALL_TEAMS_ID;
-  $('sub').textContent = (isAllTeams ? 'All teams' : state.teamId) + ' • signed in';
+  $('sub').textContent = (isAllTeams ? 'All teams' : state.teamId) + ' • signed in'; // hidden: kept for the page's own state
   // The scan status itself lives in ONE shared Script Property regardless of
   // which team is selected (a nightly all-teams scan spans every team), so
   // the panel is visible for any admin, including in All-teams view — that's
@@ -1707,6 +2054,10 @@ function renderList_(){
   const showScan = state.isAdmin;
   $('adminScanField').classList.toggle('hidden', !showScan);
   $('adminPanel').classList.toggle('hidden', !state.isAdmin); // NT-ja4
+  $('adminMenuBtn').classList.toggle('hidden', !state.isAdmin); // NT-2wr2.1: UX only; admin routes re-check server-side
+  $('accountBtn').textContent = (state.email || '?').charAt(0);
+  renderFindScan_(); // NT-2wr2.6: team chips follow state.teams
+  if (!state.stale && state.view === 'admin' && !state.isAdmin) setView_('team');
   $('adminToolsField').classList.toggle('hidden', !state.isAdmin);
   if (!state.isAdmin) $('adminHealthPanel').classList.add('hidden');
   loadAdminExtras();
@@ -1742,45 +2093,54 @@ function renderList_(){
     note.className = 'notice';
     note.id = 'healthNote';
     note.textContent = 'Showing actions visible to you';
-    $('adminPanel').insertAdjacentElement('afterend', note); // NT-ja4: outside the admin-only panel
+    $('listView').insertAdjacentElement('afterbegin', note); // NT-ja4: outside the admin-only panel
   }
-  // gts-zeti: Expand/Collapse-all only make sense when there's a team layer
-  // to collapse — single-team mode has nothing above the doc-groups.
-  syncCollapseAllField_(); // NT-3fj: also shown while scan groups are rendered
-
-  const rows = state.rows;
-  // NT-ttl: the label always counts the rows this render draws. It used to be skipped while
-  // state.busy, but applyActions_ renders fresh rows before setBusy(false), so the label kept the
-  // cached/previous count while the groups showed the new rows.
-  $('countLabel').textContent = rows.length + (rows.length === 1 ? ' action' : ' actions');
+  const rows = shownRows_();
+  // NT-ttl: the summary line always describes the rows this render draws (applyActions_ renders fresh rows
+  // before setBusy(false)).
+  renderToolbar_(rows);
 
   listEl.innerHTML = '';
   $('docNoAccess').classList.toggle('hidden', !state.docDenied);
-  if (state.docDenied) return; // NT-71y.2 C4: distinct from the empty-filter message; no rows
+  if (state.docDenied) { renderNoAccessCard_(); return; } // NT-71y.2 C4 / NT-2wr2.4: the no-access card stands alone
   if (state.docId && state.docTracked === false) { // NT-o1zu.5 AC3: an untracked document
     renderUntrackedPanel_();
     return;
   }
   if (!rows.length){
-    listEl.innerHTML = `<div class="docgroup"><div class="empty">${
-      state.docId && state.docTracked === true ? 'This document is tracked; it has no actions yet.'
-      : state.scope === 'mine' ? 'Nothing assigned to you in this team.'
-                              : 'No actions match these filters.'}</div></div>`;
+    const c = emptyCard_();
+    listEl.innerHTML = c.html;
+    c.bind();
     renderReferences_();
     return;
   }
 
-  // Group by document: the list spans documents, which is also why the sync
-  // control is document-scoped rather than one row-level button per row.
+  docOpenSet_ = new Set(rows.filter(isOpenRow_).map(r => r.doc_id));
+  if (state.view === 'mine' && !state.docId) { // NT-2wr2.2: My items is flat: open oldest first, resolved below a divider
+    const open = rows.filter(isOpenRow_).sort((a, b) => String(a.created_date || '').localeCompare(String(b.created_date || '')));
+    const done = rows.filter(r => !isOpenRow_(r)).sort((a, b) => String(b.modified_date || '').localeCompare(String(a.modified_date || '')));
+    const one = r => rowHtml(r, rowTier_(r), { showDoc: true });
+    listEl.innerHTML = `<div class="docgroup"><div class="docrows">${open.map(one).join('')}${
+      done.length ? '<div class="divider">Recently resolved</div>' + done.map(one).join('') : ''}</div></div>`;
+    bindListEvents_();
+    renderReferences_();
+    return;
+  }
+
+  // Team: group by document (the sync control is document-scoped). Documents with open items come first; the
+  // document named in the URL leads them.
   const byDoc = new Map();
   rows.forEach(r => { if(!byDoc.has(r.doc_id)) byDoc.set(r.doc_id, []); byDoc.get(r.doc_id).push(r); });
-  docDefaultCollapsed_ = byDoc.size > 2 && !state.docId; // NT-o1zu.7 AC3/5: collapsed by default above 2 documents
+  const docOrder = Array.from(byDoc.keys()).map((id, i) => ({ id, i }));
+  const docRank = id => (id === state.docId ? 0 : docOpenSet_.has(id) ? 1 : 2);
+  docOrder.sort((a, b) => docRank(a.id) - docRank(b.id) || a.i - b.i);
+  const sortedDocs = new Map(docOrder.map(d => [d.id, byDoc.get(d.id)]));
 
   if (isAllTeams) {
     // gts-zeti: group doc-groups under a collapsible team header, in the
     // order teams first appear across rows (matches server aggregate order).
     const byTeam = new Map();
-    byDoc.forEach((docRows, docId) => {
+    sortedDocs.forEach((docRows, docId) => {
       const teamId = docRows[0].team_id;
       if (!byTeam.has(teamId)) byTeam.set(teamId, new Map());
       byTeam.get(teamId).set(docId, docRows);
@@ -1797,10 +2157,15 @@ function renderList_(){
       }));
     });
   } else {
-    byDoc.forEach((docRows, docId) => {
+    sortedDocs.forEach((docRows, docId) => {
       listEl.insertAdjacentHTML('beforeend', docGroupHtml(docId, docRows, false));
     });
   }
+  bindListEvents_();
+  renderReferences_();
+}
+
+function bindListEvents_(){
 
   listEl.querySelectorAll('[data-toggle-team]').forEach(b => b.addEventListener('click', () => {
     const key = 'team:' + b.dataset.toggleTeam;
@@ -1813,36 +2178,31 @@ function renderList_(){
     render();
   }));
   listEl.querySelectorAll('[data-sync]').forEach(b => b.addEventListener('click', onSyncClick));
-  listEl.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
-    state.editingId = b.dataset.edit;
-    render();
-  }));
-  listEl.querySelectorAll('[data-cancel-edit]').forEach(b => b.addEventListener('click', () => {
-    state.editingId = null;
-    render();
-  }));
-  listEl.querySelectorAll('[data-save-edit]').forEach(b => b.addEventListener('click', onSaveEditClick));
+  listEl.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openPanel_(b.dataset.edit)));
   listEl.querySelectorAll('a.from-link').forEach(a => a.addEventListener('click', onRefHomeClick_)); // NT-a0t
   // NT-hy1: every status chip opens the Actions menu; Set status is offered only on the
   // assignee's own chips with fresh data, the Copy items on every chip.
   listEl.querySelectorAll('.status[data-status-for]').forEach(c => c.addEventListener('click', openStatusMenu));
-  renderReferences_();
 }
 
 // NT-o1zu.5: the panel for a document the tracker is not following yet. Start tracking is the existing
 // team_sync_document route with teamId '' (the server decides the team); EDIT needed, fresh data only.
 function renderUntrackedPanel_(){
-  const canStart = state.tier === 'EDIT' && !state.stale && !state.docStarting;
-  const title = escape(state.docName || '(untitled document)');
-  listEl.innerHTML = `<div class="docgroup" id="docUntracked">
-    <div class="dochead"><div class="docname">${state.docUrl
-      ? `<a href="${escape(state.docUrl)}" target="_blank" rel="noopener">${title}</a>` : title}</div></div>
-    <div class="empty">This document is not tracking actions yet.</div>
-    <div style="padding:0 12px 12px"><button class="btn" id="docStartTracking" type="button" ${canStart ? '' : 'disabled'}
-      title="${state.tier !== 'EDIT' ? 'Starting tracking needs edit access to the document'
-              : state.stale ? 'Available once fresh data has loaded' : 'Start tracking this document\u2019s actions'}"
-    >Start tracking</button></div></div>`;
-  $('docStartTracking').addEventListener('click', onStartTrackingClick_);
+  const canStart = state.tier === 'EDIT' && !state.stale && !state.docStarting && !state.docAdded;
+  const hint = state.docAdded ? '' : state.tier === 'EDIT'
+    ? 'Action items in it will appear here after the next sync.' : 'Ask someone who can edit this document to add it.';
+  listEl.innerHTML = cardHtml_({ id: 'docUntracked', head: "This document isn't in Tracker yet",
+    body: state.docAdded ? 'Added. Waiting for the first sync…' : hint,
+    actions: state.docAdded ? '' : `<button class="btn primary" id="docStartTracking" type="button" ${canStart ? '' : 'disabled'}
+      title="${state.tier !== 'EDIT' ? 'Adding a document needs edit access to it'
+              : state.stale ? 'Available once fresh data has loaded' : 'Add this document to Tracker'}">Add to Tracker</button>` });
+  if ($('docStartTracking')) $('docStartTracking').addEventListener('click', onStartTrackingClick_);
+}
+// Add to Tracker is the existing team_sync_document route with teamId '' (the server decides the team); EDIT needed,
+// fresh data only. After it, the list refreshes on its own a few times until the document shows as tracked.
+function pollFirstSync_(left){
+  if (!state.docAdded || state.docTracked !== false || left <= 0) { if (state.docTracked === false) { state.docAdded = false; render(); } return; }
+  setTimeout(() => refreshActions().then(() => pollFirstSync_(left - 1)), 4000);
 }
 function onStartTrackingClick_(){
   const docId = state.docId;
@@ -1854,9 +2214,13 @@ function onStartTrackingClick_(){
       if (res && res.ok) {
         state.collapsed['doc:' + docId] = false;
         state.docStarting = false;
+        state.docAdded = true;
+        render();
         return refreshActions().then(() => {
+          if (state.docTracked === false) return pollFirstSync_(5);
+          state.docAdded = false;
           const n = state.rows.length;
-          toast('Tracking started' + (n ? ' — ' + n + (n === 1 ? ' action' : ' actions') : ''));
+          toast('Added to Tracker' + (n ? ' — ' + n + (n === 1 ? ' item' : ' items') : ''));
         });
       }
       toast('Sync did not run: ' + ((res && res.outcome) || 'unknown'));
@@ -1890,16 +2254,21 @@ function collapsibleGroupHtml(o){
 // per-team badge (redundant once nested under a team header) and whether
 // this doc-group gets its own collapse toggle (only meaningful once there's
 // a team layer above it to collapse independently of).
-// NT-o1zu.7: a document group's collapse state. The user's choice (toggle, Collapse/Expand all) wins; with
-// none, collapsed iff the list holds more than 2 documents. Document view (one document) and the &action=
-// focus target always render expanded. Set per render by renderList_.
+// NT-2wr2.2: a document group's collapse state. The user's choice (toggle) wins; with none, a document with
+// nothing open collapses to one line, unless a search is active. The document named in the URL (document view)
+// and the &action= focus target always render expanded. docOpenSet_ is set per render by renderList_.
 function docIsCollapsed_(docId){
   if (state.docId) return false;
   if (state.focusGid && state.focusGid.indexOf(docId + '/') === 0) return false;
   const v = state.collapsed['doc:' + docId];
-  return v === undefined ? docDefaultCollapsed_ : !!v;
+  if (v !== undefined) return !!v;
+  return state.search.trim() ? false : !docOpenSet_.has(docId); // NT-2wr2.2: collapsed when nothing in it is open
 }
 
+function docCountText_(docRows){
+  const open = docRows.filter(isOpenRow_).length, done = docRows.length - open;
+  return open ? open + ' open' + (done ? ' · ' + done + ' done' : '') : done + ' done';
+}
 function docGroupHtml(docId, docRows, inTeamGroup){
   const first = docRows[0];
   // gts-zm8w: in ALL-teams mode each doc belongs to exactly one team
@@ -1915,7 +2284,7 @@ function docGroupHtml(docId, docRows, inTeamGroup){
         <div class="docname">${toggleBtn}<a href="${first.doc_url}" target="_blank" rel="noopener"
           >${escape(first.doc_name || '(untitled document)')}</a></div>
         <div class="controls">
-          <span class="tag">${docRows.length} shown</span>
+          <span class="tag">${docCountText_(docRows)}</span>
           <button class="btn small" data-sync="${docId}" ${tier === 'EDIT' && !state.stale ? '' : 'disabled'}
             title="${state.stale ? 'Available once fresh data has loaded' : tier === 'EDIT' ? 'Re-sync this document with the sheet'
                                      : 'Syncing needs EDIT access to this document’s folder'}"
@@ -1938,8 +2307,11 @@ function fromHtml_(from){
     title="${escape('Imported from ' + (from.ain || '') + ' in ' + name)}">${escape(name)} ${escape(from.ain || '')}</a></span>`;
 }
 
-function rowHtml(r, tier){
-  if (state.editingId === r.global_id) return editRowHtml(r);
+function isOpenRow_(r){ return !r.status_resolved; }
+function rowTier_(r){ return state.teamId === ALL_TEAMS_ID ? (state.teamTiers[r.team_id] || 'NONE') : state.tier; }
+function daysSince_(iso){ const t = iso ? Date.parse(iso) : NaN; return isNaN(t) ? null : Math.max(0, Math.floor((Date.now() - t) / 86400000)); }
+function rowHtml(r, tier, o){
+  const age = o && o.showDoc && isOpenRow_(r) ? daysSince_(r.created_date) : null;
   const mine = isMine(r);
   // NT-6g1: every row is selectable -- bulk Copy works for any visible row; bulk Set status
   // applies to the selected rows the caller can write and lists the rest as skipped.
@@ -1951,7 +2323,8 @@ function rowHtml(r, tier){
         <div class="action">${escape(r.action_text)}</div>
         <div class="rowmeta">
           <span>${escape(r.assignee_name || r.assignee_email || 'Unassigned')}${mine ? ' (you)' : ''}</span>
-          <span>updated ${shortDate(r.modified_date)}</span>
+          ${o && o.showDoc ? `<span class="rowdoc"><a href="${escape(r.doc_url)}" target="_blank" rel="noopener">${escape(r.doc_name || '(untitled document)')}</a></span>` : ''}
+          <span>updated ${shortDate(r.modified_date)}</span>${age !== null ? `<span>open ${age} ${age === 1 ? 'day' : 'days'}</span>` : ''}
           ${r.removed ? '<span class="removedbadge" title="This action is no longer in its document">Removed from document</span>' : ''}
           ${fromHtml_(r.from)}
         </div>
@@ -1959,7 +2332,7 @@ function rowHtml(r, tier){
       <div class="controls">
         ${statusChip(r, canSetStatus_(r))}
         ${tier === 'EDIT' && !r.removed
-          ? `<button class="btn small" data-edit="${r.global_id}" ${state.stale ? 'disabled title="Available once fresh data has loaded"' : 'title="Edit this action\'s text, status and assignee"'}>Edit</button>` : ''}
+          ? `<button class="btn small" data-edit="${r.global_id}" ${state.stale ? 'disabled title="Available once fresh data has loaded"' : 'title="Open this item to change its text, status and assignee"'}>Edit</button>` : ''}
       </div>
     </div>`;
 }
@@ -1969,74 +2342,104 @@ function rowHtml(r, tier){
 // the server stores every line break as \v.
 function softToLines(t){ return String(t || '').replace(/\r\n|[\r\v\u2028\u2029]/g, '\n'); }
 function linesToSoft(t){ return String(t || '').replace(/\r\n|[\r\n\u2028\u2029]/g, '\v'); }
-const OTHER_STATUS = '__other__';
-function statusSelectHtml(r){
-  const cur = r.status || '';
-  const opts = state.statusOptions.map(o => ({ status: o.status, icon: o.icon }));
-  if (cur && !isCanonical(cur)) opts.push({ status: cur, icon: r.status_icon });
-  return `<select class="sel" data-field="status" onchange="onEditStatusChange(this)">` +
-    opts.map(o => `<option value="${escape(o.status)}" style="background-image:url('${escape(o.icon || '')}')"${o.status === cur ? ' selected' : ''}>${escape(o.status)}</option>`).join('') +
-    `<option value="${OTHER_STATUS}">other…</option></select>`;
+// ---- action panel (NT-2wr2.3; replaces the inline edit form, gts-79dw.4.21) -----------------------------------------
+// Status first (one tap per status), then the text, then Save. Edit access saves through team_edit_action; an
+// assignee without edit access can change the status only (team_patch_status). Everyone else sees the item read-only.
+// The page only hides or disables controls; the server decides on every call.
+function openPanel_(gid){
+  const r = rowByGlobalId(gid);
+  if (!r) return;
+  state.panelId = gid; state.panelSaved = false; state.panelStatus = r.status || '';
+  state.focusGid = gid;
+  setFiltersOpen_(false);
+  render();
 }
-function onEditStatusChange(sel){
-  const other = sel.closest('.rowmeta').querySelector('[data-field="status_other"]');
-  other.classList.toggle('hidden', sel.value !== OTHER_STATUS);
-  if (sel.value === OTHER_STATUS) other.focus();
+function urlWithoutAction_(){
+  try {
+    const u = new URL(location.href);
+    u.searchParams.delete('action');
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  } catch (e) { /* history unavailable */ }
 }
-function editRowHtml(r){
-  return `
-    <div class="${rowClass_(r)}" data-gid="${escape(r.global_id)}">
-      <div class="aiN">${escape(r.action_id || '')}</div>
-      <div class="rowmain">
-        <textarea class="sel" style="width:100%" rows="3" data-field="action_text">${escape(softToLines(r.action_text))}</textarea>
-        <div class="rowmeta" style="margin-top:6px">${statusSelectHtml(r)}
-          <input class="sel hidden" data-field="status_other" placeholder="Type any status" style="flex:1;min-width:140px" />
-        </div>
-        <div class="rowmeta" style="margin-top:6px">
-          <input class="sel" data-field="assignee_name" placeholder="Assignee name"
-                 value="${escape(r.assignee_name || '')}" style="flex:1;min-width:120px" />
-          <input class="sel" data-field="assignee_email" placeholder="Assignee email"
-                 value="${escape(r.assignee_email || '')}" style="flex:1;min-width:160px" />
-        </div>
-      </div>
-      <div class="controls">
-        <button class="btn small primary" data-save-edit="${r.global_id}" title="Save these changes to the tracker and the document">Save</button>
-        <button class="btn small" data-cancel-edit="${r.global_id}" title="Discard these changes">Cancel</button>
-      </div>
+function closePanel_(){
+  state.panelId = null; state.panelSaved = false; state.focusGid = '';
+  urlWithoutAction_();
+  render();
+}
+function renderActionPanel_(){
+  const el = $('actionPanel');
+  const r = state.panelId ? rowByGlobalId(state.panelId) : null;
+  if (!r || state.docDenied) { el.classList.add('hidden'); el.innerHTML = ''; document.body.classList.remove('apanel-open'); return; }
+  const canEdit = rowTier_(r) === 'EDIT' && !r.removed && !state.stale;
+  const canStatus = canSetStatus_(r) && !state.stale;
+  const team = r.team_id ? teamDisplayName(r.team_id) : (state.teamId && state.teamId !== ALL_TEAMS_ID ? teamDisplayName(state.teamId) : '');
+  const opts = state.statusOptions.map(o => o.status);
+  if (r.status && opts.indexOf(r.status) === -1) opts.push(r.status);
+  const typing = el.contains(document.activeElement) && document.activeElement.id === 'apText' ? document.activeElement : null;
+  const keepText = typing ? typing.value : null;
+  el.innerHTML = `
+    <div class="aphead"><button class="btn small" id="apClose" type="button" aria-label="Close" title="Close">&times;</button>
+      <span class="apcrumb">${escape((team ? team + ' › ' : '') + (r.doc_name || '(untitled document)'))}</span></div>
+    <div class="apbody">
+      <div class="sub">${escape(r.action_id || '')} · ${escape(r.assignee_name || r.assignee_email || 'Unassigned')}${isMine(r) ? ' (you)' : ''}</div>
+      <div class="aplabel" id="apStatusLabel">Status</div>
+      <div class="apstatus" role="group" aria-labelledby="apStatusLabel">${opts.map(o =>
+        `<button type="button" class="pill" data-apstatus="${escape(o)}" aria-pressed="${o === state.panelStatus}"${canStatus ? '' : ' disabled'}>${escape(o)}</button>`).join('')}</div>
+      <label class="aplabel" for="apText">Action</label>
+      <textarea class="sel aptext" id="apText" rows="3"${canEdit ? '' : ' readonly'}>${escape(softToLines(r.action_text))}</textarea>
+      ${canEdit || canStatus
+        ? `<button class="btn primary apsave" id="apSave" type="button"${state.panelBusy ? ' disabled' : ''}>Save</button>`
+        : '<div class="sub">You can view this item. Only its assignee or someone who can edit the document can change it.</div>'}
+      <div class="apmsg" id="apMsg" role="status" aria-live="polite">${state.panelSaved ? 'Saved' : ''}</div>
+      <a class="linkbtn" id="apWhole" href="#">See the whole document</a>
+      ${canEdit ? `<details class="apmore"><summary>Assignee and other status</summary>
+        <input class="sel" id="apAssigneeName" placeholder="Assignee name" value="${escape(r.assignee_name || '')}" aria-label="Assignee name" />
+        <input class="sel" id="apAssigneeEmail" placeholder="Assignee email" value="${escape(r.assignee_email || '')}" aria-label="Assignee email" />
+        <input class="sel" id="apStatusOther" placeholder="Other status (replaces the choice above)" aria-label="Other status" />
+      </details>` : ''}
     </div>`;
+  if (keepText !== null) $('apText').value = keepText;
+  el.classList.remove('hidden');
+  document.body.classList.add('apanel-open');
+  $('apClose').addEventListener('click', closePanel_);
+  $('apWhole').addEventListener('click', e => { e.preventDefault(); closePanel_(); });
+  el.querySelectorAll('[data-apstatus]').forEach(b => b.addEventListener('click', () => {
+    state.panelStatus = b.dataset.apstatus; state.panelSaved = false;
+    el.querySelectorAll('[data-apstatus]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    $('apMsg').textContent = '';
+  }));
+  if ($('apSave')) $('apSave').addEventListener('click', onPanelSave_);
 }
-
-function onSaveEditClick(e){
-  const btn = e.currentTarget;
-  const globalId = btn.dataset.saveEdit;
-  const rowEl = btn.closest('.row');
-  const fields = {
-    action_text:    linesToSoft(rowEl.querySelector('[data-field="action_text"]').value),
-    assignee_name:  rowEl.querySelector('[data-field="assignee_name"]').value,
-    assignee_email: rowEl.querySelector('[data-field="assignee_email"]').value
-  };
-  const selEl = rowEl.querySelector('select[data-field="status"]');
-  let newStatus = selEl ? selEl.value : '';
-  if (newStatus === OTHER_STATUS) newStatus = rowEl.querySelector('[data-field="status_other"]').value.trim();
-  const curRow = rowByGlobalId(globalId);
-  if (newStatus && curRow && newStatus !== curRow.status) fields.status = newStatus;
-  btn.disabled = true;
-  postJson(GACTIONSHEET_URL, {
-    action: 'team_edit_action', assertion: state.assertion, teamId: teamIdForWrite(rowByGlobalId(globalId)),
-    global_id: globalId, fields: fields
-  })
-    .then(res => {
-      state.editingId = null;
-      if (res.ok) { toast('Saved.'); return refreshActions(); }
-      toast('Edit did not apply: ' + (res.outcome || 'unknown'));
-      render();
-    })
-    .catch(err => {
-      state.editingId = null;
-      toast('Edit failed: ' + (err.message || err));
-      render();
-    });
+function onPanelSave_(){
+  const gid = state.panelId, r = rowByGlobalId(gid);
+  if (!r || state.panelBusy) return;
+  const canEdit = rowTier_(r) === 'EDIT' && !r.removed && !state.stale;
+  const other = $('apStatusOther') ? $('apStatusOther').value.trim() : '';
+  const newStatus = other || state.panelStatus;
+  const statusChanged = !!newStatus && newStatus !== r.status;
+  let req;
+  if (canEdit) {
+    const fields = {
+      action_text: linesToSoft($('apText').value),
+      assignee_name: $('apAssigneeName').value, assignee_email: $('apAssigneeEmail').value
+    };
+    if (statusChanged) fields.status = newStatus;
+    req = postJson(GACTIONSHEET_URL, { action: 'team_edit_action', assertion: state.assertion, teamId: teamIdForWrite(r), global_id: gid, fields });
+  } else if (statusChanged) {
+    req = patchStatusRequest_(gid, newStatus);
+  } else { $('apMsg').textContent = 'No changes to save'; return; }
+  state.panelBusy = true; $('apSave').disabled = true; $('apMsg').textContent = 'Saving…';
+  req.then(res => {
+    state.panelBusy = false;
+    if (res && res.ok) { state.panelSaved = true; return refreshActions(); }
+    $('apSave').disabled = false;
+    $('apMsg').textContent = 'Not saved: ' + ((res && (res.outcome || res.error)) || 'unknown');
+  }).catch(err => {
+    state.panelBusy = false; $('apSave').disabled = false;
+    $('apMsg').textContent = 'Not saved: ' + (err.message || err);
+  });
 }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.panelId && $('filtersPanel').classList.contains('hidden')) closePanel_(); });
 
 // ---- sync control: LIVE (R14/R15) ------------------------------------
 function onSyncClick(e){
@@ -2255,65 +2658,91 @@ function submitStatusChange(globalId, newStatus){
     .catch(err => toast('Status change failed: ' + (err.message || err)));
 }
 
-// ---- bulk status (NT-71y.6) -------------------------------------------------
-// Selection is a Set of global ids, always pruned to the rows whose checkbox is
-// rendered (every row visible under the active filters, NT-6g1). A run sends one
-// items-form team_patch_status (NT-xw2); the server still authorizes per row.
+// ---- selection and bulk actions (NT-71y.6, reworked NT-2wr2.5) ----------------
+// Selection is a Set of global ids. A filter change keeps it; selected items the current search or filters
+// hide are counted as 'hidden by filters' and still acted on (state.selRows holds a copy of each selected row,
+// since a server-side filter replaces state.rows). Select all covers every item the current search and filters
+// show, INCLUDING items inside collapsed documents (owner decision). The two copy formats come from
+// actionsClipboard_ unchanged.
 function bulkBoxes_(){ return Array.prototype.slice.call(listEl.querySelectorAll('input[data-select]')); }
+function selRow_(g){ return rowByGlobalId(g) || state.selRows.get(g); }
+function selectedAllRows_(){ // visible ones in list order, then the hidden ones
+  const vis = selectedRowsInOrder_(), seen = new Set(vis.map(r => r.global_id));
+  const hidden = Array.from(state.selected).filter(g => !seen.has(g)).map(selRow_).filter(Boolean);
+  return vis.concat(hidden);
+}
+function bulkWritable_(rows){ return rows.filter(r => r.canWrite === true && r.removed !== true); }
+function itemsWord_(n){ return n + (n === 1 ? ' item' : ' items'); }
+function setBulkMsg_(text, undo){
+  clearTimeout(setBulkMsg_.t);
+  state.bulkMsg = text ? { text, undo: undo || null } : null;
+  if (text) setBulkMsg_.t = setTimeout(() => { state.bulkMsg = null; syncBulkUi_(); }, 20000);
+}
+function clearSelection_(){
+  state.selected.clear(); state.selRows.clear();
+  bulkBoxes_().forEach(b => { b.checked = false; });
+  syncBulkUi_();
+}
 function syncBulkUi_(){
-  const boxes = bulkBoxes_();
-  const visible = new Set(boxes.map(b => b.dataset.select));
-  Array.from(state.selected).forEach(g => { if (!visible.has(g)) state.selected.delete(g); });
-  const host = $('bulkHost');
-  if (!boxes.length){ host.innerHTML = ''; return; }
+  state.selected.forEach(g => { const r = rowByGlobalId(g); if (r) state.selRows.set(g, r); });
+  Array.from(state.selRows.keys()).forEach(g => { if (!state.selected.has(g)) state.selRows.delete(g); });
+  bulkBoxes_().forEach(b => { b.checked = state.selected.has(b.dataset.select); });
+  const shown = state.docDenied || (state.docId && state.docTracked === false) ? [] : shownRows_();
+  const shownIds = new Set(shown.map(r => r.global_id));
   const n = state.selected.size;
-  // NT-6g1 addendum rev 1.1: no Set status controls unless a selected row can be written.
-  const anyWritable = bulkWritable_(Array.from(state.selected)).length > 0;
-  const opts = state.statusOptions.map(o => `<option value="${escape(o.status)}"${o.status === state.bulkStatus ? ' selected' : ''}>${escape(o.status)}</option>`).join('');
-  host.innerHTML = `
-    <label class="bulkbar"><input type="checkbox" id="selectAll" /> Select all shown</label>
-    <div class="bulkbar${n ? '' : ' hidden'}" id="bulkBar">
-      <span id="bulkCount">${n} selected</span>
-      ${anyWritable ? `<select class="sel" id="bulkStatus" aria-label="Status for selected"><option value=""></option>${opts}</select>
-      <button class="btn small primary" id="bulkApply" type="button" title="Set the chosen status on every selected action">Set status for selected</button>
-      <span class="bulkdiv" aria-hidden="true"></span>` : ''}
-      <button class="btn small" id="bulkCopyRef" type="button" data-copy="reference" title="Copy the selected actions as References">Copy as Reference</button>
-      <button class="btn small" id="bulkCopyImport" type="button" data-copy="import" title="Copy the selected actions for Import into another document">Copy for Import</button>
-    </div>
-    <ul class="bulkresults${state.bulkResults.length ? '' : ' hidden'}" id="bulkResults">${state.bulkResults.map(r =>
-      `<li data-result-for="${escape(r.gid)}" data-outcome="${escape(r.outcome)}">${escape(r.label)}: ${escape(r.outcome)}</li>`).join('')}</ul>`;
-  boxes.forEach(b => { b.checked = state.selected.has(b.dataset.select); });
-  $('selectAll').checked = state.selected.size > 0 && boxes.every(b => state.selected.has(b.dataset.select));
-  $('selectAll').addEventListener('change', e => {
-    boxes.forEach(b => { b.checked = e.target.checked; if (e.target.checked) state.selected.add(b.dataset.select); else state.selected.delete(b.dataset.select); });
+  const hiddenN = Array.from(state.selected).filter(g => !shownIds.has(g)).length;
+  // Select all: in the list header beside the count; the number is what it will select.
+  const allSel = shown.length > 0 && shown.every(r => state.selected.has(r.global_id));
+  $('selectAllHost').innerHTML = shown.length
+    ? `<label title="Select every item the current search and filters show, including items in collapsed documents"><input type="checkbox" id="selectAll"${allSel ? ' checked' : ''} /> Select all ${shown.length}</label>` : '';
+  if (shown.length) $('selectAll').addEventListener('change', e => {
+    shown.forEach(r => { if (e.target.checked) state.selected.add(r.global_id); else state.selected.delete(r.global_id); });
     syncBulkUi_();
   });
-  if (anyWritable){
-    $('bulkStatus').addEventListener('change', e => { state.bulkStatus = e.target.value; updateBulkApply_(); });
-    $('bulkApply').addEventListener('click', runBulkStatus_);
+  const host = $('bulkHost');
+  const msg = state.bulkMsg;
+  let html = msg ? `<div class="bulkmsg" id="bulkMsg" role="status"><span>${escape(msg.text)}</span>${
+    msg.undo ? ' <button class="linkbtn" id="bulkUndo" type="button">Undo</button>' : ''}</div>` : '';
+  if (n) {
+    const rows = selectedAllRows_();
+    const anyWritable = bulkWritable_(rows).length > 0;
+    const opts = state.statusOptions.map(o => `<option value="${escape(o.status)}">${escape(o.status)}</option>`).join('');
+    const dis = state.stale || state.bulkBusy ? ' disabled' : '';
+    html += `<div class="bulkbar" id="bulkBar">
+      <span id="bulkCount">${n} selected${hiddenN ? ` (${hiddenN} hidden by filters)` : ''}</span>
+      <button class="linkbtn" id="bulkClear" type="button" title="Deselect everything">Clear</button>
+      ${anyWritable ? `<select class="sel" id="bulkStatus" aria-label="Set status for selected items" title="Set the status of every selected item you can change"${dis}><option value="">Set status</option>${opts}</select>` : ''}
+      <button class="btn small bulk-desk" id="bulkCopyRef" type="button" data-copy="reference" title="Reference: pasted into a document, a live link to the item">Copy as reference</button>
+      <button class="btn small bulk-desk" id="bulkCopyImport" type="button" data-copy="import" title="Import: pasted into a document, the next sync moves the item there">Copy for import</button>
+      <select class="sel bulk-phone" id="bulkCopyMenu" aria-label="Copy selected items"><option value="">Copy</option><option value="reference">As reference</option><option value="import">For import</option></select>
+      <span class="bulkhint">Reference keeps a live link to the item. Import moves the item into the document you paste it into.</span>
+    </div>`;
   }
-  $('bulkCopyRef').addEventListener('click', () => copyActions_(selectedRowsInOrder_(), false));     // NT-hy1
-  $('bulkCopyImport').addEventListener('click', () => copyActions_(selectedRowsInOrder_(), true));  // NT-hy1
-  updateBulkApply_();
+  host.innerHTML = html;
+  if ($('bulkUndo')) $('bulkUndo').addEventListener('click', undoBulkStatus_);
+  if (!n) return;
+  $('bulkClear').addEventListener('click', clearSelection_);
+  if ($('bulkStatus')) $('bulkStatus').addEventListener('change', e => { if (e.target.value) runBulkStatus_(e.target.value); });
+  $('bulkCopyRef').addEventListener('click', () => copyBulk_(false));
+  $('bulkCopyImport').addEventListener('click', () => copyBulk_(true));
+  $('bulkCopyMenu').addEventListener('change', e => { if (e.target.value) copyBulk_(e.target.value === 'import'); e.target.value = ''; });
 }
-function updateBulkApply_(){
-  const b = $('bulkApply');
-  if (!b) return;
-  const sel = bulkBoxes_().map(x => x.dataset.select).filter(g => state.selected.has(g));
-  const writable = bulkWritable_(sel).length; // NT-6g1
-  b.disabled = !state.bulkStatus || !state.selected.size || !writable || state.bulkBusy || state.stale;
-  // NT-ja4: a disabled button says why.
-  b.title = state.stale ? 'Available once fresh data has loaded'
-    : state.bulkBusy ? 'Setting status…'
-    : !state.selected.size ? 'Select one or more actions first'
-    : !writable ? 'You do not have write access to any selected action'
-    : !state.bulkStatus ? 'Choose a status first'
-    : writable < sel.length ? 'Set the chosen status on the ' + writable + ' selected actions you can write (' + (sel.length - writable) + ' will be skipped)'
-    : 'Set the chosen status on every selected action';
+function copyBulk_(forImport){
+  const rows = selectedAllRows_();
+  if (!rows.length) { toast('Nothing to copy.'); return Promise.resolve(); }
+  const clip = actionsClipboard_(rows, forImport);
+  return writeClipboard_(clip.html, clip.text)
+    .then(() => toast('Copied ' + itemsWord_(rows.length) + (forImport ? ' for import' : ' as reference')))
+    .catch(err => toast('Copy failed: ' + ((err && err.message) || err)));
 }
 listEl.addEventListener('click', e => {
   const box = e.target.closest && e.target.closest('input[data-select]');
-  if (box) e.stopPropagation();
+  if (box) { e.stopPropagation(); return; }
+  // Phone: once selecting, a tap on a row toggles it (a long press starts selecting).
+  const row = e.target.closest && e.target.closest('.row[data-gid]');
+  if (row && state.selected.size && window.matchMedia('(max-width:640px)').matches && !e.target.closest('a,button,input,select')) {
+    toggleSelect_(row.dataset.gid);
+  }
 });
 listEl.addEventListener('change', e => {
   const box = e.target.closest && e.target.closest('input[data-select]');
@@ -2321,43 +2750,73 @@ listEl.addEventListener('change', e => {
   if (box.checked) state.selected.add(box.dataset.select); else state.selected.delete(box.dataset.select);
   syncBulkUi_();
 });
-// NT-xw2 / NT-6g1: ONE team_patch_status request in the items form for the selected rows the caller
-// can write; the server writes every row then pushes each document once. Selected rows without
-// write access are listed as skipped (not sent).
-// Bulk uses the server's row.canWrite only (NT-6g1 addendum rev 1.1).
-function bulkWritable_(gids){ return gids.filter(g => { const r = rowByGlobalId(g); return !!r && r.canWrite === true && r.removed !== true; }); }
-function runBulkStatus_(){
-  const status = state.bulkStatus;
-  const gids = bulkBoxes_().map(b => b.dataset.select).filter(g => state.selected.has(g));
-  if (!status || !gids.length || state.bulkBusy || state.stale) return;
-  const send = bulkWritable_(gids);
-  const sendSet = new Set(send);
-  const skipped = gids.filter(g => !sendSet.has(g));
-  if (!send.length) return;
-  state.bulkBusy = true; state.bulkResults = []; updateBulkApply_();
-  const label = g => { const r = rowByGlobalId(g); return (r && r.action_id) || g; };
-  const first = rowByGlobalId(send[0]);
+function toggleSelect_(g){
+  if (state.selected.has(g)) state.selected.delete(g); else state.selected.add(g);
+  syncBulkUi_();
+}
+// Phone: a long press on a row starts selecting it (touch only; moving the finger cancels).
+(function(){
+  let timer = null, sx = 0, sy = 0;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  listEl.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch') return;
+    const row = e.target.closest && e.target.closest('.row[data-gid]');
+    if (!row || e.target.closest('a,button,input,select')) return;
+    sx = e.clientX; sy = e.clientY;
+    timer = setTimeout(() => {
+      timer = null;
+      toggleSelect_(row.dataset.gid);
+      if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) { /* no haptics */ } }
+      listEl.addEventListener('click', ev => { ev.stopPropagation(); ev.preventDefault(); }, { capture: true, once: true }); // swallow the click that ends the press
+    }, 500);
+  });
+  listEl.addEventListener('pointermove', e => { if (timer && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) cancel(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => listEl.addEventListener(t, cancel));
+  listEl.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('.row[data-gid]') && window.matchMedia('(pointer:coarse)').matches) e.preventDefault(); });
+})();
+// NT-xw2 / NT-6g1: ONE team_patch_status request in the items form for the selected rows the caller can write;
+// the server writes every row then pushes each document once and still authorizes per row.
+function runBulkStatus_(status){
+  if (state.bulkBusy || state.stale) return;
+  const rows = selectedAllRows_();
+  const send = bulkWritable_(rows);
+  const notAllowed0 = rows.length - send.length;
+  if (!send.length) { setBulkMsg_('0 updated, ' + notAllowed0 + ' not allowed'); syncBulkUi_(); return; }
+  state.bulkBusy = true; syncBulkUi_();
+  const prev = {};
+  send.forEach(r => { prev[r.global_id] = r.status || 'Open'; });
   postJson(GACTIONSHEET_URL, {
-    action: 'team_patch_status', assertion: state.assertion, teamId: teamIdForWrite(first),
-    items: send.map(g => ({ global_id: g, status }))
+    action: 'team_patch_status', assertion: state.assertion, teamId: teamIdForWrite(send[0]),
+    items: send.map(r => ({ global_id: r.global_id, status }))
   }).then(res => res, () => null).then(res => {
     const byGid = {};
     ((res && res.results) || []).forEach(x => { if (x && x.global_id) byGid[x.global_id] = x; });
-    let okCount = 0, notPushed = 0;
-    send.forEach(g => {
-      const x = byGid[g];
-      const outcome = !res ? 'network_error' : x ? (x.ok ? 'ok' : (x.outcome || 'error')) : ((res && res.outcome) || 'error');
-      if (outcome === 'ok'){ okCount++; state.selected.delete(g); if (x.docPushed === false) notPushed++; }
-      state.bulkResults.push({ gid: g, outcome, label: label(g) });
-    });
-    skipped.forEach(g => state.bulkResults.push({ gid: g, outcome: 'skipped', label: label(g) }));
+    const done = send.filter(r => { const x = byGid[r.global_id]; return res && (x ? x.ok : res.ok === true && !(res.results || []).length); });
     state.bulkBusy = false;
-    toast('Status set on ' + okCount + ' of ' + gids.length + '.' +
-      (skipped.length ? ' Skipped ' + skipped.length + ' without write access.' : '') +
-      (notPushed ? ' ' + notPushed + ' will reach the document on its next sync.' : ''));
+    if (!res) setBulkMsg_('Status was not changed. Check your connection and try again.');
+    else {
+      const refused = rows.length - done.length;
+      const undo = done.length ? { teamRow: done[0], items: done.map(r => ({ global_id: r.global_id, status: prev[r.global_id] })) } : null;
+      setBulkMsg_(refused ? done.length + ' updated, ' + refused + ' not allowed' : done.length + ' set to ' + status, undo);
+      done.forEach(r => { state.selected.delete(r.global_id); state.selRows.delete(r.global_id); });
+    }
     syncBulkUi_();
     return refreshActions();
   });
+}
+// Undo restores each item's previous status through the same team_patch_status items route (one status per item).
+function undoBulkStatus_(){
+  const u = state.bulkMsg && state.bulkMsg.undo;
+  if (!u || state.bulkBusy) return;
+  state.bulkBusy = true; setBulkMsg_('Undoing…'); syncBulkUi_();
+  postJson(GACTIONSHEET_URL, { action: 'team_patch_status', assertion: state.assertion, teamId: teamIdForWrite(u.teamRow), items: u.items })
+    .then(res => res, () => null).then(res => {
+      state.bulkBusy = false;
+      const ok = res ? ((res.results || []).length ? res.results.filter(x => x && x.ok).length : (res.ok ? u.items.length : 0)) : 0;
+      setBulkMsg_(!res ? 'Could not undo. Check your connection and try again.' : ok === u.items.length ? 'Restored ' + itemsWord_(ok) : ok + ' restored, ' + (u.items.length - ok) + ' not allowed');
+      syncBulkUi_();
+      return refreshActions();
+    });
 }
 // ---- References (NT-71y.8) -------------------------------------------------
 // Document-filtered view only. Reference rows are greyed and read-only: no [data-select] (bulk status never
@@ -2504,18 +2963,104 @@ function openHistory_(globalId){
 document.addEventListener('click', e => { if (!menuEl.contains(e.target)) closeMenu(); });
 
 // ---- filter controls -----------------------------------------------------
-// NT-56r: reflect the ?status= / ?age= presets in the controls before the first query.
-$('statusSel').value = state.status;
-$('statusSel').addEventListener('change', e => {
-  state.status = e.target.value;
-  refreshActions();
+// NT-2wr2.2: the Filters panel holds the old filter-row controls (same ids); every change applies at once and
+// shows as a chip. Search is client-side over the rows the view and filters returned.
+const AGE_LABELS_ = { '<1': 'under 1 month', '1-2': '1-2 months', '3-5': '3-5 months', '6-11': '6-11 months', '12+': '12+ months' };
+function optText_(selId, value){
+  const o = Array.prototype.find.call($(selId).options, x => x.value === value);
+  return o ? o.textContent : value;
+}
+function searchMatch_(r){
+  const q = state.search.trim().toLowerCase();
+  if (!q) return true;
+  return [r.action_text, r.assignee_name, r.assignee_email, r.co_assignees, r.doc_name, r.action_id]
+    .some(v => String(v || '').toLowerCase().indexOf(q) !== -1);
+}
+function shownRows_(){ return state.rows.filter(searchMatch_); }
+function windowApplies_(){ return !(state.docId || state.status === 'open' || state.age || isExactStatus(state.status)); }
+function activeChips_(){
+  const c = [];
+  if (state.docId) c.push({ k: 'doc', t: 'Document: ' + (state.docName || 'this document') });
+  if (!state.docId && state.teams.length > 1 && state.teamId && state.teamId !== ALL_TEAMS_ID) c.push({ k: 'team', t: 'Team: ' + teamDisplayName(state.teamId) });
+  if (state.status !== viewDefaultStatus_()) c.push({ k: 'status', t: 'Status: ' + optText_('statusSel', state.status) });
+  if (state.age) c.push({ k: 'age', t: 'Age: ' + (AGE_LABELS_[state.age] || state.age) });
+  if (state.scope === 'person' && state.person) {
+    const a = state.assignees.find(x => x.email === state.person);
+    c.push({ k: 'person', t: 'Person: ' + ((a && a.name) || state.person) });
+  }
+  if (windowApplies_() && state.windowDays !== 60) c.push({ k: 'window', t: 'Resolved: ' + optText_('windowSel', String(state.windowDays)).replace(' (default)', '') });
+  return c;
+}
+function summaryText_(rows){
+  const open = rows.filter(isOpenRow_);
+  if (state.docId) return rows.length ? rows.length + (rows.length === 1 ? ' item' : ' items') : '';
+  if (state.view === 'mine') {
+    if (!open.length) return rows.length ? 'Nothing open for you' : '';
+    const old = open.filter(r => (daysSince_(r.created_date) || 0) > 30).length;
+    return open.length + ' open for you' + (old ? ' · ' + old + ' older than 30 days' : '');
+  }
+  const docs = new Set(rows.map(r => r.doc_id)).size;
+  return open.length + ' open · ' + docs + (docs === 1 ? ' document' : ' documents');
+}
+function renderToolbar_(rows){
+  rows = rows || shownRows_();
+  $('filtersRow').classList.toggle('hidden', state.docDenied);
+  const chips = activeChips_();
+  $('filtersBtn').textContent = 'Filters' + (chips.length ? ' · ' + chips.length : '');
+  const row = $('chipRow');
+  row.classList.toggle('hidden', !chips.length);
+  row.innerHTML = chips.map(c => `<span class="fchip">${escape(c.t)}<button type="button" data-chip="${c.k}" aria-label="Remove filter: ${escape(c.t)}" title="Remove this filter">&times;</button></span>`).join('');
+  row.querySelectorAll('[data-chip]').forEach(b => b.addEventListener('click', () => removeFilter_(b.dataset.chip)));
+  $('countLabel').textContent = summaryText_(rows);
+  if ($('searchBox').value !== state.search) $('searchBox').value = state.search;
+  $('statusSel').value = state.status;
+  $('ageSel').value = state.age;
+  $('windowSel').value = String(state.windowDays);
+  if (state.teamId) $('teamSel').value = state.teamId;
+  $('windowField').style.display = windowApplies_() ? '' : 'none';
+  $('personField').style.display = state.view === 'mine' ? 'none' : '';
+}
+function filtersChanged_(){
+  writePrefs_(); // NT-2wr2.5: a filter change keeps the selection ('N selected (M hidden by filters)')
+  renderToolbar_();
+  return refreshActions();
+}
+function removeFilter_(k){
+  if (k === 'doc') { clearDocFilter_(); return; }
+  if (k === 'team') { state.teamId = ALL_TEAMS_ID; clearRefSelection_(); }
+  else if (k === 'status') { state.status = viewDefaultStatus_(); state.statusTouched = false; }
+  else if (k === 'age') state.age = '';
+  else if (k === 'person') { state.scope = 'all'; state.person = ''; renderPersonOptions_(); syncPersonUrl_(); }
+  else if (k === 'window') state.windowDays = 60;
+  filtersChanged_();
+}
+function setFiltersOpen_(open){
+  $('filtersPanel').classList.toggle('hidden', !open);
+  $('filtersScrim').classList.toggle('hidden', !open);
+  $('filtersBtn').setAttribute('aria-expanded', String(open));
+  if (open) $('statusSel').focus();
+}
+$('filtersBtn').addEventListener('click', () => setFiltersOpen_($('filtersPanel').classList.contains('hidden')));
+$('filtersDone').addEventListener('click', () => setFiltersOpen_(false));
+$('filtersScrim').addEventListener('click', () => setFiltersOpen_(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setFiltersOpen_(false); });
+$('filtersClear').addEventListener('click', () => {
+  state.status = viewDefaultStatus_(); state.statusTouched = false; state.age = ''; state.windowDays = 60;
+  state.scope = state.view === 'mine' ? 'mine' : 'all'; state.person = '';
+  renderPersonOptions_(); syncPersonUrl_();
+  if (state.docId) { setDocFilter_('', ''); }
+  if (state.teams.length > 1) state.teamId = ALL_TEAMS_ID;
+  filtersChanged_();
 });
-$('ageSel').value = state.age;
-$('ageSel').addEventListener('change', e => {
-  state.age = e.target.value;
-  refreshActions();
+let searchTimer_ = null;
+$('searchBox').addEventListener('input', e => {
+  state.search = e.target.value;
+  clearTimeout(searchTimer_);
+  searchTimer_ = setTimeout(() => render(), 120);
 });
-// NT-tnh: scope control (#scopeSelect) and person picker (#personSelect).
+$('statusSel').addEventListener('change', e => { state.status = e.target.value; state.statusTouched = true; filtersChanged_(); });
+$('ageSel').addEventListener('change', e => { state.age = e.target.value; filtersChanged_(); });
+// NT-tnh: person picker (#personSelect); the server applies the filter (assigneeEmail).
 function syncPersonUrl_(){
   try {
     const u = new URL(location.href);
@@ -2529,30 +3074,160 @@ function renderPersonOptions_(){
   const list = state.assignees.slice();
   // A preset/selected email not among the assignees stays selectable so the filter stays applied.
   if (state.person && !list.some(a => a.email === state.person)) list.push({ name: '', email: state.person });
-  sel.innerHTML = '<option value="">Choose a person…</option>' + list.map(a =>
+  sel.innerHTML = '<option value="">Anyone</option>' + list.map(a =>
     `<option value="${escape(a.email)}" title="${escape(a.email)}">${escape(a.name || a.email)}</option>`).join('');
   sel.value = state.person;
-  sel.classList.toggle('hidden', state.scope !== 'person');
 }
-$('scopeSelect').value = state.scope === 'mine' ? 'mine' : state.scope === 'person' ? 'person' : 'everyone';
 renderPersonOptions_();
-$('scopeSelect').addEventListener('change', e => {
-  const v = e.target.value;
-  state.scope = v === 'mine' ? 'mine' : v === 'person' ? 'person' : 'all';
-  renderPersonOptions_();
-  syncPersonUrl_();
-  if (state.scope === 'person' && !state.person) return; // nothing changes until a person is picked
-  refreshActions();
-});
 $('personSelect').addEventListener('change', e => {
   state.person = e.target.value || '';
+  state.scope = state.person ? 'person' : (state.view === 'mine' ? 'mine' : 'all');
   syncPersonUrl_();
-  refreshActions();
+  filtersChanged_();
 });
 $('windowSel').addEventListener('change', e => {
   state.windowDays = Number(e.target.value) || 60;
-  refreshActions();
+  filtersChanged_();
 });
+
+// ---- NT-2wr2.6: Find documents - a member scans one of their own teams' folders ---------------------------
+// Reuses the admin scan's routes, state.scan, state.scanSelected, visibleScanCandidates_, scanCandidateLi_
+// and scanSelectionAction_ (I12); only the team choice, the container and the one "Add to Tracker" button
+// are new. UX only: the server decides who may scan (today the admin_scan_* routes answer 'forbidden' to
+// a non-admin, which hides this section). Tracking a document uses admin_scan_track.
+const FIND_TEAM_KEY_ = 'nuuts.tracker.findTeam.v1' + STORAGE_SCOPE_;
+function readFindTeam_(){ try { return localStorage.getItem(FIND_TEAM_KEY_) || ''; } catch (e) { return ''; } }
+function writeFindTeam_(t){ try { localStorage.setItem(FIND_TEAM_KEY_, t); } catch (e) { /* remembering is optional */ } }
+function findScanVisible_(){ return (state.isAdmin || state.findScanDenied !== true) && state.teams.length > 0; }
+// A refusal from the scan routes means this person may not scan: hide the section (admins are never refused).
+function noteScanRefusal_(res){
+  if (res && res.reason === 'forbidden' && !state.isAdmin && !state.findScanDenied) {
+    state.findScanDenied = true;
+    state.scan = null;
+    renderFindScan_();
+  }
+}
+function renderFindTeams_(){
+  const f = $('findScanField');
+  const show = findScanVisible_();
+  f.classList.toggle('hidden', !show);
+  if (!show) { $('findScanResults').classList.add('hidden'); return; }
+  const ids = state.teams.map(t => t.teamId);
+  if (ids.indexOf(state.findTeamId) === -1) {
+    const last = readFindTeam_();
+    state.findTeamId = ids.indexOf(last) !== -1 ? last : ids[0];
+  }
+  const chips = $('findTeamChips');
+  chips.classList.toggle('hidden', ids.length < 2);
+  chips.innerHTML = ids.length < 2 ? '' : state.teams.map(t =>
+    `<button type="button" data-find-team="${escape(t.teamId)}" aria-pressed="${t.teamId === state.findTeamId}">${escape(t.teamName || t.teamId)}</button>`).join('');
+  chips.querySelectorAll('[data-find-team]').forEach(b => b.addEventListener('click', () => {
+    if (state.scanBusy || (state.scan && state.scan.status === 'running')) return; // one team at a time
+    state.findTeamId = b.dataset.findTeam;
+    renderFindTeams_();
+    renderFindScan_();
+  }));
+}
+function renderFindScan_(){
+  renderFindTeams_();
+  if (!findScanVisible_()) return;
+  const sc = state.scan && state.scan.teamId === state.findTeamId ? state.scan : null;
+  const running = !!sc && sc.status === 'running';
+  const btn = $('findScanBtn');
+  btn.textContent = running ? 'Scanning…' : 'Scan';
+  btn.disabled = state.scanBusy || running;
+  $('findScanStatus').innerHTML = scanStatusLine(sc);
+  renderFindResults_(sc);
+}
+function renderFindResults_(sc){
+  const box = $('findScanResults');
+  const all = (sc && sc.candidates) || [];
+  if (!sc || sc.status === 'idle' || (!all.length && !sc.complete)) { box.classList.add('hidden'); return; }
+  const cands = visibleScanCandidates_(all, state.findTeamId);
+  const shown = new Set(cands.map(c => c.docId));
+  state.scanSelected.forEach(id => { if (!shown.has(id)) state.scanSelected.delete(id); });
+  const selectable = !!sc.complete;
+  if (!cands.length) {
+    box.innerHTML = sc.complete ? `<p>No untracked documents found in ${escape(teamDisplayName(state.findTeamId) || 'this team')}.</p>` : '';
+  } else {
+    box.innerHTML = `<p>${cands.length} untracked ${cands.length === 1 ? 'document' : 'documents'}${sc.complete ? '' : ' found so far'}:</p>` +
+      `<ul class="scanlist" style="list-style:none;padding:0;margin:0 0 8px">` + cands.map(c => scanCandidateLi_(c, selectable, true)).join('') + `</ul>` +
+      (selectable ? `<p><button class="btn small" id="findAddBtn" title="Add the selected documents to Tracker">Add to Tracker</button></p>` : '');
+    box.querySelectorAll('.trackCandidate').forEach(cb => cb.addEventListener('change', () => {
+      if (cb.checked) state.scanSelected.add(cb.dataset.docId); else state.scanSelected.delete(cb.dataset.docId);
+    }));
+    const add = $('findAddBtn');
+    if (add) add.addEventListener('click', () => scanSelectionAction_({
+      action: 'admin_scan_track', resultKey: 'tracked', btnId: 'findAddBtn', boxId: 'findScanResults', teamId: state.findTeamId,
+      idle: 'Add to Tracker', working: 'Adding…', verb: 'add', fail: 'Add failed',
+      done: n => `Added ${n} ${n === 1 ? 'document' : 'documents'}. They appear in Tracker after the next sync.`
+    }));
+  }
+  box.classList.remove('hidden');
+}
+function runFindScan_(){
+  if (state.scanBusy || !state.findTeamId) return;
+  writeFindTeam_(state.findTeamId);
+  state.scanBusy = true;
+  renderFindScan_();
+  scanCall('admin_scan_start', state.findTeamId)
+    .then(res => {
+      if (!res.ok) {
+        noteScanRefusal_(res);
+        if (res.reason !== 'forbidden') toast('Scan failed: ' + (res.reason === 'no folders registered for team' ? 'this team has no folder registered' : (res.reason || 'unknown error')));
+        return;
+      }
+      state.scanSelected.clear();
+      state.scan = res;
+    })
+    .catch(err => toast('Scan failed: ' + (err.message || err)))
+    .finally(() => { state.scanBusy = false; renderScanPanel(); scheduleScanPoll(); });
+}
+$('findScanBtn').addEventListener('click', runFindScan_);
+// ---- NT-2wr2.1: views (My items | Team | Find documents | Admin tools | About and privacy) -----------------
+// UX routing only: the server decides what each call returns. My items = scope 'mine'; Team = scope 'all'
+// (a ?person= scope stays a Team view); Find / Admin / About replace the list area without clearing its state.
+function setAccountMenuOpen_(open){
+  $('accountBox').classList.toggle('hidden', !open);
+  $('accountBtn').setAttribute('aria-expanded', String(open));
+}
+function setView_(v, opts){
+  if (['mine', 'team', 'find', 'admin', 'about'].indexOf(v) === -1) v = 'team';
+  state.view = v;
+  if (v === 'find') { renderFindScan_(); refreshScanStatus(); }
+  const listy = v === 'mine' || v === 'team';
+  $('listView').classList.toggle('hidden', !listy);
+  $('findView').classList.toggle('hidden', v !== 'find');
+  $('adminView').classList.toggle('hidden', v !== 'admin');
+  $('aboutView').classList.toggle('hidden', v !== 'about');
+  document.querySelectorAll('[data-view]').forEach(b => {
+    if (b.dataset.view === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  let changed = false;
+  if (v === 'mine' && state.scope !== 'mine') { state.scope = 'mine'; state.person = ''; changed = true; }
+  else if (v === 'team' && state.scope === 'mine') { state.scope = 'all'; changed = true; }
+  if (listy && !state.statusTouched && state.status !== viewDefaultStatus_()) { state.status = viewDefaultStatus_(); changed = true; }
+  if (v === 'mine' && changed && state.teams.length > 1 && !state.docId && state.teamId !== ALL_TEAMS_ID) { // My items spans the teams
+    state.teamId = ALL_TEAMS_ID; $('teamSel').value = state.teamId;
+  }
+  if (changed) { renderPersonOptions_(); syncPersonUrl_(); }
+  if (listy) { writePrefs_(); renderToolbar_(); }
+  try {
+    const u = new URL(location.href);
+    u.searchParams.set('view', v);
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  } catch (e) { /* history unavailable: the view still switches */ }
+  setAccountMenuOpen_(false);
+  if (changed && !(opts && opts.noRefresh) && (state.teamId || state.docId)) refreshActions();
+  if (!(opts && opts.keepScroll)) window.scrollTo(0, 0);
+}
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { state.defaultPending = false; setView_(b.dataset.view); }));
+document.querySelectorAll('[data-goto]').forEach(b => b.addEventListener('click', () => setView_(b.dataset.goto)));
+$('accountBtn').addEventListener('click', e => { e.stopPropagation(); setAccountMenuOpen_($('accountBox').classList.contains('hidden')); });
+document.addEventListener('click', e => { if (!$('accountBox').contains(e.target)) setAccountMenuOpen_(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setAccountMenuOpen_(false); });
+$('switchAccountBtn').addEventListener('click', () => { setAccountMenuOpen_(false); signOut(); });
+setView_(state.view, { noRefresh: true, keepScroll: true });
 </script>
 </body>
 </html>
