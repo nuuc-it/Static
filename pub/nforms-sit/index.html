@@ -95,9 +95,9 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere}
 <ul>
 <li><code>Rule ID</code> and <code>Order</code>: the rule's name and its position. <code>Enabled</code>: TRUE turns the rule on.</li>
 <li><code>Trigger Field ID</code>: the question whose answer is tested. <code>Comparison Value</code>: the value it is tested against.</li>
-<li><code>Operator</code>: <code>equals</code>, <code>not_equals</code>, <code>contains</code>, <code>is_empty</code> or <code>is_not_empty</code>. The last two ignore Comparison Value.</li>
-<li><code>Action</code>: <code>show</code> shows the target question when the test is true; <code>hide</code> hides it; <code>skip_to_section</code> jumps to a page.</li>
-<li><code>Target Field/Section ID</code>: the Field ID for show and hide, or the Section ID for skip_to_section.</li>
+<li><code>Operator</code>: <code>equals</code>, <code>not-equals</code>, <code>contains</code>, <code>is-empty</code> or <code>is-not-empty</code>. The last two ignore Comparison Value.</li>
+<li><code>Action</code>: <code>show</code> shows the target question when the test is true; <code>hide</code> hides it; <code>skip-to-section</code> jumps to a page.</li>
+<li><code>Target Field/Section ID</code>: the Field ID for show and hide, or the Section ID for skip-to-section.</li>
 </ul>
 <h4>Settings tab: Key and Value</h4>
 <ul>
@@ -115,7 +115,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere}
 <li><code>example_choice</code> has two options. <em>Show more</em> has Navigation CONTINUE. <em>Jump to the last page</em> has Navigation GO_TO_PAGE and Target Section ID <code>example_page_end</code>.</li>
 <li><code>example_checkbox</code>, <code>example_list</code> and <code>example_scale</code> have plain options with no Navigation.</li>
 <li>Rule <code>example_rule_show</code>: when <code>example_choice</code> equals <em>Show more</em>, show <code>example_followup</code>.</li>
-<li>Rule <code>example_rule_skip</code>: when <code>example_list</code> equals <em>Option B</em>, skip_to_section <code>example_page_end</code>.</li>
+<li>Rule <code>example_rule_skip</code>: when <code>example_list</code> equals <em>Option B</em>, skip-to-section <code>example_page_end</code>.</li>
 <li>Both rules are Enabled FALSE until you turn them on. To make the form your own, set Enabled to FALSE on the example rows, add your questions, then click Initialize configuration to add their answer columns.</li>
 </ul>
 <h3 id="help-know" tabindex="-1">Good to know</h3>
@@ -151,7 +151,7 @@ var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwDMnuZRp9dQa6ez9Kv1tBdT0sUp9FQJsdlwtqw2aUrchbQKbdNvxbWtOh_wfAjLi_iew/exec";
 var STATIC_ASSERTION_AUD_ = "nforms-test";
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
-var STATIC_BUILD_VERSION_ = "0.1.0.10";
+var STATIC_BUILD_VERSION_ = "0.1.0.11";
 const GOOGLE_CLIENT_ID = '657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com';
 // pub/nforms and pub/nforms-sit share one origin, so storage is scoped to this build's audience.
 const AUTH_KEY = 'nformsAuth.v1:' + STATIC_ASSERTION_AUD_;
