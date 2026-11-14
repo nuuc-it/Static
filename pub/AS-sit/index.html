@@ -58,6 +58,8 @@
   .acctwrap{position:relative}
   .avatar{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--blue2);
           color:#1e3a8a;cursor:pointer;font:inherit;font-weight:700;text-transform:uppercase}
+  .avatar{padding:0;overflow:hidden;display:inline-flex;align-items:center;justify-content:center}
+  .avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
   .accountbox.acctmenu{position:absolute;right:0;top:42px;z-index:30;background:var(--panel);
           border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px;
           min-width:250px;max-width:none;align-items:stretch;text-align:left;gap:8px}
@@ -182,7 +184,8 @@
                font-size:11px;line-height:1;color:var(--muted);flex:none;transition:transform .12s}
   .collapsebtn[aria-expanded="false"]{transform:rotate(-90deg)}
   .rowmain{flex:1;min-width:0}
-  .action{color:#111827}
+  .xfields{margin-top:2px;font-size:.92em;color:#374151}.xfield{white-space:pre-line;overflow-wrap:anywhere}
+  .action{color:#111827;white-space:pre-line;overflow-wrap:anywhere} /* NT-2wr2.26: soft returns shown as line breaks */
   .assignees{display:inline-flex;gap:6px;flex-wrap:wrap;align-items:baseline;max-width:100%}
   .assignees .asn{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .assignees .asn.co{opacity:.8;font-style:italic}
@@ -584,7 +587,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.13";
+var STATIC_BUILD_VERSION_ = "0.1.28.14";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -1090,8 +1093,36 @@ function showAppShell(subMsg){
 }
 
 // ---- sign-in -----------------------------------------------------------
+// NT-2wr2.25: display-only profile (photo, name) from the Google ID token's own claims (no extra scope). Kept in
+// sessionStorage only, never sent anywhere; the server remains the authority for identity and access.
+const PROFILE_KEY_ = 'nuucProfile' + STORAGE_SCOPE_;
+function rememberProfile_(idToken){
+  try {
+    const seg = String(idToken).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const p = JSON.parse(decodeURIComponent(escape(atob(seg))));
+    const pic = typeof p.picture === 'string' && /^https:\/\//.test(p.picture) ? p.picture : '';
+    sessionStorage.setItem(PROFILE_KEY_, JSON.stringify({ picture: pic, name: typeof p.name === 'string' ? p.name : '' }));
+  } catch (e) { /* no photo: initials */ }
+}
+function readProfile_(){
+  try { return JSON.parse(sessionStorage.getItem(PROFILE_KEY_) || 'null') || {}; } catch (e) { return {}; }
+}
+function renderAccountBtn_(){
+  const btn = $('accountBtn'), prof = readProfile_(), letter = (state.email || '?').charAt(0);
+  const who = (prof.name ? prof.name + ' ' : '') + (state.email ? '(' + state.email + ')' : '');
+  btn.textContent = letter;
+  if (prof.picture) {
+    const img = document.createElement('img');
+    img.referrerPolicy = 'no-referrer'; img.width = 32; img.height = 32;
+    img.alt = who.trim() || 'Account';
+    img.addEventListener('error', () => { btn.textContent = letter; });
+    img.src = prof.picture;
+    btn.textContent = ''; btn.appendChild(img);
+  }
+}
 function onGoogleSignIn(credentialResponse){
   state.idToken = credentialResponse.credential;
+  rememberProfile_(state.idToken);
   $('signinError').style.display = 'none';
   if (!NUUC_DISPATCH_URL) {
     $('signinError').style.display = 'block';
@@ -1132,6 +1163,7 @@ function signOut(){
   state.teams = []; state.teamId = null; state.tier = 'NONE'; state.rows = [];
   state.collapsed = {};
   clearCachedAuth();
+  try { sessionStorage.removeItem(PROFILE_KEY_); } catch (e) {}
   $('appView').classList.add('hidden');
   $('launchView').classList.add('hidden');
   $('signinView').classList.remove('hidden');
@@ -1899,7 +1931,7 @@ function renderList_(){
   // (the untracked-document scan panel left the admin view in NT-2wr2.13; scanning moves to the Documents view)
   $('adminPanel').classList.toggle('hidden', !state.isAdmin); // NT-ja4
   $('adminMenuBtn').classList.toggle('hidden', !state.isAdmin); // NT-2wr2.1: UX only; admin routes re-check server-side
-  $('accountBtn').textContent = (state.email || '?').charAt(0);
+  renderAccountBtn_();
   $('accountBtn').setAttribute('aria-label', 'Account'); $('accountBtn').title = 'Account' + (state.email ? ': ' + state.email : '');
   if (!state.stale && state.view === 'admin' && !state.isAdmin) setView_('items');
   $('adminToolsField').classList.toggle('hidden', !state.isAdmin);
@@ -2208,6 +2240,12 @@ function assigneesHtml_(r){
     ? `<button class="linkbtn asmore" type="button" data-asmore="+${parts.length - LIM} more" aria-expanded="false">+${parts.length - LIM} more</button>` : '';
   return `<span class="assignees" title="${escape(title)}">${parts.map(one).join('')}${more}</span>`;
 }
+// NT-2wr2.26: extra fields as 'Name:' (bold) + value lines, document order; value soft returns are line breaks.
+function fieldsHtml_(r){
+  const f = Array.isArray(r.custom_fields) ? r.custom_fields : [];
+  return f.length ? '<div class="xfields">' + f.map(x =>
+    `<div class="xfield"><b>${escape(x.name)}:</b> ${escape(softToLines(x.text))}</div>`).join('') + '</div>' : '';
+}
 function rowHtml(r, tier, o){
   const age = o && o.showDoc && isOpenRow_(r) ? daysSince_(r.created_date) : null;
   const mine = isMine(r);
@@ -2218,7 +2256,7 @@ function rowHtml(r, tier, o){
       <input type="checkbox" class="rowsel" data-select="${escape(r.global_id)}" aria-label="Select action"${state.selected.has(r.global_id) ? ' checked' : ''} />
       <div class="aiN">${escape(r.action_id || '')}</div>
       <div class="rowmain">
-        <div class="action">${escape(r.action_text)}</div>
+        <div class="action">${escape(softToLines(r.action_text))}</div>${fieldsHtml_(r)}
         <div class="rowmeta">
           ${assigneesHtml_(r)}
           ${o && o.showDoc ? `<span class="rowdoc"><a href="${escape(r.doc_url)}" target="_blank" rel="noopener">${escape(r.doc_name || '(untitled document)')}</a></span>` : ''}
@@ -2285,6 +2323,7 @@ function renderActionPanel_(){
         `<button type="button" class="pill" data-apstatus="${escape(o)}" title="Set status to ${escape(o)}" aria-pressed="${o === state.panelStatus}"${canStatus ? '' : ' disabled'}>${escape(o)}</button>`).join('')}</div>
       <label class="aplabel" for="apText">Action</label>
       <textarea class="sel aptext" id="apText" rows="3"${canEdit ? '' : ' readonly'}>${escape(softToLines(r.action_text))}</textarea>
+      ${fieldsHtml_(r)}
       ${canEdit || canStatus
         ? `<button class="btn primary apsave" id="apSave" type="button" title="Save changes to this item"${state.panelBusy ? ' disabled' : ''}>Save</button>`
         : '<div class="sub">You can view this item. Only its assignee or someone who can edit the document can change it.</div>'}
@@ -2753,7 +2792,7 @@ function referenceRowHtml_(ref, tier){
         ? `<input type="checkbox" class="rowsel" data-ref-select="${escape(sid)}" aria-label="Select reference"${state.refSelected.has(sid) ? ' checked' : ''} />` : ''}
       <div class="aiN">${escape(ref.action_id || '')}</div>
       <div class="rowmain">
-        <div class="action">${found ? escape(ref.action_text) : 'Not found'}</div>
+        <div class="action">${found ? escape(softToLines(ref.action_text)) : 'Not found'}</div>
         <div class="rowmeta">
           ${found ? `<span class="ref-status">${escape(ref.status || '')}</span>` : ''}
           <a class="ref-home" href="${escape(refHomeHref_(ref.home_doc_id))}" data-home-doc="${escape(ref.home_doc_id || '')}" data-home-name="${escape(ref.home_doc_name || '')}">${escape(ref.home_doc_name || ref.home_doc_id || '')}</a>
