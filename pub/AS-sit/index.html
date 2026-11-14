@@ -211,6 +211,8 @@
   .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
   .btn.small{padding:4px 8px;font-size:12px;border-radius:8px}
   .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .copy-flash{background:#e7f6ec;border-color:#2e7d4f;color:#17613a}
+  .copy-flash.copy-bad{background:#fdecea;border-color:#b3261e;color:#8c1d18}
   /* NT-2wr2.5: selection bar. position:sticky (not fixed) at the bottom of the list; only present with >= 1 selected */
   .listhead{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .listhead label{font-size:13px;color:var(--text);cursor:pointer;display:inline-flex;gap:6px;align-items:center}
@@ -300,6 +302,30 @@
   .spinner{display:inline-block;width:13px;height:13px;border:2px solid #d9e1ec;
            border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
+  /* NT-2wr2.20: busy state. #busyBar is the global in-flight indicator (replaces the title spinner); .is-busy dims a
+     section being re-asked, .is-updating marks a row whose write is in flight, .busychip pins the label. */
+  #busyBar{position:fixed;top:0;left:0;right:0;height:3px;z-index:80;overflow:hidden;pointer-events:none;display:none;
+           background:var(--blue2)}
+  #busyBar.on{display:block}
+  #busyBar::before{content:"";position:absolute;top:0;bottom:0;left:0;width:35%;background:var(--blue);
+                   animation:busyslide 1.1s ease-in-out infinite}
+  @keyframes busyslide{0%{left:-35%}100%{left:100%}}
+  .is-busy{opacity:.5;pointer-events:none;position:relative}
+  .busychip{position:sticky;top:8px;z-index:5;display:inline-flex;gap:6px;align-items:center;margin:0 0 8px;padding:4px 11px;
+            border-radius:999px;background:var(--blue2);color:#1e3a8a;font-size:13px;pointer-events:none}
+  .row.is-updating{opacity:.75}
+  .row.is-updating .controls .btn,.row.is-updating input{pointer-events:none;opacity:.5}
+  .status.is-updating{pointer-events:none;color:var(--muted)}
+  .busytext{display:inline-flex;gap:5px;align-items:center}
+  .busytext .spinner{width:11px;height:11px}
+  .srOnly{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  .toast.err{background:#991b1b;pointer-events:auto;border-radius:12px;padding:9px 14px;display:flex;gap:10px;align-items:center;max-width:min(560px,92vw)}
+  .toast.err button{background:none;border:0;color:#fff;font:inherit;cursor:pointer;text-decoration:underline;padding:0}
+  @media (prefers-reduced-motion:reduce){
+    #busyBar::before{animation:none;left:0;width:100%;background:repeating-linear-gradient(90deg,var(--blue) 0 12px,var(--blue2) 12px 24px)}
+    .spinner{animation:none;border-top-color:#d9e1ec;border-right-color:var(--blue)}
+  }
+  @media (max-width:640px){ .toast.err{bottom:72px} }
   /* Version + SIT/PROD stamp (gts-79dw.4.25) — always visible regardless of
      signin/launch/app view, so a screenshot or human glance can identify
      which published copy they're looking at without checking the URL. */
@@ -353,7 +379,7 @@
     <!-- NT-2wr2.1: app bar. View switch (desktop) and tab bar (phone) share data-view; the account menu holds the
          identity controls. All view/menu state is UX only: the server decides access on every call. -->
     <header class="appbar" id="appBar">
-      <h1>Tracker <span id="titleSpinner" class="spinner hidden" style="margin-left:8px;vertical-align:middle"></span></h1>
+      <h1>Tracker</h1>
       <nav class="viewswitch" id="viewSwitch" aria-label="Views">
         <button class="viewbtn" type="button" data-view="items" title="Action items in your teams' documents">Items</button>
         <button class="viewbtn" type="button" data-view="documents" title="The documents in your teams' folders and whether Tracker reads them">Documents</button>
@@ -427,7 +453,7 @@
 
     <div id="listView">
     <div class="sub hidden" id="sub">—</div>
-    <div class="sub hidden" id="staleTag" role="status">Showing your last saved data — refreshing…</div>
+    <div class="sub hidden" id="staleTag" role="status">Showing saved data — updating…</div>
 
     <!-- NT-2wr2.3: document context header (E2). Shown only while a document is in scope (?doc= / ?action=). -->
     <div class="ctxhead hidden" id="ctxHeader">
@@ -534,6 +560,8 @@
 
 <div class="menu" id="statusMenu"><h4>Set status</h4></div>
 <div class="toast" id="toast"></div>
+<div id="busyBar" aria-hidden="true"></div>
+<div id="busyLive" class="srOnly" role="status" aria-live="polite"></div>
 <dialog class="histdlg" id="historyDlg" aria-labelledby="historyTitle">
   <div class="hhead"><h3 id="historyTitle">History</h3>
     <button class="btn small" id="historyClose" type="button">Close</button></div>
@@ -556,7 +584,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.10";
+var STATIC_BUILD_VERSION_ = "0.1.28.11";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -696,11 +724,15 @@ const state = {
   // 'doc:<docId>'. Absent = expanded (default). Kept across render()/
   // refreshActions() calls within a session so a filter change or poll
   // doesn't silently re-expand a group the user collapsed.
-  collapsed: {}
+  collapsed: {},
+  listSeq: 0, rowsKey: null, // NT-2wr2.20: latest-wins stamp for list loads; the request key of the rows on screen
+  loadingTeams: false
 };
 
 // NT-2wr2.2: doc ids with at least one open row in the current render; docIsCollapsed_ reads it (set per render by renderList_).
 let docOpenSet_ = new Set();
+const CLEAR_ON_LOAD_ = false; // true: the saved-data replay is cleared instead of dimmed (owner preference, design D2)
+let collapseLoaded_ = false; // NT-2wr2.20: declared before the first (saved-data) render; it was a TDZ error at its old place further down
 const $ = (id) => document.getElementById(id);
 const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
 const multiPickers_ = [], teamListeners_ = []; // NT-2wr2.13: Teams/People pickers; Documents-view subscribers
@@ -853,7 +885,7 @@ function renderCachedPortal_(){
   $('noTeamsNotice').classList.add('hidden');
   $('listWrap').classList.remove('hidden');
   $('filtersRow').classList.remove('hidden');
-  setStale_(true, 'Showing your last saved data — refreshing…');
+  setStale_(true, 'Showing saved data — updating…');
   render();
 }
 
@@ -867,8 +899,21 @@ function loadCachedAuth(){
   return cached;
 }
 
-function toast(msg){ toastEl.textContent = msg; toastEl.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(()=>toastEl.classList.remove('show'), 2200); }
+// NT-2wr2.20: toast(msg, {error:true}) is the failure variant: role=alert, stays 8 s, dismissible. Success keeps 2.2 s.
+function toast(msg, opts){
+  const isErr = !!(opts && opts.error);
+  toastEl.textContent = msg;
+  toastEl.classList.toggle('err', isErr);
+  if (isErr) {
+    toastEl.setAttribute('role', 'alert');
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = 'Dismiss';
+    b.addEventListener('click', () => { clearTimeout(toast.t); toastEl.classList.remove('show'); });
+    toastEl.appendChild(b);
+  } else toastEl.removeAttribute('role');
+  toastEl.classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(()=>toastEl.classList.remove('show'), isErr ? 8000 : 2200); }
+const toastError = (msg) => toast(msg, { error: true });
 
 const escape = (s) => String(s==null?'':s).replace(/[&<>"]/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -879,25 +924,145 @@ const shortDate = (iso) => iso ? new Date(iso).toLocaleDateString([], {month:'sh
 // these GAS WebApps do not implement) — same convention as the retired spike
 // harness this page replaces. GAS's doPost/doGet parse the body as JSON
 // regardless of the declared content type.
-function postJson(url, payload){
+// NT-2wr2.20: every request drives the #busyBar through an in-flight counter (opts.background keeps a speculative or
+// periodic request off it) and is abandoned after BUSY_CFG_.timeoutMs; a timeout rejects with err.timeout = true.
+const BUSY_CFG_ = (window.TrackerBusyConfig = Object.assign({ timeoutMs: 60000, slowMs: 10000 }, window.TrackerBusyConfig));
+let inflight_ = 0;
+function bar_(d){ inflight_ = Math.max(0, inflight_ + d); $('busyBar').classList.toggle('on', inflight_ > 0); }
+function postJson(url, payload, opts){
   // req 6: every request to OUR backend carries the client build, so a stale client
   // surfaces in the WebApp's logs (webapp.version.mismatch) instead of only in a support
   // call. NUUC_DISPATCH_URL is a different project's backend and is not stamped.
   const body = (url === GACTIONSHEET_URL)
     ? Object.assign({ clientVersion: STATIC_BUILD_VERSION_ }, payload)
     : payload;
-  return fetch(url, {
+  const bg = !!(opts && opts.background);
+  const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; if (ctl) ctl.abort(); }, BUSY_CFG_.timeoutMs);
+  if (!bg) bar_(1);
+  let timer2;
+  const timeoutP = new Promise((resolve, reject) => { // also rejects when fetch ignores the abort signal (stubs, old engines)
+    timer2 = setTimeout(() => reject(Object.assign(new Error('The server did not answer in time.'), { timeout: true })), BUSY_CFG_.timeoutMs + 50);
+  });
+  const req = fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: ctl ? ctl.signal : undefined
   }).then(r => r.text()).then(text => {
     try { return noteServerVersion_(JSON.parse(text)); }
     catch (e) {
       throw new Error('Non-JSON response from ' + url + ' — the deployment may be mid-propagation: ' +
         text.slice(0, 200));
     }
+  }).catch(err => {
+    if (timedOut) throw Object.assign(new Error('The server did not answer in time.'), { timeout: true });
+    throw err;
+  });
+  return Promise.race([req, timeoutP]).finally(() => { clearTimeout(timer); clearTimeout(timer2); if (!bg) bar_(-1); });
+}
+
+// ---- NT-2wr2.20: scoped busy state ---------------------------------------------------------------------------------
+// withBusy(target, mode, label, fn, opts) runs fn() (a Promise) and marks target busy until it settles; it always
+// unmarks and returns fn()'s promise unchanged. target: Element | Element[] | selector | function returning those
+// (re-resolved after a re-render, see reapplyBusy). mode: 'clear' (placeholder card), 'dim' (keep content, chip),
+// 'row' (per-row Updating…), 'button' (disable and relabel). opts.live === false skips the shared #busyLive region;
+// opts.inert also makes a dimmed target inert (forms).
+const busyEntries_ = new Set();
+function busyEls_(t){
+  const v = typeof t === 'function' ? t() : t;
+  if (!v) return [];
+  if (typeof v === 'string') return Array.prototype.slice.call(document.querySelectorAll(v));
+  return (Array.isArray(v) || (v.length != null && !v.nodeType) ? Array.prototype.slice.call(v) : [v]).filter(Boolean);
+}
+function busyLive_(text){ const l = $('busyLive'); if (l) l.textContent = text; }
+function busyHtml_(label){ return '<span class="busytext"><span class="spinner" aria-hidden="true"></span><span class="busylbl">' + escape(label) + '</span></span>'; }
+function busyApply_(en){
+  busyEls_(en.target).forEach(el => {
+    const n = Number(el.dataset.busyN || 0);
+    if (en.marked.has(el)) { busyLabel_(en, el); return; }
+    en.marked.add(el);
+    el.dataset.busyN = String(n + 1);
+    el.setAttribute('aria-busy', 'true');
+    if (en.mode === 'clear') {
+      el.dataset.busyPh = '1';
+      el.innerHTML = '<div class="statecard busyph"><h2><span class="busylbl">' + escape(en.label) + '</span></h2><p><span class="spinner" aria-hidden="true"></span></p></div>';
+    } else if (en.mode === 'dim') {
+      el.classList.add('is-busy');
+      if (en.opts.inert) el.setAttribute('inert', '');
+      if (en.opts.chip !== false && el.parentNode) {
+        const chip = document.createElement('div');
+        chip.className = 'busychip'; chip.innerHTML = busyHtml_(en.label);
+        el.parentNode.insertBefore(chip, el);
+        en.chips.push(chip);
+      }
+    } else if (en.mode === 'row') {
+      el.classList.add('is-updating');
+      Array.prototype.forEach.call(el.querySelectorAll('button,input,select,textarea'), c => {
+        if (!c.disabled) { c.disabled = true; c.dataset.busyDis = '1'; }
+      });
+      const chip = el.querySelector('[data-status-for], .dv-pill');
+      if (chip) {
+        chip.dataset.busyHtml = chip.innerHTML;
+        chip.setAttribute('aria-disabled', 'true'); chip.classList.add('is-updating');
+        chip.innerHTML = busyHtml_(en.label);
+      }
+    } else if (en.mode === 'aria') { /* aria-busy only */
+    } else if (en.mode === 'button') {
+      el.dataset.busyText = el.textContent; el.dataset.busyWasDisabled = el.disabled ? '1' : '';
+      el.disabled = true; el.textContent = en.label;
+    }
   });
 }
+function busyLabel_(en, el){
+  Array.prototype.forEach.call(el.querySelectorAll('.busylbl'), l => { l.textContent = en.label; });
+  if (en.mode === 'button' && el.dataset.busyText != null) el.textContent = en.label;
+  en.chips.forEach(c => { const l = c.querySelector('.busylbl'); if (l) l.textContent = en.label; });
+}
+function busyRelease_(en, el){
+  const n = Number(el.dataset.busyN || 1) - 1;
+  if (n > 0) { el.dataset.busyN = String(n); }
+  else {
+    delete el.dataset.busyN; el.removeAttribute('aria-busy');
+    if (en.mode === 'clear' && el.dataset.busyPh) { delete el.dataset.busyPh; if (el.querySelector(':scope > .busyph')) el.innerHTML = ''; }
+    if (en.mode === 'dim') { el.classList.remove('is-busy'); el.removeAttribute('inert'); }
+  }
+  if (en.mode === 'row') {
+    el.classList.remove('is-updating');
+    Array.prototype.forEach.call(el.querySelectorAll('[data-busy-dis]'), c => { c.disabled = false; delete c.dataset.busyDis; });
+    const chip = el.querySelector('[data-busy-html]');
+    if (chip) { chip.innerHTML = chip.dataset.busyHtml; delete chip.dataset.busyHtml; chip.removeAttribute('aria-disabled'); chip.classList.remove('is-updating'); }
+  } else if (en.mode === 'button' && el.dataset.busyText != null) {
+    el.textContent = el.dataset.busyText; el.disabled = !!el.dataset.busyWasDisabled;
+    delete el.dataset.busyText; delete el.dataset.busyWasDisabled;
+  }
+}
+function withBusy(target, mode, label, fn, opts){
+  opts = opts || {};
+  const en = { target, mode, label, opts, marked: new Set(), chips: [] };
+  busyEntries_.add(en);
+  busyApply_(en);
+  if (opts.live !== false) busyLive_(label);
+  const slow = setTimeout(() => {
+    en.label = 'Still working…';
+    en.marked.forEach(el => busyLabel_(en, el));
+    if (opts.live !== false) busyLive_(en.label);
+  }, BUSY_CFG_.slowMs);
+  const finish = (msg) => {
+    clearTimeout(slow);
+    busyEntries_.delete(en);
+    en.marked.forEach(el => busyRelease_(en, el));
+    en.chips.forEach(c => c.remove());
+    if (opts.live !== false) busyLive_(msg);
+  };
+  let p;
+  try { p = Promise.resolve(fn()); } catch (e) { finish('Error: ' + (e && e.message || e)); throw e; }
+  p.then(() => finish('Done'), err => finish('Error: ' + ((err && err.message) || err)));
+  return p;
+}
+// A re-render replaces the rows a 'row' entry marked; mark the fresh elements of the same rows again.
+function reapplyBusy(){ busyEntries_.forEach(en => { if (en.mode === 'row' || en.mode === 'aria') busyApply_(en); }); }
 
 // ---- transitional / progressive-render helpers (gts-79dw.4.20) --------
 // showLaunch: the instant-feedback state for the gap between "visitor did
@@ -1042,6 +1207,10 @@ function writePrefs_(){
 function setTeamOptions_(){ renderPickers_(); }
 
 function loadTeams(opts){
+  if (opts && opts.refreshAccess) return loadTeams_(opts); // has its own message (#refreshAccessMsg)
+  return withBusy(listEl, state.stale && !CLEAR_ON_LOAD_ ? 'dim' : 'clear', 'Loading items…', () => loadTeams_(opts));
+}
+function loadTeams_(opts){
   // NT-41i: opts.refreshAccess asks the server to bypass its access-fact cache for this caller
   // (the slow path); the speculative last-team prefetch is skipped so the actions load after it.
   const refreshAccess = !!(opts && opts.refreshAccess);
@@ -1049,6 +1218,7 @@ function loadTeams(opts){
   // this call's own latency is now covered by the title-line spinner
   // rather than a withheld view.
   setBusy(true);
+  const seq0 = ++state.listSeq; // NT-2wr2.20: a later list load (filter change) overtakes the prefetch
   // NT-8al AC1: start the last-used team's list_team_actions at the same moment as list_my_teams.
   // A ?team= in the URL wins over the remembered team. The result is only used if that team turns
   // out to be in the returned list (the server authorizes each call independently, so a wrong guess
@@ -1061,7 +1231,7 @@ function loadTeams(opts){
     const payload = listPayload_(guessTeamId);
     prefetch = {
       teamId: guessTeamId, key: JSON.stringify(payload),
-      p: postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...payload })
+      p: postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...payload }, { background: true })
            .then(res => ({ res }), () => ({ res: null }))
     };
   }
@@ -1125,8 +1295,10 @@ function loadTeams(opts){
 
       if (prefetch && prefetch.teamId === state.teamId) {
         return prefetch.p.then(r => {
+          if (seq0 !== state.listSeq) return; // superseded by a newer load that will apply its own reply
           // Use it only when it succeeded and the filters it was fetched with still apply.
           if (r.res && r.res.ok !== false && prefetch.key === JSON.stringify(listPayload_(state.teamId))) {
+            state.rowsKey = prefetch.key;
             applyActions_(r.res);
             setBusy(false);
             return;
@@ -1138,7 +1310,7 @@ function loadTeams(opts){
     })
     .catch(err => {
       showLoadError_('Could not load your teams', err, () => loadTeams());
-      if (state.stale) setStale_(true, 'Showing your last saved data — could not refresh');
+      if (state.stale) setStale_(true, 'Showing saved data — could not refresh');
       setBusy(false);
     });
 }
@@ -1362,21 +1534,37 @@ function onDocSearchChange_(e){
 $('docSearchPanel').addEventListener('input', () => $('docSearchPanelError').classList.add('hidden'));
 $('docSearchPanel').addEventListener('change', onDocSearchChange_);
 
-function refreshActions(){
+// NT-2wr2.20: latest reply wins (state.listSeq). While loading, the list is cleared with a "Loading items…" card when
+// the reply answers a different question from the rows on screen (different request key); the cache replay and a
+// same-key reload are dimmed instead. opts.quiet (the refresh after a write) shows the progress bar only: the written
+// rows carry their own Updating… state until this refresh re-renders them.
+function listMode_(key){
+  if (state.stale) return CLEAR_ON_LOAD_ ? 'clear' : 'dim';
+  return key === state.rowsKey ? 'dim' : 'clear';
+}
+function refreshActions(opts){
   if (!state.teamId && !state.docId) return Promise.resolve();
-  setBusy(true);
+  const quiet = !!(opts && opts.quiet);
+  const seq = ++state.listSeq;
   hideLoadError_();
-
-  return postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...listPayload_(state.teamId) })
+  const payload = listPayload_(state.teamId);
+  const key = JSON.stringify(payload);
+  const run = () => postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...payload })
     .then(res => {
+      if (seq !== state.listSeq) return; // a newer load is in flight or has landed
       if (res && res.ok === false) clearPortalCache_(state.sub); // rejected: do not replay saved data
+      state.rowsKey = key;
       applyActions_(res);
     })
     .catch(err => {
-      showLoadError_('Could not load your items', err, () => refreshActions());
-      if (state.stale) setStale_(true, 'Showing your last saved data — could not refresh');
+      if (seq !== state.listSeq) return;
+      showLoadError_(err && err.timeout ? 'The server did not answer in time' : 'Could not load your items', err, () => refreshActions());
+      if (state.stale) setStale_(true, 'Showing saved data — could not refresh');
     })
-    .finally(() => setBusy(false));
+    .finally(() => { if (seq === state.listSeq) setBusy(false); });
+  setBusy(true);
+  if (quiet) return run();
+  return withBusy(listEl, listMode_(key), listMode_(key) === 'clear' ? 'Loading items…' : 'Updating…', run);
 }
 
 // ---- admin tools (NT-g8v.29): Sync All, Ensure Sheet Structure, Run Archive ---
@@ -1388,20 +1576,20 @@ function adminToolMessage(action, res){
     : 'A sync is already scheduled (' + (res.reason || 'already_scheduled') + ').';
   return 'Sheet structure ensured.';
 }
-function runAdminTool(action){
+function runAdminTool(action, btn){
   if (state.adminToolBusy) return;
   if (action === 'admin_run_archive' && !confirm('Archive resolved action rows now?')) return;
   state.adminToolBusy = true;
   const out = $('adminToolsStatus');
   out.textContent = 'Working...';
-  postJson(GACTIONSHEET_URL, { action, assertion: state.assertion })
+  return withBusy(btn, 'button', 'Working…', () => postJson(GACTIONSHEET_URL, { action, assertion: state.assertion })
     .then(res => { out.textContent = adminToolMessage(action, res); })
-    .catch(err => { out.textContent = 'Failed: ' + (err.message || err); })
-    .finally(() => { state.adminToolBusy = false; });
+    .catch(err => { out.textContent = 'Failed: ' + (err.message || err); toastError('Admin action failed: ' + (err.message || err)); })
+    .finally(() => { state.adminToolBusy = false; }), { live: false });
 }
-$('adminSyncAllBtn').addEventListener('click', () => runAdminTool('admin_sync_all'));
-$('adminEnsureBtn').addEventListener('click', () => runAdminTool('admin_ensure_sheet_structure'));
-$('adminArchiveBtn').addEventListener('click', () => runAdminTool('admin_run_archive'));
+$('adminSyncAllBtn').addEventListener('click', () => runAdminTool('admin_sync_all', $('adminSyncAllBtn')));
+$('adminEnsureBtn').addEventListener('click', () => runAdminTool('admin_ensure_sheet_structure', $('adminEnsureBtn')));
+$('adminArchiveBtn').addEventListener('click', () => runAdminTool('admin_run_archive', $('adminArchiveBtn')));
 
 // ---- admin: tracker sheet link and health panel (NT-eg2) ----------------------
 // admin_tracker_url / admin_health re-check Config!AdminUsers server-side; the client only gates visibility.
@@ -1416,7 +1604,7 @@ function loadAdminExtras(){
   }
   if (state.trackerUrl !== null || state.trackerUrlLoading) return;
   state.trackerUrlLoading = true;
-  postJson(GACTIONSHEET_URL, { action: 'admin_tracker_url', assertion: state.assertion })
+  postJson(GACTIONSHEET_URL, { action: 'admin_tracker_url', assertion: state.assertion }, { background: true })
     .then(res => {
       if (res && res.ok && res.url) {
         state.trackerUrl = res.url;
@@ -1478,14 +1666,14 @@ function runAdminHealth(){
   state.adminToolBusy = true;
   const out = $('adminToolsStatus');
   out.textContent = 'Working...';
-  postJson(GACTIONSHEET_URL, { action: 'admin_health', assertion: state.assertion })
+  return withBusy($('adminHealthBtn'), 'button', 'Working…', () => postJson(GACTIONSHEET_URL, { action: 'admin_health', assertion: state.assertion })
     .then(res => {
       if (!res.ok) { out.textContent = 'Denied: ' + (res.reason || 'unknown error'); return; }
       out.textContent = '';
       renderHealth(res.health || {});
     })
-    .catch(err => { out.textContent = 'Failed: ' + (err.message || err); })
-    .finally(() => { state.adminToolBusy = false; });
+    .catch(err => { out.textContent = 'Failed: ' + (err.message || err); toastError('Tracking health failed: ' + (err.message || err)); })
+    .finally(() => { state.adminToolBusy = false; }), { live: false });
 }
 
 // Resolves a teamId to its display name (falls back to the raw id when no
@@ -1517,8 +1705,7 @@ function timeAgo(iso){
 function setBusy(b){
   // Problem 3: the in-flight indicator lives on the title line, right of
   // "Team actions", not centered/blocking over the filters/count row.
-  state.busy = b;
-  $('titleSpinner').classList.toggle('hidden', !b);
+  state.busy = b; // NT-2wr2.20: the activity indicator is now #busyBar, driven by postJson
 }
 
 // ---- status display ------------------------------------------------------
@@ -1556,7 +1743,17 @@ function rowByDocId(docId){ return state.rows.find(r => r.doc_id === docId); }
 
 // ---- render ---------------------------------------------------------------
 function render(){
+  // NT-2wr2.20: a re-render keeps focus on the same row (its chip) when focus was inside the list
+  const ae = document.activeElement;
+  const focusRow = ae && ae !== document.body && listEl.contains(ae) && ae.closest ? ae.closest('[data-gid]') : null;
+  const focusGid = focusRow ? focusRow.getAttribute('data-gid') : null;
   renderList_();
+  reapplyBusy();
+  if (focusGid) {
+    const again = Array.prototype.find.call(listEl.querySelectorAll('[data-gid]'), x => x.getAttribute('data-gid') === focusGid);
+    const target = again && (again.querySelector('[data-status-for]') || again.querySelector('input,button'));
+    if (target) { if (!target.hasAttribute('tabindex') && target.tagName === 'SPAN') target.setAttribute('tabindex', '-1'); try { target.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+  }
   renderCtxHeader_();
   renderActionPanel_();
   syncBulkUi_();
@@ -1638,14 +1835,12 @@ function lastSyncedText_(){
   return t ? ' Last synced ' + escape(t) + '.' : '';
 }
 function doSync_(docId, btn){
-  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
-  return postJson(GACTIONSHEET_URL, { action: 'team_sync_document', assertion: state.assertion, teamId: teamIdForWrite(rowByDocId(docId)), docId })
+  return withBusy(btn, 'button', 'Syncing…', () => postJson(GACTIONSHEET_URL, { action: 'team_sync_document', assertion: state.assertion, teamId: teamIdForWrite(rowByDocId(docId)), docId })
     .then(res => {
-      if (res && res.ok) { toast('Synced.'); return refreshActions(); }
-      toast('Sync did not run: ' + ((res && res.outcome) || 'unknown'));
+      if (res && res.ok) { toast('Synced.'); return refreshActions({ quiet: true }); }
+      toastError('Sync did not run: ' + ((res && res.outcome) || 'unknown'));
     })
-    .catch(err => toast('Sync failed: ' + (err.message || err)))
-    .finally(() => { if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = 'Sync now'; } });
+    .catch(err => writeFailed_('Sync', err)));
 }
 // "Nothing open for <team>": the resolved count needs the closed list, so it costs one extra request, made only in this state.
 function loadResolvedHint_(){
@@ -1654,7 +1849,7 @@ function loadResolvedHint_(){
   state.resolvedHint = { key, n: null };
   const p = { ...listPayload_(state.teamId), statusFilter: 'closed', windowDays: 30 };
   delete p.ageBucket;
-  postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...p }).then(res => {
+  postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...p }, { background: true }).then(res => {
     if (!state.resolvedHint || state.resolvedHint.key !== key) return;
     state.resolvedHint.n = (res && res.ok !== false && Array.isArray(res.actions)) ? res.actions.length : 0;
     if (!state.rows.length && !state.docId) renderList_();
@@ -1866,31 +2061,31 @@ function renderUntrackedPanel_(){
 // fresh data only. After it, the list refreshes on its own a few times until the document shows as tracked.
 function pollFirstSync_(left){
   if (!state.docAdded || state.docTracked !== false || left <= 0) { if (state.docTracked === false) { state.docAdded = false; render(); } return; }
-  setTimeout(() => refreshActions().then(() => pollFirstSync_(left - 1)), 4000);
+  setTimeout(() => refreshActions({ quiet: true }).then(() => pollFirstSync_(left - 1)), 4000);
 }
 function onStartTrackingClick_(){
   const docId = state.docId;
   if (!docId || state.docStarting) return;
   state.docStarting = true;
-  $('docStartTracking').disabled = true;
-  postJson(GACTIONSHEET_URL, { action: 'team_sync_document', assertion: state.assertion, teamId: '', docId })
+  return withBusy($('docStartTracking'), 'button', 'Adding…', () => postJson(GACTIONSHEET_URL, { action: 'team_sync_document', assertion: state.assertion, teamId: '', docId })
     .then(res => {
       if (res && res.ok) {
         state.collapsed[groupKey_('document', docId)] = false;
         state.docStarting = false;
         state.docAdded = true;
         render();
-        return refreshActions().then(() => {
+        return refreshActions({ quiet: true }).then(() => {
           if (state.docTracked === false) return pollFirstSync_(5);
           state.docAdded = false;
           const n = state.rows.length;
           toast('Added to Tracker' + (n ? ' — ' + n + (n === 1 ? ' item' : ' items') : ''));
         });
       }
-      toast('Sync did not run: ' + ((res && res.outcome) || 'unknown'));
+      toastError('Sync did not run: ' + ((res && res.outcome) || 'unknown'));
     })
-    .catch(err => toast('Sync failed: ' + (err.message || err)))
-    .finally(() => { state.docStarting = false; if (state.docTracked === false) render(); });
+    .catch(err => writeFailed_('Sync', err))
+    .finally(() => { state.docStarting = false; }))
+    .finally(() => { if (state.docTracked === false) render(); });
 }
 
 // NT-3fj: one collapsible group (header: collapse button, optional extra control, name, count tag;
@@ -1927,7 +2122,6 @@ function docIsCollapsed_(docId){
 }
 // v2 section 4: every group starts expanded; the person's collapse choices are remembered per browser and grouping.
 const COLLAPSE_KEY_ = 'nuuts.tracker.collapsed.v2';
-let collapseLoaded_ = false;
 function groupKey_(mode, k){ return 'g:' + mode + ':' + k; }
 function loadCollapsed_(){
   if (collapseLoaded_) return;
@@ -2131,15 +2325,19 @@ function onPanelSave_(){
     req = patchStatusRequest_(gid, newStatus);
   } else { $('apMsg').textContent = 'No changes to save'; return; }
   state.panelBusy = true; $('apSave').disabled = true; $('apMsg').textContent = 'Saving…';
-  req.then(res => {
+  // NT-2wr2.20: the panel form is dimmed and inert, and the list row shows Updating… until the refresh lands
+  withBusy(rowEls_([gid]), 'row', 'Updating…', () => withBusy($('actionPanel'), 'dim', 'Saving…', () => req.then(res => {
     state.panelBusy = false;
-    if (res && res.ok) { state.panelSaved = true; return refreshActions(); }
+    if (res && res.ok) { state.panelSaved = true; return refreshActions({ quiet: true }); }
     $('apSave').disabled = false;
     $('apMsg').textContent = 'Not saved: ' + ((res && (res.outcome || res.error)) || 'unknown');
+    toastError('Not saved: ' + ((res && (res.outcome || res.error)) || 'unknown'));
   }).catch(err => {
     state.panelBusy = false; $('apSave').disabled = false;
-    $('apMsg').textContent = 'Not saved: ' + (err.message || err);
-  });
+    $('apMsg').textContent = err && err.timeout ? 'No answer from the server; the change may still apply.' : 'Not saved: ' + (err.message || err);
+    toastError($('apMsg').textContent);
+    if (err && err.timeout) return refreshActions({ quiet: true });
+  }), { live: false, inert: true, chip: false }));
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.panelId && $('filtersPanel').classList.contains('hidden')) closePanel_(); });
 
@@ -2147,26 +2345,21 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.pane
 function onSyncClick(e){
   const btn = e.currentTarget;
   const docId = btn.dataset.sync;
-  btn.disabled = true;
-  const prevLabel = btn.textContent;
-  btn.textContent = 'Syncing…';
-
-  postJson(GACTIONSHEET_URL, {
+  return withBusy(btn, 'button', 'Syncing…', () => postJson(GACTIONSHEET_URL, {
     action: 'team_sync_document', assertion: state.assertion, teamId: teamIdForWrite(rowByDocId(docId)), docId
   })
     .then(res => {
       if (res.ok) {
         toast('Synced.');
-        return refreshActions();
+        return refreshActions({ quiet: true });
       }
-      toast('Sync did not run: ' + (res.outcome || 'unknown'));
+      toastError('Sync did not run: ' + (res.outcome || 'unknown'));
     })
-    .catch(err => toast('Sync failed: ' + (err.message || err)))
+    .catch(err => writeFailed_('Sync', err)))
     .finally(() => {
       const row = rowByDocId(docId);
       const tier = state.teamId === ALL_TEAMS_ID ? (state.teamTiers[row && row.team_id] || 'NONE') : state.tier;
       btn.disabled = (tier !== 'EDIT');
-      btn.textContent = prevLabel;
     });
 }
 
@@ -2189,8 +2382,8 @@ function openStatusMenu(e){
     ).join('') +
     '<input class="custom" id="customStatus" placeholder="…or type any status" />' +
     '<hr class="menudiv" />' : '<h4>Actions</h4>') +
-    `<button class="opt" data-copy="reference" title="Copy as a Reference: pasted into a document, it stays a live link to the action${nNote}">Copy as Reference</button>` +
-    `<button class="opt" data-copy="import" title="Copy for Import: pasted into a document, the next sync moves the action there${nNote}">Copy for Import</button>` +
+    `<button class="opt" data-copy="reference" title="Copy as a Reference: pasted into a document, it stays a live link to the action once that document is synced with Tracker${nNote}">Copy as Reference</button>` +
+    `<button class="opt" data-copy="import" title="Copy for Import: pasted into a document, once that document is synced with Tracker, the action moves there${nNote}">Copy for Import</button>` +
     '<hr class="menudiv" />' +
     '<button class="opt" data-history="1" title="Every recorded change to this action, newest first">History</button>' +
     (canConfirm ? '<hr class="menudiv" /><button class="opt" data-confirm-deleted="1" title="Confirm this action was deleted from its document: moves it to the archive">Confirm deleted</button>' : '');
@@ -2325,7 +2518,7 @@ function copyActions_(rows, forImport){
 // NT-qp5: Confirm deleted on a row removed from its document: the server moves the row to the
 // Archive sheet; on ok the row leaves the list, on a refusal it stays and the error is shown.
 function confirmDeleted_(globalId){
-  return postJson(GACTIONSHEET_URL, {
+  return withBusy(rowEls_([globalId]), 'row', 'Removing…', () => postJson(GACTIONSHEET_URL, {
     action: 'confirm_action_deleted', assertion: state.assertion,
     teamId: teamIdForWrite(rowByGlobalId(globalId)), global_id: globalId
   })
@@ -2337,9 +2530,18 @@ function confirmDeleted_(globalId){
         toast('Deletion confirmed; the action was archived.');
         return;
       }
-      toast('Confirm deleted did not apply: ' + ((res && res.error) || 'unknown'));
+      toastError('Confirm deleted did not apply: ' + ((res && res.error) || 'unknown'));
     })
-    .catch(err => toast('Confirm deleted failed: ' + (err.message || err)));
+    .catch(err => writeFailed_('Confirm deleted', err)));
+}
+// NT-2wr2.20: the rendered rows for these global ids (re-resolved after each render by reapplyBusy).
+function rowEls_(gids){
+  return () => Array.prototype.filter.call(listEl.querySelectorAll('.row[data-gid]'), r => gids.indexOf(r.getAttribute('data-gid')) !== -1);
+}
+// A write that failed or timed out: an error toast that stays; a timeout means the outcome is unknown, so refresh quietly.
+function writeFailed_(what, err){
+  if (err && err.timeout) { toastError('No answer from the server; the change may still apply.'); return refreshActions({ quiet: true }); }
+  toastError(what + ' failed: ' + ((err && err.message) || err));
 }
 // Shared request for the single-row and bulk status paths (NT-71y.6).
 function patchStatusRequest_(globalId, newStatus){
@@ -2349,15 +2551,15 @@ function patchStatusRequest_(globalId, newStatus){
   });
 }
 function submitStatusChange(globalId, newStatus){
-  patchStatusRequest_(globalId, newStatus)
+  return withBusy(rowEls_([globalId]), 'row', 'Updating…', () => patchStatusRequest_(globalId, newStatus)
     .then(res => {
       if (res.ok) {
         toast(res.docPushed === false ? 'Status updated; the document will catch up on its next sync.' : 'Status updated.');
-        return refreshActions();
+        return refreshActions({ quiet: true });
       }
-      toast('Status change did not apply: ' + (res.outcome || 'unknown'));
+      toastError('Status change did not apply: ' + (res.outcome || 'unknown'));
     })
-    .catch(err => toast('Status change failed: ' + (err.message || err)));
+    .catch(err => writeFailed_('Status change', err)));
 }
 
 // ---- selection and bulk actions (NT-71y.6, reworked NT-2wr2.5) ----------------
@@ -2414,10 +2616,10 @@ function syncBulkUi_(){
       <span id="bulkCount">${n} selected${hiddenN ? ` (${hiddenN} hidden by filters)` : ''}</span>
       <button class="linkbtn" id="bulkClear" type="button" title="Deselect everything">Clear</button>
       ${anyWritable ? `<select class="sel" id="bulkStatus" aria-label="Set status for selected items" title="Set the status of every selected item you can change"${dis}><option value="">Set status</option>${opts}</select>` : ''}
-      <button class="btn small bulk-desk" id="bulkCopyRef" type="button" data-copy="reference" title="Reference: pasted into a document, a live link to the item">Copy as reference</button>
-      <button class="btn small bulk-desk" id="bulkCopyImport" type="button" data-copy="import" title="Import: pasted into a document, the next sync moves the item there">Copy for import</button>
+      <button class="btn small bulk-desk" id="bulkCopyRef" type="button" data-copy="reference" title="Reference: once pasted into a new document and that document is synced with Tracker, a live link to the item" aria-live="polite">Copy as reference</button>
+      <button class="btn small bulk-desk" id="bulkCopyImport" type="button" data-copy="import" title="Import: once pasted into a new document and that document is synced with Tracker, the item moves there" aria-live="polite">Copy for import</button>
       <select class="sel bulk-phone" id="bulkCopyMenu" aria-label="Copy selected items"><option value="">Copy</option><option value="reference">As reference</option><option value="import">For import</option></select>
-      <span class="bulkhint">Reference keeps a live link to the item. Import moves the item into the document you paste it into.</span>
+      <span class="bulkhint">Reference keeps a live link to the item. Import moves the item into the document you paste it into. This applies once the copy is pasted into a new document and that document is synced with Tracker.</span>
     </div>`;
   }
   host.innerHTML = html;
@@ -2425,17 +2627,27 @@ function syncBulkUi_(){
   if (!n) return;
   $('bulkClear').addEventListener('click', clearSelection_);
   if ($('bulkStatus')) $('bulkStatus').addEventListener('change', e => { if (e.target.value) runBulkStatus_(e.target.value); });
-  $('bulkCopyRef').addEventListener('click', () => copyBulk_(false));
-  $('bulkCopyImport').addEventListener('click', () => copyBulk_(true));
-  $('bulkCopyMenu').addEventListener('change', e => { if (e.target.value) copyBulk_(e.target.value === 'import'); e.target.value = ''; });
+  $('bulkCopyRef').addEventListener('click', e => copyBulk_(false, e.currentTarget));
+  $('bulkCopyImport').addEventListener('click', e => copyBulk_(true, e.currentTarget));
+  $('bulkCopyMenu').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; if (v) copyBulk_(v === 'import', e.target); });
 }
-function copyBulk_(forImport){
+// Immediate feedback on the control that was pressed: its label becomes "Copied ✓" (or "Copy failed")
+// for ~2 s, then reverts. A <select> (phone) changes its first option's label instead.
+function copyFlash_(el, text, bad){
+  if (!el || !el.isConnected) return;
+  const lab = el.tagName === 'SELECT' ? el.options[0] : el;
+  if (lab.dataset.orig === undefined) lab.dataset.orig = lab.textContent;
+  lab.textContent = text; el.classList.toggle('copy-bad', !!bad); el.classList.add('copy-flash');
+  clearTimeout(el._flashT);
+  el._flashT = setTimeout(() => { lab.textContent = lab.dataset.orig; el.classList.remove('copy-flash', 'copy-bad'); }, bad ? 4000 : 2000);
+}
+function copyBulk_(forImport, btn){
   const rows = selectedAllRows_();
   if (!rows.length) { toast('Nothing to copy.'); return Promise.resolve(); }
   const clip = actionsClipboard_(rows, forImport);
   return writeClipboard_(clip.html, clip.text)
-    .then(() => toast('Copied ' + itemsWord_(rows.length) + (forImport ? ' for import' : ' as reference')))
-    .catch(err => toast('Copy failed: ' + ((err && err.message) || err)));
+    .then(() => { copyFlash_(btn, 'Copied \u2713'); toast('Copied ' + itemsWord_(rows.length) + (forImport ? ' for import' : ' as reference')); })
+    .catch(err => { copyFlash_(btn, 'Copy failed', true); toast('Copy failed: ' + ((err && err.message) || err)); });
 }
 listEl.addEventListener('click', e => {
   const box = e.target.closest && e.target.closest('input[data-select]');
@@ -2484,10 +2696,10 @@ function runBulkStatus_(status){
   const send = bulkWritable_(rows);
   const notAllowed0 = rows.length - send.length;
   if (!send.length) { setBulkMsg_('0 updated, ' + notAllowed0 + ' not allowed'); syncBulkUi_(); return; }
-  state.bulkBusy = true; syncBulkUi_();
+  state.bulkBusy = true; setBulkMsg_('Updating ' + itemsWord_(send.length) + '…'); syncBulkUi_();
   const prev = {};
   send.forEach(r => { prev[r.global_id] = r.status || 'Open'; });
-  postJson(GACTIONSHEET_URL, {
+  return withBusy(rowEls_(send.map(r => r.global_id)), 'row', 'Updating…', () => postJson(GACTIONSHEET_URL, {
     action: 'team_patch_status', assertion: state.assertion, teamId: teamIdForWrite(send[0]),
     items: send.map(r => ({ global_id: r.global_id, status }))
   }).then(res => res, () => null).then(res => {
@@ -2503,22 +2715,22 @@ function runBulkStatus_(status){
       done.forEach(r => { state.selected.delete(r.global_id); state.selRows.delete(r.global_id); });
     }
     syncBulkUi_();
-    return refreshActions();
-  });
+    return refreshActions({ quiet: true });
+  }));
 }
 // Undo restores each item's previous status through the same team_patch_status items route (one status per item).
 function undoBulkStatus_(){
   const u = state.bulkMsg && state.bulkMsg.undo;
   if (!u || state.bulkBusy) return;
   state.bulkBusy = true; setBulkMsg_('Undoing…'); syncBulkUi_();
-  postJson(GACTIONSHEET_URL, { action: 'team_patch_status', assertion: state.assertion, teamId: teamIdForWrite(u.teamRow), items: u.items })
+  return withBusy(rowEls_(u.items.map(i => i.global_id)), 'row', 'Updating…', () => postJson(GACTIONSHEET_URL, { action: 'team_patch_status', assertion: state.assertion, teamId: teamIdForWrite(u.teamRow), items: u.items })
     .then(res => res, () => null).then(res => {
       state.bulkBusy = false;
       const ok = res ? ((res.results || []).length ? res.results.filter(x => x && x.ok).length : (res.ok ? u.items.length : 0)) : 0;
       setBulkMsg_(!res ? 'Could not undo. Check your connection and try again.' : ok === u.items.length ? 'Restored ' + itemsWord_(ok) : ok + ' restored, ' + (u.items.length - ok) + ' not allowed');
       syncBulkUi_();
-      return refreshActions();
-    });
+      return refreshActions({ quiet: true });
+    }));
 }
 // ---- References (NT-71y.8) -------------------------------------------------
 // Document-filtered view only. Reference rows are greyed and read-only: no [data-select] (bulk status never
@@ -2599,7 +2811,7 @@ function runImportReferences_(){
   if (!ids.length || state.refBusy || state.stale || !state.docId) return;
   state.refBusy = true; state.refResults = []; updateImportRefs_();
   const labelOf = sid => { const r = state.references.find(x => x.source_global_id === sid); return (r && r.action_id) || sid; };
-  postJson(GACTIONSHEET_URL, { action: 'team_import_references', assertion: state.assertion, docId: state.docId, sourceGlobalIds: ids })
+  return withBusy($('importRefs'), 'button', 'Importing…', () => withBusy($('refBlock'), 'dim', 'Importing…', () => postJson(GACTIONSHEET_URL, { action: 'team_import_references', assertion: state.assertion, docId: state.docId, sourceGlobalIds: ids })
     .catch(() => ({ ok: false, outcome: 'network_error' }))
     .then(res => {
       const out = [];
@@ -2615,9 +2827,10 @@ function runImportReferences_(){
       }
       state.refResults = out;
       state.refBusy = false;
-      toast('Imported ' + n + ' of ' + ids.length + '.');
-      return refreshActions();
-    });
+      if (n < ids.length && !(res && res.ok)) toastError('Import failed: ' + ((res && (res.error || res.outcome)) || 'error'));
+      else toast('Imported ' + n + ' of ' + ids.length + '.');
+      return refreshActions({ quiet: true });
+    }), { live: false }));
 }
 function closeMenu(){ menuEl.style.display = 'none'; }
 
@@ -2648,9 +2861,8 @@ function openHistory_(globalId){
   const r = rowByGlobalId(globalId);
   const body = $('historyBody');
   $('historyTitle').textContent = 'History' + (r && r.action_id ? ' \u2014 ' + r.action_id : '');
-  body.innerHTML = '<p class="hmeta"><span class="spinner"></span> Loading…</p>';
   if (typeof historyDlg.showModal === 'function') historyDlg.showModal(); else historyDlg.setAttribute('open', '');
-  return postJson(GACTIONSHEET_URL, {
+  return withBusy(body, 'clear', 'Loading…', () => postJson(GACTIONSHEET_URL, {
     action: 'get_action_history', assertion: state.assertion, teamId: teamIdForWrite(r), global_id: globalId
   })
     .then(res => {
@@ -2660,7 +2872,7 @@ function openHistory_(globalId){
         ? '<ol>' + entries.map(historyItem_).join('') + '</ol>'
         : '<p class="hmeta">No changes recorded yet.</p>';
     })
-    .catch(err => { body.innerHTML = '<p class="hmeta">History failed: ' + escape(err.message || err) + '</p>'; });
+    .catch(err => { body.innerHTML = '<p class="hmeta">History failed: ' + escape(err.message || err) + '</p>'; }));
 }
 document.addEventListener('click', e => { if (!menuEl.contains(e.target)) closeMenu(); });
 
@@ -2963,10 +3175,11 @@ setView_(state.view, { noRefresh: true, keepScroll: true });
 // once (also after the team list arrives), so it must be idempotent.
 window.TrackerShell = {
   state, escape, toast, timeAgo, webappUrl: GACTIONSHEET_URL,
-  postJson(a, b){
-    if (typeof a === 'string') return postJson(a, b);
-    return postJson(GACTIONSHEET_URL, Object.assign({ assertion: state.assertion }, a));
+  postJson(a, b, c){
+    if (typeof a === 'string') return postJson(a, b, c);
+    return postJson(GACTIONSHEET_URL, Object.assign({ assertion: state.assertion }, a), b); // b: { background: true }
   },
+  withBusy, reapplyBusy, toastError,
   setView(v){ setView_(v); },
   openItemsForDoc(docId, teamId){
     try { history.pushState({ tv: 'items' }, '', location.href); } catch (e) { /* no history entry: Back leaves the page */ }

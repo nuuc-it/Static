@@ -8,21 +8,39 @@
   var SH = function () { return window.TrackerShell; };
   var esc = function (s) { return SH().escape(String(s == null ? '' : s)); };
   var LS = 'trackerDocs.v1';
+  var GROUPS = { folder: 'Folder', team: 'Team', none: 'None' };
+  // Last-modified filter. '' = any time; numbers are "within the last N days"; 'old' = older than 1 year.
+  var MODS = { '': 'Any time', '7': 'Last 7 days', '30': 'Last 30 days', '90': 'Last 90 days', 'old': 'Older than 1 year' };
 
   var st = {
     built: false, loaded: false, loading: false, loadedKey: '', error: '',
     teams: [], folders: [],
     show: { tracked: true, not_tracked: true, excluded: false },
-    search: '', collapsed: {}, selected: {},      // selected: docId -> teamId
-    scanning: {}, scanMsg: {}, busy: false, bulkMsg: '',
+    search: '', group: 'folder', mod: '', collapsed: {}, selected: {},      // selected: docId -> teamId
+    scanning: {}, scanMsg: {}, busy: false, bulkMsg: '', seq: 0, clearing: false,
     excludeOk: true, scanOk: true, pendingScroll: null, addedPending: {}
   };
   try {
     var saved = JSON.parse(localStorage.getItem(LS) || '{}');
     if (saved.show) st.show = Object.assign(st.show, saved.show);
     if (saved.collapsed) st.collapsed = saved.collapsed;
+    if (GROUPS[saved.group]) st.group = saved.group;
+    if (MODS[saved.mod] != null) st.mod = saved.mod;
   } catch (e) { /* storage unavailable: defaults */ }
-  function persist() { try { localStorage.setItem(LS, JSON.stringify({ show: st.show, collapsed: st.collapsed })); } catch (e) {} }
+  try { // the URL wins over the remembered choice, so a shared link reproduces the view
+    var q = new URL(location.href).searchParams;
+    if (GROUPS[q.get('dgroup')]) st.group = q.get('dgroup');
+    if (q.get('dmod') != null && MODS[q.get('dmod')] != null) st.mod = q.get('dmod');
+  } catch (e) { /* no URL access: remembered values only */ }
+  function persist() {
+    try { localStorage.setItem(LS, JSON.stringify({ show: st.show, collapsed: st.collapsed, group: st.group, mod: st.mod })); } catch (e) {}
+    try { // keep the choice in the URL (other params untouched); defaults are omitted
+      var u = new URL(location.href);
+      if (st.group === 'folder') u.searchParams.delete('dgroup'); else u.searchParams.set('dgroup', st.group);
+      if (!st.mod) u.searchParams.delete('dmod'); else u.searchParams.set('dmod', st.mod);
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    } catch (e) { /* history unavailable: remembered only */ }
+  }
 
   var el = {};
   function build() {
@@ -33,6 +51,8 @@
         '<span id="dvTeams"></span>' +
         '<span class="dv-show"><button class="btn" id="dvShowBtn" type="button" aria-haspopup="true" aria-expanded="false"></button>' +
         '<div class="dv-showmenu hidden" id="dvShowMenu"></div></span>' +
+        '<label class="dv-sel">Modified <select id="dvMod"></select></label>' +
+        '<label class="dv-sel">Group by <select id="dvGroup"></select></label>' +
         '<input type="search" id="dvSearch" placeholder="Search documents or folders" aria-label="Search documents">' +
         '<button class="btn" id="dvScanAll" type="button">Scan all shown</button>' +
       '</div>' +
@@ -40,7 +60,7 @@
       '<div id="dvList"></div>' +
       '<div class="bulkhost"><div class="bulkbar hidden" id="dvBar"></div><div class="bulkmsg hidden" id="dvMsg"></div></div>' +
       '<div id="dvModal"></div>';
-    ['dvTeams', 'dvShowBtn', 'dvShowMenu', 'dvSearch', 'dvScanAll', 'dvStatus', 'dvList', 'dvBar', 'dvMsg', 'dvModal']
+    ['dvTeams', 'dvShowBtn', 'dvShowMenu', 'dvMod', 'dvGroup', 'dvSearch', 'dvScanAll', 'dvStatus', 'dvList', 'dvBar', 'dvMsg', 'dvModal']
       .forEach(function (id) { el[id] = document.getElementById(id); });
     try { SH().mountTeamsPicker(el.dvTeams); } catch (e) {}
     try { SH().onTeamsChange(function () { if (!root.classList.contains('hidden')) load(); }); } catch (e) {}
@@ -56,6 +76,11 @@
       var k = ev.target.getAttribute('data-k'); if (!k) return;
       st.show[k] = ev.target.checked; persist(); render();
     });
+    el.dvMod.innerHTML = Object.keys(MODS).map(function (k) { return '<option value="' + k + '">' + MODS[k] + '</option>'; }).join('');
+    el.dvGroup.innerHTML = Object.keys(GROUPS).map(function (k) { return '<option value="' + k + '">' + GROUPS[k] + '</option>'; }).join('');
+    el.dvMod.value = st.mod; el.dvGroup.value = st.group;
+    el.dvMod.addEventListener('change', function () { st.mod = el.dvMod.value; persist(); render(); });
+    el.dvGroup.addEventListener('change', function () { st.group = el.dvGroup.value; persist(); render(); });
     el.dvSearch.addEventListener('input', function () { st.search = el.dvSearch.value.trim().toLowerCase(); render(); });
     el.dvScanAll.addEventListener('click', scanAllShown);
     el.dvList.addEventListener('click', onListClick);
@@ -65,19 +90,30 @@
 
   // ---- data -------------------------------------------------------------------------------------------------------
   function teamKey() { return SH().selectedTeamIds().slice().sort().join(','); }
+  // NT-2wr2.20: latest reply wins (st.seq). A different team set clears the list behind a "Loading documents…" card; a reload
+  // of the same set (after Add / Exclude) dims it. Returns the load's promise.
   function load(force) {
     var key = teamKey();
-    if (st.loading) return;
-    if (!force && st.loaded && key === st.loadedKey) return;
-    if (!key) { st.loaded = false; st.error = ''; render(); return; } // teams not known yet; show() runs again when they arrive
-    st.loading = true; st.error = ''; render();
-    SH().postJson({ action: 'list_team_documents', teamIds: SH().selectedTeamIds() }).then(function (res) {
-      st.loading = false;
-      if (!res || res.ok === false) { st.error = errText(res); st.folders = []; st.loaded = true; st.loadedKey = key; render(); return; }
-      st.teams = res.teams || []; st.folders = res.folders || []; st.loaded = true; st.loadedKey = key;
-      st.selected = {}; st.addedPending = {};
-      render(); restoreScroll();
-    }).catch(function (err) { st.loading = false; st.error = 'Could not load documents: ' + (err.message || err); render(); });
+    if (!force && !st.loading && st.loaded && key === st.loadedKey) return Promise.resolve();
+    if (!force && st.loading && key === st.loadingKey) return st.loadP || Promise.resolve();
+    if (!key) { st.loaded = false; st.error = ''; render(); return Promise.resolve(); } // teams not known yet; show() runs again when they arrive
+    var seq = ++st.seq, same = st.loaded && key === st.loadedKey;
+    st.loading = true; st.loadingKey = key; st.error = ''; st.clearing = !same; render();
+    var teamIds = SH().selectedTeamIds();
+    st.loadP = SH().withBusy(el.dvList, same ? 'dim' : 'clear', same ? 'Updating…' : 'Loading documents…', function () {
+      return SH().postJson({ action: 'list_team_documents', teamIds: teamIds }).then(function (res) {
+        if (seq !== st.seq) return;
+        st.loading = false; st.clearing = false;
+        if (!res || res.ok === false) { st.error = errText(res); st.folders = []; st.loaded = true; st.loadedKey = key; render(); return; }
+        st.teams = res.teams || []; st.folders = res.folders || []; st.loaded = true; st.loadedKey = key;
+        st.selected = {}; st.addedPending = {};
+        render(); restoreScroll();
+      }).catch(function (err) {
+        if (seq !== st.seq) return;
+        st.loading = false; st.clearing = false; st.error = 'Could not load documents: ' + (err.message || err); render();
+      });
+    });
+    return st.loadP;
   }
   function errText(res) {
     var r = res && (res.reason || res.error || res.outcome);
@@ -88,9 +124,17 @@
   function isRoot(f) { return f.folderId && f.folderId === f.rootFolderId; }
 
   // ---- render -----------------------------------------------------------------------------------------------------
+  function modOk(d) {
+    if (!st.mod) return true;
+    var t = d.modified ? Date.parse(d.modified) : NaN;
+    if (isNaN(t)) return false; // no modified time: cannot satisfy an age filter
+    var days = (Date.now() - t) / 86400000;
+    return st.mod === 'old' ? days > 365 : days <= Number(st.mod);
+  }
   function visibleDocs(f) {
     return (f.docs || []).filter(function (d) {
       if (!st.show[d.state]) return false;
+      if (!modOk(d)) return false;
       if (!st.search) return true;
       return (d.docName || '').toLowerCase().indexOf(st.search) >= 0 || String(d.docId || '').toLowerCase() === st.search || (f.path || '').toLowerCase().indexOf(st.search) >= 0;
     });
@@ -99,7 +143,7 @@
     return st.folders.filter(function (f) {
       var n = visibleDocs(f).length;
       if (n) return true;
-      if (st.search) return false;
+      if (st.search || st.mod) return false;
       return f.folderId && !(f.docs || []).length; // an empty/unscanned folder still gets its header with Scan
     });
   }
@@ -122,11 +166,13 @@
     }
     if (st.excludeOk && d.state !== 'excluded' && !pending) acts += '<button class="btn small" data-act="exclude" data-doc="' + key + '" data-team="' + tid + '">Exclude</button>';
     var sel = st.selected[d.docId] != null;
-    var meta = [d.modified ? 'Edited ' + fmtDate(d.modified) : '', st.teams.length > 1 ? teamName(f.teamId) : ''].filter(Boolean).join(' · ');
+    var meta = [d.modified ? 'Edited ' + fmtDate(d.modified) : '', st.teams.length > 1 && st.group !== 'team' ? teamName(f.teamId) : ''].filter(Boolean).join(' · ');
+    var where = f.url ? '<a class="dv-where" href="' + esc(f.url) + '" target="_blank" rel="noopener" title="Open this folder in Drive">' + esc(f.path) + '</a>'
+      : '<span class="dv-where">' + esc(f.path) + '</span>';
     return '<div class="dv-row' + (sel ? ' sel' : '') + '"><input type="checkbox" class="rowsel" data-sel="' + key + '" data-team="' + tid + '"' +
       (sel ? ' checked' : '') + ' aria-label="Select ' + esc(d.docName) + '">' +
       '<div class="dv-title"><a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.docName || '(untitled)') + '</a>' +
-      '<div class="dv-meta">' + esc(meta) + '</div></div>' + pill(d) + '<div class="dv-acts">' + acts + '</div></div>';
+      '<div class="dv-meta">' + esc(meta) + '</div><div class="dv-folderline"><span aria-hidden="true">📁</span> ' + where + '</div></div>' + pill(d) + '<div class="dv-acts">' + acts + '</div></div>';
   }
   function folderHtml(f) {
     var id = f.teamId + '|' + (f.folderId || 'other'), docs = visibleDocs(f), collapsed = !!st.collapsed[id];
@@ -143,6 +189,29 @@
       '<button class="dv-toggle" data-act="toggle" data-fkey="' + esc(id) + '" aria-expanded="' + !collapsed + '" aria-label="Collapse or expand folder">' + (collapsed ? '▸' : '▾') + '</button>' +
       pathHtml + '<span class="sub" style="margin:0">' + docs.length + ' shown</span>' + scan + '</div><div class="dv-rows">' + body + '</div></section>';
   }
+  // Group by Team: a team header over that team's folder sections (each keeps its own Scan).
+  function teamHtml(teamId, fs) {
+    var key = 'team|' + teamId, collapsed = !!st.collapsed[key], n = 0;
+    fs.forEach(function (f) { n += visibleDocs(f).length; });
+    return '<section class="dv-team' + (collapsed ? ' collapsed' : '') + '"><div class="dv-thead">' +
+      '<button class="dv-toggle" data-act="toggle" data-fkey="' + esc(key) + '" aria-expanded="' + !collapsed + '" aria-label="Collapse or expand team">' + (collapsed ? '▸' : '▾') + '</button>' +
+      '<strong>' + esc(teamName(teamId)) + '</strong><span class="sub" style="margin:0">' + n + ' shown</span></div>' +
+      '<div class="dv-tbody">' + fs.map(folderHtml).join('') + '</div></section>';
+  }
+  // Group by None: one flat list, most recently edited first.
+  function flatHtml(fs) {
+    var rows = [];
+    fs.forEach(function (f) { visibleDocs(f).forEach(function (d) { rows.push({ f: f, d: d }); }); });
+    rows.sort(function (a, b) { return String(b.d.modified || '').localeCompare(String(a.d.modified || '')); });
+    return '<section class="dv-folder"><div class="dv-rows">' + rows.map(function (r) { return rowHtml(r.f, r.d); }).join('') + '</div></section>';
+  }
+  function listHtml(folders) {
+    if (st.group === 'none') return flatHtml(folders);
+    if (st.group !== 'team') return folders.map(folderHtml).join('');
+    var order = [], by = {};
+    folders.forEach(function (f) { if (!by[f.teamId]) { by[f.teamId] = []; order.push(f.teamId); } by[f.teamId].push(f); });
+    return order.map(function (t) { return teamHtml(t, by[t]); }).join('');
+  }
   function render() {
     if (!st.built) return;
     el.dvShowBtn.textContent = 'Show: ' + ['tracked:Tracked', 'not_tracked:Not tracked', 'excluded:Excluded']
@@ -151,18 +220,28 @@
     el.dvShowMenu.innerHTML = [['tracked', 'Tracked'], ['not_tracked', 'Not tracked'], ['excluded', 'Excluded']].map(function (p) {
       return '<label><input type="checkbox" data-k="' + p[0] + '"' + (st.show[p[0]] ? ' checked' : '') + '> ' + p[1] + '</label>';
     }).join('');
+    el.dvMod.value = st.mod; el.dvGroup.value = st.group;
     el.dvScanAll.classList.toggle('hidden', !st.scanOk);
     el.dvScanAll.disabled = st.busy || Object.keys(st.scanning).length > 0;
     var folders = visibleFolders();
     if (st.loading) el.dvStatus.textContent = 'Loading documents…';
     else el.dvStatus.textContent = st.error ? '' : (st.loaded ? folders.length + ' folder' + (folders.length === 1 ? '' : 's') : '');
     if (st.error) el.dvList.innerHTML = '<div class="empty">' + esc(st.error) + ' <button class="linkbtn" data-act="retry">Retry</button></div>';
+    else if (st.loading && st.clearing) el.dvList.innerHTML = '<div class="statecard busyph"><h2><span class="busylbl">Loading documents…</span></h2><p><span class="spinner" aria-hidden="true"></span></p></div>';
     else if (st.loading && !st.loaded) el.dvList.innerHTML = '';
     else if (!st.loaded) el.dvList.innerHTML = '<div class="empty">Choose a team to see its documents.</div>';
     else if (!st.folders.length) el.dvList.innerHTML = '<div class="empty"><strong>No documents yet</strong><br>Your teams have no folders you can see here. Ask your team lead to share the team folder with your account.</div>';
-    else if (!folders.length) el.dvList.innerHTML = '<div class="empty"><strong>Nothing matches these filters</strong><br>Change Show or clear the search.</div>';
-    else el.dvList.innerHTML = folders.map(folderHtml).join('');
+    else if (!folders.length) el.dvList.innerHTML = '<div class="empty"><strong>Nothing matches these filters</strong><br>Change Show or Modified, or clear the search.</div>';
+    else el.dvList.innerHTML = listHtml(folders);
     renderBar();
+    SH().reapplyBusy();
+  }
+  function rowsFor(ids) {
+    return function () {
+      return Array.prototype.filter.call(root.querySelectorAll('.dv-row'), function (r) {
+        var c = r.querySelector('input[data-sel]'); return c && ids.indexOf(c.getAttribute('data-sel')) !== -1;
+      });
+    };
   }
   function renderBar() {
     var ids = Object.keys(st.selected), n = ids.length;
@@ -220,12 +299,16 @@
       if (i >= items.length) {
         st.busy = false; st.selected = {};
         st.bulkMsg = added + ' added' + (denied ? ', ' + denied + ' not allowed' : '') + (added ? '. Their items appear after the next sync.' : '');
-        SH().toast(st.bulkMsg); render(); setTimeout(function () { load(true); }, 4000); return;
+        if (denied && !added) SH().toastError(st.bulkMsg); else SH().toast(st.bulkMsg);
+        render(); setTimeout(function () { load(true); }, 4000); return;
       }
       var it = items[i++];
-      SH().postJson({ action: 'team_sync_document', teamId: '', docId: it.docId }).then(function (res) {
-        if (res && res.ok) { added++; st.addedPending[it.docId] = true; } else denied++;
-      }).catch(function () { denied++; }).then(function () { render(); next(); });
+      st.bulkMsg = 'Adding ' + i + ' of ' + items.length + '…'; renderBar();
+      SH().withBusy(rowsFor([it.docId]), 'row', 'Adding…', function () {
+        return SH().postJson({ action: 'team_sync_document', teamId: '', docId: it.docId }).then(function (res) {
+          if (res && res.ok) { added++; st.addedPending[it.docId] = true; } else denied++;
+        }).catch(function () { denied++; });
+      }, { live: false }).then(function () { render(); next(); });
     }
     render(); next();
   }
@@ -248,6 +331,11 @@
   }
   function runExclude(items) {
     st.busy = true; render();
+    return SH().withBusy(rowsFor(items.map(function (i) { return i.docId; })), 'row', 'Excluding…', function () {
+      return new Promise(function (resolve) { runExcludeJobs(items, resolve); });
+    });
+  }
+  function runExcludeJobs(items, resolve) {
     var byTeam = {}; items.forEach(function (i) { (byTeam[i.teamId] = byTeam[i.teamId] || []).push(i.docId); });
     var jobs = [];
     Object.keys(byTeam).forEach(function (t) { for (var k = 0; k < byTeam[t].length; k += 50) jobs.push({ teamId: t, docIds: byTeam[t].slice(k, k + 50) }); });
@@ -257,7 +345,8 @@
         st.busy = false; st.selected = {};
         if (unavailable) { st.excludeOk = false; st.bulkMsg = 'Exclude is not available right now.'; }
         else st.bulkMsg = done + ' excluded' + (refused ? ', ' + refused + ' not allowed' : '') + (removed ? '. ' + removed + ' items removed from Tracker.' : '');
-        SH().toast(st.bulkMsg); render(); load(true); return;
+        if (unavailable || (refused && !done)) SH().toastError(st.bulkMsg); else SH().toast(st.bulkMsg);
+        render(); load(true).then(resolve, resolve); return;
       }
       var job = jobs[j++];
       SH().postJson({ action: 'team_exclude_documents', teamId: job.teamId, docIds: job.docIds }).then(function (res) {
@@ -287,7 +376,7 @@
     function step() {
       var p = { action: 'team_scan_folder', teamId: teamId, folderId: folderId };
       if (runStartedAt) p.runStartedAt = runStartedAt;
-      return SH().postJson(p).then(function (res) {
+      return SH().postJson(p, { background: true }).then(function (res) {
         if (!res || res.ok === false) {
           var r = res && (res.reason || res.error);
           st.scanMsg[id] = r === 'forbidden' ? 'Scan not allowed' : 'Scan failed';
@@ -302,8 +391,13 @@
         if (!res.complete) st.scanMsg[id] = 'Scan incomplete, try again';
       });
     }
-    return step().catch(function (err) { st.scanMsg[id] = 'Scan failed: ' + (err.message || err); })
-      .then(function () { delete st.scanning[id]; if (st.scanMsg[id] === '') delete st.scanMsg[id]; render(); });
+    var section = function () {
+      return Array.prototype.filter.call(root.querySelectorAll('.dv-folder[data-fkey]'), function (x) { return x.getAttribute('data-fkey') === id; });
+    };
+    return SH().withBusy(section, 'aria', 'Scanning…', function () {
+      return step().catch(function (err) { st.scanMsg[id] = 'Scan failed: ' + (err.message || err); })
+        .then(function () { delete st.scanning[id]; if (st.scanMsg[id] === '') delete st.scanMsg[id]; render(); });
+    });
   }
   function scanAllShown() {
     var seen = {}, roots = visibleFolders().filter(function (f) {

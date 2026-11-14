@@ -1,6 +1,8 @@
 /* NT-2wr2.15: Tracker Documents view. Scoped under #documentsView; reuses index.html tokens and .btn/.linkbtn/.tag. */
 #documentsView .dv-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
 #documentsView .dv-toolbar input[type=search]{flex:1 1 200px;min-width:140px;border:1px solid var(--line);border-radius:9px;padding:6px 10px;font:inherit;background:#fff}
+#documentsView .dv-sel{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted);white-space:nowrap}
+#documentsView .dv-sel select{border:1px solid var(--line);border-radius:9px;padding:5px 8px;font:inherit;color:var(--text);background:#fff}
 #documentsView .dv-show{position:relative}
 #documentsView .dv-showmenu{position:absolute;z-index:20;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--line);
   border-radius:12px;box-shadow:var(--shadow);padding:8px 12px;display:flex;flex-direction:column;gap:6px;white-space:nowrap}
@@ -20,6 +22,13 @@
 #documentsView .dv-title a{color:var(--text);text-decoration:none;word-break:break-word}
 #documentsView .dv-title a:hover{color:var(--blue);text-decoration:underline}
 #documentsView .dv-meta{font-size:12px;color:var(--muted);margin-top:2px}
+#documentsView .dv-folderline{font-size:12px;color:var(--muted);margin-top:2px;word-break:break-word}
+#documentsView a.dv-where{color:var(--muted);text-decoration:none}
+#documentsView a.dv-where:hover{color:var(--blue);text-decoration:underline}
+#documentsView .dv-team{margin:0 0 14px}
+#documentsView .dv-thead{display:flex;align-items:center;gap:10px;padding:4px 2px 8px;font-size:15px}
+#documentsView .dv-team.collapsed .dv-tbody{display:none}
+#documentsView .dv-tbody .dv-folder{margin-left:10px}
 #documentsView .dv-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;border:1px solid var(--line);white-space:nowrap}
 #documentsView .dv-pill.tracked{background:var(--green2);border-color:#a7f3d0;color:#065f46}
 #documentsView .dv-pill.not_tracked{background:#f3f4f6;color:#374151}
@@ -37,3 +46,8 @@
   #documentsView .dv-acts{flex:1 0 100%;padding-left:28px}
   #documentsView .dv-scan{margin-left:0;flex:1 0 100%}
 }
+/* NT-2wr2.20: busy state (classes come from index.html's withBusy). The row label replaces the pill text in place. */
+#documentsView .dv-row.is-updating{opacity:.75}
+#documentsView .dv-row.is-updating .dv-acts .btn{opacity:.5;pointer-events:none}
+#documentsView .dv-pill.is-updating{background:var(--blue2);border-color:var(--line);color:#1e3a8a}
+#documentsView .dv-folder[aria-busy="true"] .dv-fhead{background:var(--blue2)}
