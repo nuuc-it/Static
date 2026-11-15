@@ -56,13 +56,15 @@
         '<label class="dv-sel">Group by <select id="dvGroup"></select></label>' +
         '<input type="search" id="dvSearch" placeholder="Search documents or folders" aria-label="Search documents">' +
         '<button class="btn" id="dvScanAll" type="button">Scan all shown</button>' +
+        '<button class="btn" id="dvExpandAll" type="button">Expand all</button>' +
+        '<button class="btn" id="dvCollapseAll" type="button">Collapse all</button>' +
       '</div>' +
       '<div id="dvStatus" class="sub"></div>' +
       '<div id="dvProg" class="dv-prog hidden" role="status"></div>' +
       '<div id="dvList"></div>' +
       '<div class="bulkhost"><div class="bulkbar hidden" id="dvBar"></div><div class="bulkmsg hidden" id="dvMsg"></div></div>' +
       '<div id="dvModal"></div>';
-    ['dvTeams', 'dvShowBtn', 'dvShowMenu', 'dvMod', 'dvGroup', 'dvSearch', 'dvScanAll', 'dvStatus', 'dvProg', 'dvList', 'dvBar', 'dvMsg', 'dvModal']
+    ['dvTeams', 'dvShowBtn', 'dvShowMenu', 'dvMod', 'dvGroup', 'dvSearch', 'dvScanAll', 'dvExpandAll', 'dvCollapseAll', 'dvStatus', 'dvProg', 'dvList', 'dvBar', 'dvMsg', 'dvModal']
       .forEach(function (id) { el[id] = document.getElementById(id); });
     try { SH().mountTeamsPicker(el.dvTeams); } catch (e) {}
     try { SH().onTeamsChange(function () { if (!root.classList.contains('hidden')) load(); }); } catch (e) {}
@@ -85,6 +87,8 @@
     el.dvGroup.addEventListener('change', function () { st.group = el.dvGroup.value; persist(); render(); });
     el.dvSearch.addEventListener('input', function () { st.search = el.dvSearch.value.trim().toLowerCase(); render(); });
     el.dvScanAll.addEventListener('click', scanAllShown);
+    el.dvExpandAll.addEventListener('click', function () { st.collapsed = {}; persist(); render(); });
+    el.dvCollapseAll.addEventListener('click', collapseAll);
     el.dvList.addEventListener('click', onListClick);
     el.dvProg.addEventListener('click', function (ev) { if (ev.target.closest('[data-act="autostop"]')) stopAuto(); });
     el.dvList.addEventListener('change', onListChange);
@@ -110,7 +114,10 @@
         st.loading = false; st.clearing = false;
         if (!res || res.ok === false) { st.error = errText(res); st.folders = []; st.loaded = true; st.loadedKey = key; render(); return; }
         st.teams = res.teams || []; st.folders = res.folders || []; st.loaded = true; st.loadedKey = key;
-        st.selected = {}; st.addedPending = {};
+        // A reload of the same team set keeps selections whose documents are still listed (a late background load must not wipe a click).
+        var keep = {};
+        if (same) { var have = allDocs(); Object.keys(st.selected).forEach(function (i) { if (have[i]) keep[i] = st.selected[i]; }); }
+        st.selected = keep; st.addedPending = {};
         render(); restoreScroll();
         startAuto(seq);
       }).catch(function (err) {
@@ -195,6 +202,36 @@
       '<div class="dv-title"><a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.docName || '(untitled)') + '</a>' +
       '<div class="dv-meta">' + esc(meta) + '</div>' + folderLine + '</div>' + pill(d) + '<div class="dv-acts">' + acts + '</div></div>';
   }
+  // Expand all / Collapse all act on what is rendered: every visible folder section and, grouped by team, each team section.
+  function collapseAll() {
+    visibleFolders().forEach(function (f) { st.collapsed[f.teamId + '|' + (f.folderId || 'other')] = true; if (st.group === 'team') st.collapsed['team|' + f.teamId] = true; });
+    persist(); render();
+  }
+  function folderKey(f) { return f.teamId + '|' + (f.folderId || 'other'); }
+  function folderByKey(key) { return st.folders.filter(function (f) { return folderKey(f) === key; })[0]; }
+  // Header summary counts every state but excluded (excluded is added only when it is shown and not empty).
+  function summaryHtml(f, shown) {
+    var t = 0, u = 0, x = 0;
+    (f.docs || []).forEach(function (d) { if (d.state === 'tracked') t++; else if (d.state === 'excluded') x++; else u++; });
+    var txt = t + ' tracked · ' + u + ' not tracked' + (x && st.show.excluded ? ' · ' + x + ' excluded' : '');
+    return '<span class="sub dv-sum" style="margin:0" title="' + shown + ' shown">' + txt + '</span>';
+  }
+  // Folder header checkbox state: checked when every visible row is selected, indeterminate when only some are.
+  function syncFolderChecks() {
+    Array.prototype.forEach.call(root.querySelectorAll('input[data-fsel]'), function (c) {
+      var f = folderByKey(c.getAttribute('data-fsel')); if (!f) return;
+      var docs = visibleDocs(f), n = docs.filter(function (d) { return st.selected[d.docId] != null; }).length;
+      c.checked = n > 0 && n === docs.length; c.indeterminate = n > 0 && n < docs.length;
+    });
+  }
+  function onFolderSelect(c) {
+    var f = folderByKey(c.getAttribute('data-fsel')); if (!f) return;
+    visibleDocs(f).forEach(function (d) { if (c.checked) st.selected[d.docId] = f.teamId; else delete st.selected[d.docId]; });
+    Array.prototype.forEach.call(c.closest('.dv-folder').querySelectorAll('input[data-sel]'), function (r) {
+      r.checked = c.checked; var row = r.closest('.dv-row'); if (row) row.classList.toggle('sel', c.checked);
+    });
+    syncFolderChecks(); renderBar();
+  }
   function folderHtml(f) {
     var id = f.teamId + '|' + (f.folderId || 'other'), docs = visibleDocs(f), collapsed = !!st.collapsed[id];
     var pathHtml = folderLink(f, 'dv-path');
@@ -206,12 +243,20 @@
       scan = '<span class="dv-scan"><span>' + esc(st.scanMsg[id] || (queued ? 'Listing…' : ago(f.scannedAt))) + '</span>' +
         (st.scanOk ? '<button class="btn small" data-act="scan" data-fid="' + esc(f.folderId) + '" data-team="' + esc(f.teamId) + '"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Scanning…' : 'Scan') + '</button>' : '') + '</span>';
     }
+    var fsel = '', fex = '';
+    if (docs.length) {
+      fsel = '<input type="checkbox" class="foldersel" data-fsel="' + esc(id) + '" aria-label="Select all in ' + esc(folderLabel(f)) + '" title="Select all listed documents in this folder">';
+      var open = docs.filter(function (d) { return d.state !== 'excluded'; }).length;
+      if (st.excludeOk && open) fex = '<button class="btn small" data-act="fexclude" data-fkey="' + esc(id) + '" aria-label="Exclude the ' + open + ' listed document' + (open === 1 ? '' : 's') + ' in ' + esc(folderLabel(f)) + '"' +
+        ' title="Excludes the ' + open + ' document' + (open === 1 ? '' : 's') + ' currently listed in this folder. Documents added to it later show as Not tracked again.">Exclude listed (' + open + ')</button>';
+    }
+    var tcount = (f.docs || []).filter(function (d) { return d.state === 'tracked'; }).length;
     var body = docs.length ? docs.map(function (d) { return rowHtml(f, d); }).join('')
       : '<div class="dv-empty">' + (queued ? 'Listing…' : (f.scannedAt && !(f.docs || []).length ? 'No Google Docs in this folder'
         : (f.scannedAt || !f.folderId ? 'No documents match the Show filter.' : 'Not scanned yet. Scan to list its documents.'))) + '</div>';
-    return '<section class="dv-folder' + (collapsed ? ' collapsed' : '') + '" data-fkey="' + esc(id) + '"><div class="dv-fhead">' +
+    return '<section class="dv-folder' + (collapsed ? ' collapsed' : '') + (tcount ? '' : ' dv-untracked') + '" data-fkey="' + esc(id) + '"><div class="dv-fhead">' +
       '<button class="dv-toggle" data-act="toggle" data-fkey="' + esc(id) + '" aria-expanded="' + !collapsed + '" aria-label="Collapse or expand folder">' + (collapsed ? '▸' : '▾') + '</button>' +
-      pathHtml + chip + '<span class="sub" style="margin:0">' + docs.length + ' shown</span>' + scan + '</div><div class="dv-rows">' + body + '</div></section>';
+      fsel + pathHtml + chip + summaryHtml(f, docs.length) + fex + scan + '</div><div class="dv-rows">' + body + '</div></section>';
   }
   // Group by Team: a team header over that team's folder sections (each keeps its own Scan).
   function teamHtml(teamId, fs) {
@@ -259,6 +304,7 @@
     else el.dvList.innerHTML = listHtml(folders);
     renderProg();
     renderBar();
+    syncFolderChecks();
     SH().reapplyBusy();
   }
   function rowsFor(ids) {
@@ -290,10 +336,11 @@
 
   // ---- events -----------------------------------------------------------------------------------------------------
   function onListChange(ev) {
+    if (ev.target.hasAttribute('data-fsel')) { onFolderSelect(ev.target); return; }
     var id = ev.target.getAttribute('data-sel'); if (!id) return;
     if (ev.target.checked) st.selected[id] = ev.target.getAttribute('data-team'); else delete st.selected[id];
     var row = ev.target.closest('.dv-row'); if (row) row.classList.toggle('sel', ev.target.checked);
-    renderBar();
+    renderBar(); syncFolderChecks();
   }
   function onListClick(ev) {
     var b = ev.target.closest('[data-act]'); if (!b) return;
@@ -305,6 +352,10 @@
     else if (act === 'sync') syncDocs([{ docId: doc, teamId: team }]);
     else if (act === 'add') addDocs([{ docId: doc, teamId: team }]);
     else if (act === 'exclude') excludeDocs([{ docId: doc, teamId: team }]);
+    else if (act === 'fexclude') {
+      var ff = folderByKey(b.getAttribute('data-fkey')); if (!ff) return;
+      excludeDocs(visibleDocs(ff).filter(function (d) { return d.state !== 'excluded'; }).map(function (d) { return { docId: d.docId, teamId: ff.teamId }; }));
+    }
   }
   function onBarClick(ev) {
     var b = ev.target.closest('[data-bar]'); if (!b) return; var a = b.getAttribute('data-bar');

@@ -56,3 +56,7 @@
 /* NT-2wr2.29: team chip on folder headers, auto-scan progress line */
 #documentsView .dv-chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;background:var(--blue2);border:1px solid var(--line);color:var(--text);white-space:nowrap}
 #documentsView .dv-prog{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 2px 10px;font-size:13px;color:var(--muted)}
+/* NT-o96r: folder header select-all, summary, Exclude listed; folders with nothing tracked read muted */
+#documentsView .dv-fhead .foldersel{margin:0}
+#documentsView .dv-untracked .dv-fhead .dv-sum,#documentsView .dv-untracked .dv-fhead .dv-path{color:var(--muted)}
+#documentsView .dv-untracked .dv-fhead{background:#fcfcfd}

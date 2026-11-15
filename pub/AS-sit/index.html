@@ -587,7 +587,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.16";
+var STATIC_BUILD_VERSION_ = "0.1.28.19";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -831,6 +831,7 @@ function saveCachedAuth(){
 
 function clearCachedAuth(){
   localStorage.removeItem(AUTH_STORAGE_KEY);
+  try { localStorage.removeItem('nuucProfile.v1' + STORAGE_SCOPE_); } catch (e) {}
 }
 
 // ---- NT-8al: last-data cache (stale-while-revalidate) --------------------
@@ -1094,18 +1095,34 @@ function showAppShell(subMsg){
 
 // ---- sign-in -----------------------------------------------------------
 // NT-2wr2.25: display-only profile (photo, name) from the Google ID token's own claims (no extra scope). Kept in
-// sessionStorage only, never sent anywhere; the server remains the authority for identity and access.
+// sessionStorage plus a durable localStorage copy keyed to the user's sub (a resumed cached session has no Google
+// sign-in, so sessionStorage alone is empty there); never sent anywhere; the server remains the authority for identity and access.
 const PROFILE_KEY_ = 'nuucProfile' + STORAGE_SCOPE_;
+const PROFILE_LOCAL_KEY_ = 'nuucProfile.v1' + STORAGE_SCOPE_; // durable copy {picture,name,sub}; used only when sub === state.sub
 function rememberProfile_(idToken){
   try {
     const seg = String(idToken).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
     const p = JSON.parse(decodeURIComponent(escape(atob(seg))));
     const pic = typeof p.picture === 'string' && /^https:\/\//.test(p.picture) ? p.picture : '';
-    sessionStorage.setItem(PROFILE_KEY_, JSON.stringify({ picture: pic, name: typeof p.name === 'string' ? p.name : '' }));
+    const name = typeof p.name === 'string' ? p.name : '';
+    sessionStorage.setItem(PROFILE_KEY_, JSON.stringify({ picture: pic, name }));
+    if (typeof p.sub === 'string' && p.sub) localStorage.setItem(PROFILE_LOCAL_KEY_, JSON.stringify({ picture: pic, name, sub: p.sub }));
   } catch (e) { /* no photo: initials */ }
 }
 function readProfile_(){
-  try { return JSON.parse(sessionStorage.getItem(PROFILE_KEY_) || 'null') || {}; } catch (e) { return {}; }
+  try {
+    const s = JSON.parse(sessionStorage.getItem(PROFILE_KEY_) || 'null');
+    if (s) return s;
+  } catch (e) { /* fall through */ }
+  try {
+    const d = JSON.parse(localStorage.getItem(PROFILE_LOCAL_KEY_) || 'null');
+    if (d && state.sub && d.sub === state.sub) return d;
+  } catch (e) { /* none */ }
+  return {};
+}
+function clearProfile_(){
+  try { sessionStorage.removeItem(PROFILE_KEY_); } catch (e) {}
+  try { localStorage.removeItem(PROFILE_LOCAL_KEY_); } catch (e) {}
 }
 function renderAccountBtn_(){
   const btn = $('accountBtn'), prof = readProfile_(), letter = (state.email || '?').charAt(0);
@@ -1163,7 +1180,7 @@ function signOut(){
   state.teams = []; state.teamId = null; state.tier = 'NONE'; state.rows = [];
   state.collapsed = {};
   clearCachedAuth();
-  try { sessionStorage.removeItem(PROFILE_KEY_); } catch (e) {}
+  clearProfile_();
   $('appView').classList.add('hidden');
   $('launchView').classList.add('hidden');
   $('signinView').classList.remove('hidden');
