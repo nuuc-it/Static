@@ -4,6 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Tracker — NUUC Action Sheet</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/branding/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="assets/branding/favicon-16.png" />
+<link rel="icon" href="assets/branding/favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="assets/branding/apple-touch-icon-180.png" />
+<meta name="theme-color" content="#1E3A5F" />
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="stylesheet" href="documents.css">
 <style>
@@ -52,6 +57,8 @@
   .appbar{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);
           border-radius:16px;box-shadow:var(--shadow);padding:10px 16px;margin-bottom:12px;position:relative}
   .appbar h1{font-size:19px;margin:0;white-space:nowrap}
+  .brand-logo{width:40px;height:40px;flex:none;display:block}  /* transparent PNG: reads on light and dark panels */
+  .signin .brand-logo{margin-bottom:8px}
   .viewswitch{display:flex;gap:4px;margin-right:auto}
   .viewbtn{border:0;background:none;padding:6px 12px;border-radius:9px;cursor:pointer;font:inherit;color:var(--muted)}
   .viewbtn[aria-current="page"]{background:var(--blue2);color:#1e3a8a;font-weight:600}
@@ -354,6 +361,7 @@
 
   <!-- ============ Signed-out view ============ -->
   <div id="signinView" class="top signin">
+    <img class="brand-logo" src="assets/branding/header-48.png" srcset="assets/branding/header-48.png 1x, assets/branding/header-96.png 2x" width="40" height="40" alt="Action Tracking logo" />
     <h1>Tracker</h1>
     <p>Sign in with the Google account your team lead added to a NUUC team folder.
        Your identity is verified by NUUC-Dispatch; this page keeps you signed in for up to
@@ -382,6 +390,7 @@
     <!-- NT-2wr2.1: app bar. View switch (desktop) and tab bar (phone) share data-view; the account menu holds the
          identity controls. All view/menu state is UX only: the server decides access on every call. -->
     <header class="appbar" id="appBar">
+      <img class="brand-logo" src="assets/branding/header-48.png" srcset="assets/branding/header-48.png 1x, assets/branding/header-96.png 2x" width="40" height="40" alt="Action Tracking logo" />
       <h1>Tracker</h1>
       <nav class="viewswitch" id="viewSwitch" aria-label="Views">
         <button class="viewbtn" type="button" data-view="items" title="Action items in your teams' documents">Items</button>
@@ -587,7 +596,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.20";
+var STATIC_BUILD_VERSION_ = "0.1.28.21";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
