@@ -596,7 +596,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.21";
+var STATIC_BUILD_VERSION_ = "0.1.28.22";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -832,7 +832,11 @@ const AUTH_STORAGE_KEY = 'nuucAsAuth.v1' + STORAGE_SCOPE_; // NT-8oa: per audien
 const AUTH_RENEW_SKEW_SECONDS = 300; // treat as expired 5min early to avoid edge-of-expiry races
 
 function _decodeJwtPayload(jwt){
-  try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
+  // UTF-8 aware (profile names). Do NOT use window.escape() here: this page defines its own HTML escape() (NT-z3fo).
+  try {
+    const bin = atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'));
+    return JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))));
+  }
   catch (e) { return null; }
 }
 
@@ -1116,8 +1120,7 @@ const PROFILE_KEY_ = 'nuucProfile' + STORAGE_SCOPE_;
 const PROFILE_LOCAL_KEY_ = 'nuucProfile.v1' + STORAGE_SCOPE_; // durable copy {picture,name,sub}; used only when sub === state.sub
 function rememberProfile_(idToken){
   try {
-    const seg = String(idToken).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const p = JSON.parse(decodeURIComponent(escape(atob(seg))));
+    const p = _decodeJwtPayload(String(idToken)) || {};
     const pic = typeof p.picture === 'string' && /^https:\/\//.test(p.picture) ? p.picture : '';
     const name = typeof p.name === 'string' ? p.name : '';
     sessionStorage.setItem(PROFILE_KEY_, JSON.stringify({ picture: pic, name }));
