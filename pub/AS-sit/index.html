@@ -587,7 +587,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.28.19";
+var STATIC_BUILD_VERSION_ = "0.1.28.20";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -704,7 +704,12 @@ const state = {
                         // used to gate each row/doc-group's Sync/Edit controls per its
                         // OWN team rather than one blended state.tier (gts-zm8w)
   status: 'open', scope: 'all', windowDays: 60, age: '',
-  teamIds: [],         // NT-2wr2.13: Teams filter, shared by Items and Documents; [] = every team the person is on
+  teamIds: [],         // NT-2wr2.13: Teams filter, shared by Items and Documents; [] = every option (incl. No team) unless teamsEmpty
+                       // NT-tuqn: entries are team ids plus the token 'none' (= No team)
+  teamsEmpty: false,   // NT-tuqn: nothing selected is its own state (no list call, not persisted)
+  lastTeamIds: [],     // NT-tuqn: the last non-empty selection, what prefs and the URL keep while teamsEmpty
+  teamsLoaded: false,  // NT-tuqn: list_my_teams has answered (an empty selectedTeamIds() no longer means 'not loaded')
+  noTeamCount: 0, noTeamPartial: false, noTeamRefetched: false, // NT-tuqn: server report of visible no-team items
   people: [],          // NT-2wr2.13: People filter: 'me' and/or lower-cased emails; [] = Anyone
   group: '',           // NT-2wr2.13: ?group=team|document|person|none (grouping control and rendering: NT-2wr2.14); '' = view default
   assignees: [],       // res.assignees feeds the People picker
@@ -739,6 +744,7 @@ const COLLAPSE_KEY_ = 'nuuts.tracker.collapsed.v2'; // NT-ol4k: declared with th
 let collapseLoaded_ = false; // NT-2wr2.20: declared before the first (saved-data) render; it was a TDZ error at its old place further down
 const $ = (id) => document.getElementById(id);
 const listEl = $('list'), toastEl = $('toast'), menuEl = $('statusMenu');
+const NO_TEAM_TOKEN_ = 'none'; // NT-tuqn: the No team entry in teamIds, ?teams= and remembered prefs
 const multiPickers_ = [], teamListeners_ = []; // NT-2wr2.13: Teams/People pickers; Documents-view subscribers
 
 // ---- query-string routing (gts-79dw.4.24, extended by gts-79dw.4.23/Unit D) --
@@ -1205,11 +1211,12 @@ function readPrefs_(sub){
   try { const p = JSON.parse(localStorage.getItem(PREFS_KEY_ + '.' + sub) || 'null'); return p && typeof p === 'object' ? p : null; }
   catch (e) { return null; }
 }
+function persistedTeamIds_(){ return state.teamsEmpty ? state.lastTeamIds : state.teamIds; } // NT-tuqn: an empty selection is not persisted
 function writePrefs_(){
   if (!state.noLink || !state.sub) return;
   try {
     localStorage.setItem(PREFS_KEY_ + '.' + state.sub, JSON.stringify({
-      teamIds: state.teamIds, people: state.people, group: state.group, status: state.statusTouched ? state.status : '',
+      teamIds: persistedTeamIds_(), people: state.people, group: state.group, status: state.statusTouched ? state.status : '',
       age: state.age, windowDays: state.windowDays }));
   } catch (e) { /* storage unavailable: nothing remembered */ }
 }
@@ -1274,7 +1281,7 @@ function loadTeams_(opts){
   // out to be in the returned list (the server authorizes each call independently, so a wrong guess
   // is simply discarded). The guess is read from the cache record, never trusted for access.
   const cached = readPortalCache_();
-  const guessTeamId = state.teamIds.length === 1 ? state.teamIds[0]
+  const guessTeamId = state.teamsEmpty ? '' : realTeamIds_().length === 1 && state.teamIds.length === 1 ? state.teamIds[0]
     : (cached && cached.teams && cached.teams.length === 1 ? cached.teamId : ALL_TEAMS_ID);
   let prefetch = null;
   if (guessTeamId && !refreshAccess) {
@@ -1305,6 +1312,7 @@ function loadTeams_(opts){
         clearPortalCache_(state.sub);
       }
       state.teams = (res && res.teams) || [];
+      state.teamsLoaded = true;
       $('launchView').classList.add('hidden');
       $('signinView').classList.add('hidden');
       $('appView').classList.remove('hidden');
@@ -1314,7 +1322,7 @@ function loadTeams_(opts){
         // NT-o1zu.5 AC2: a user with no team can still open a document by link (teamId '' list call).
         clearPortalCache_(state.sub);
         setStale_(false);
-        state.teamId = ''; state.teamIds = [];
+        state.teamId = ''; state.teamIds = []; state.teamsEmpty = false;
         $('noTeamsNotice').classList.add('hidden');
         $('listWrap').classList.remove('hidden');
         $('filtersRow').classList.remove('hidden');
@@ -1322,15 +1330,31 @@ function loadTeams_(opts){
         return refreshActions();
       }
       if (state.teams.length === 0) {
-        clearPortalCache_(state.sub);
-        setStale_(false);
-        state.rows = []; state.teamId = null; state.tier = 'NONE';
-        renderNoTeamsCard_();
-        $('listWrap').classList.add('hidden');
-        $('filtersRow').classList.add('hidden');
-        $('countLabel').textContent = '';
-        setBusy(false);
-        return;
+        // NT-tuqn: a person on no team may still see no-team documents; ask before showing the no-teams card.
+        state.teamIds = []; state.teamsEmpty = false; state.teamId = ALL_TEAMS_ID;
+        const zp = listPayload_(ALL_TEAMS_ID), zkey = JSON.stringify(zp);
+        const zreq = prefetch && prefetch.key === zkey ? prefetch.p : postJson(GACTIONSHEET_URL, { action: 'list_team_actions', ...zp }, { background: true }).then(res => ({ res }), () => ({ res: null }));
+        return zreq.then(r => {
+          if (seq0 !== state.listSeq) return;
+          const zr = r.res;
+          if (zr && zr.ok !== false && ((zr.actions || []).length || Number(zr.noTeamCount) > 0 || zr.noTeamPartial)) {
+            $('noTeamsNotice').classList.add('hidden');
+            $('listWrap').classList.remove('hidden');
+            $('filtersRow').classList.remove('hidden');
+            state.rowsKey = zkey;
+            applyActions_(zr);
+            setBusy(false);
+            return;
+          }
+          clearPortalCache_(state.sub);
+          setStale_(false);
+          state.rows = []; state.teamId = null; state.tier = 'NONE';
+          renderNoTeamsCard_();
+          $('listWrap').classList.add('hidden');
+          $('filtersRow').classList.add('hidden');
+          $('countLabel').textContent = '';
+          setBusy(false);
+        });
       }
       $('noTeamsNotice').classList.add('hidden');
       $('listWrap').classList.remove('hidden');
@@ -1338,8 +1362,10 @@ function loadTeams_(opts){
 
       // ?teams= / ?team= and remembered Teams apply only to teams the caller actually has (list_my_teams already
       // scoped this to the caller; the server re-checks every call). Selecting every team means no subset.
-      state.teamIds = state.teamIds.filter(id => state.teams.some(t => t.teamId === id));
-      if (state.teamIds.length >= state.teams.length) state.teamIds = [];
+      // NT-tuqn: the 'none' (No team) token survives this cleanup; it is judged once the server reports no-team items.
+      state.teamIds = state.teamIds.filter(id => id === NO_TEAM_TOKEN_ || state.teams.some(t => t.teamId === id));
+      if (state.teamIds.indexOf(NO_TEAM_TOKEN_) !== -1 && state.teams.every(t => state.teamIds.indexOf(t.teamId) !== -1)) state.teamIds = []; // every option
+      state.lastTeamIds = state.teamIds.slice();
       state.teamId = teamScope_();
       setTeamOptions_();
 
@@ -1378,9 +1404,20 @@ $('refreshAccessBtn').addEventListener('click', () => {
 // ---- action listing (§12.1) --------------------------------------------
 // NT-2wr2.13: the team the request names. One team (the only one, or exactly one selected) is asked for by id; any
 // other selection is the 'ALL' aggregate, narrowed by teamIds (S1, NT-2wr2.9) and again client-side.
+function realTeamIds_(){ return state.teamIds.filter(id => id !== NO_TEAM_TOKEN_); }
+function noTeamShown_(){ return state.noTeamCount > 0 || state.noTeamPartial; }
+// Every option the picker offers, as values; the whole list is the default 'all' selection.
+function teamOptionValues_(){ return state.teams.map(t => t.teamId).concat(noTeamShown_() ? [NO_TEAM_TOKEN_] : []); }
+// Selected values as the picker draws them: all = every option, empty = none, otherwise the subset.
+function selectedTokens_(){
+  if (state.teamsEmpty) return [];
+  return state.teamIds.length ? state.teamIds.slice() : teamOptionValues_();
+}
+// Whether the list request asks for no-team items: the default (all) does, a subset only when it names No team.
+function wantsNoTeam_(){ return !state.teamsEmpty && (!state.teamIds.length || state.teamIds.indexOf(NO_TEAM_TOKEN_) !== -1); }
 function teamScope_(){
-  if (state.teamIds.length === 1) return state.teamIds[0];
-  if (state.teams.length === 1) return state.teams[0].teamId;
+  const real = realTeamIds_();
+  if (state.teamIds.length === 1 && real.length === 1) return real[0];
   return ALL_TEAMS_ID;
 }
 function peopleEmails_(){ return state.people.filter(x => x !== 'me' && x !== 'unassigned'); }
@@ -1393,7 +1430,12 @@ function listPayload_(teamId){
     statusFilter: state.status,
     scope: 'all'
   };
-  if (teamId === ALL_TEAMS_ID && state.teamIds.length > 1) payload.teamIds = state.teamIds;
+  if (teamId === ALL_TEAMS_ID) { // NT-tuqn: a subset names its real teams; No team is its own flag
+    if (state.teamIds.length) {
+      payload.teamIds = realTeamIds_();
+      if (state.teamIds.indexOf(NO_TEAM_TOKEN_) !== -1) { payload.includeNoTeam = true; if (!payload.teamIds.length) payload.noTeamOnly = true; }
+    } else payload.includeNoTeam = true;
+  }
   // People: Me alone is the existing scope 'mine'; one other person the existing assigneeEmail; several people (or
   // Me with others) the S1 fields assigneeEmails + includeMe. A server without S1 ignores them and answers with
   // everyone; applyActions_ then filters the rows itself.
@@ -1410,7 +1452,7 @@ function listPayload_(teamId){
   // NT-56r AC2: an age bucket replaces the closed-window default, so windowDays is not sent with it.
   if (state.docId) { // NT-71y.2 S1: the server ignores the age window for a document
     payload.docId = state.docId;
-    delete payload.teamIds;
+    delete payload.teamIds; delete payload.includeNoTeam; delete payload.noTeamOnly;
     return payload;
   }
   if (state.age) payload.ageBucket = state.age;
@@ -1424,7 +1466,9 @@ function rowHasPerson_(r, emails){
 }
 function narrowRows_(rows, res){
   if (state.docId) return rows;
-  if (state.teamIds.length > 1 && !Array.isArray(res.teamIds)) rows = rows.filter(r => state.teamIds.indexOf(r.team_id) !== -1);
+  if (state.teamIds.length && state.teamId === ALL_TEAMS_ID && !Array.isArray(res.teamIds)) { // NT-tuqn: a teamless row (team_id '') belongs to No team
+    rows = rows.filter(r => state.teamIds.indexOf(r.team_id || NO_TEAM_TOKEN_) !== -1);
+  }
   const emails = peopleEmails_();
   const un = peopleHasUnassigned_();
   const multi = !peopleMeOnly_() && !(emails.length === 1 && state.people.length === 1) && state.people.length;
@@ -1436,10 +1480,23 @@ function narrowRows_(rows, res){
   return rows;
 }
 
+// NT-tuqn: the server's report of visible no-team items drives the No team option; a partial answer is refetched once.
+function noteNoTeam_(res){
+  if (!res || res.ok === false || !('noTeamCount' in res || 'noTeamPartial' in res)) return;
+  state.noTeamCount = Number(res.noTeamCount) || 0;
+  state.noTeamPartial = !!res.noTeamPartial;
+  if (state.noTeamPartial && !state.noTeamRefetched && !state.docId && !state.teamsEmpty) {
+    state.noTeamRefetched = true;
+    setTimeout(() => { if (state.noTeamPartial && !state.teamsEmpty) refreshActions({ quiet: true }); }, 0);
+  }
+}
 // Applies a successful list_team_actions response: fresh data replaces any cached view and re-enables controls.
 function applyActions_(res){
   setStale_(false);
   state.rows = narrowRows_(res.actions || [], res);
+  // NT-tuqn: a one-team user's default request is the aggregate; a row with no team_id key at all belongs to that team.
+  if (state.teams.length === 1 && !state.docId) state.rows.forEach(r => { if (r.team_id === undefined) r.team_id = state.teams[0].teamId; });
+  noteNoTeam_(res);
   if (state.defaultPending && !state.docId) { // E1: confirm the People = Me default, or fall back to Anyone grouped by document
     state.defaultPending = false;
     if (res.ok !== false && !state.rows.some(isOpenRow_)) {
@@ -1461,6 +1518,8 @@ function applyActions_(res){
   // tier rather than the single blended state.tier above.
   state.teamTiers = {};
   (res.teams || []).forEach(t => { state.teamTiers[t.teamId] = t.tier; });
+  // NT-tuqn: a single-team user's default (all) request is the aggregate; a reply without `teams` is that one team's tier.
+  if (!Array.isArray(res.teams) && state.teams.length === 1) state.teamTiers[state.teams[0].teamId] = state.tier;
   applyDocFilterResponse_(res);
   render();
   syncDocControls_();
@@ -1505,7 +1564,7 @@ function applyDocFilterResponse_(res){
   state.docTeam = state.docDenied ? '' : String(res.teamId || ''); // NT-2wr2.23: the document's own team; '' = teamless
   if (res.teamId && state.teams.some(t => t.teamId === res.teamId)) {
     state.teamId = res.teamId; // removing the Document chip widens to this team
-    state.teamIds = state.teams.length > 1 ? [res.teamId] : [];
+    state.teamIds = state.teams.length > 1 ? [res.teamId] : []; state.teamsEmpty = false;
     renderPickers_();
   }
   if (state.focusPending) { // first fresh response only (cached views never reach here)
@@ -1558,7 +1617,7 @@ function openDoc_(ref, name, teamId){
   if (!ref) return;
   if (ref !== state.docId) setDocFilter_(ref, name || '');
   if (teamId && state.teams.some(t => t.teamId === teamId)) {
-    state.teamIds = state.teams.length > 1 ? [teamId] : []; state.teamId = teamScope_();
+    state.teamIds = state.teams.length > 1 ? [teamId] : []; state.teamsEmpty = false; state.teamId = teamScope_();
   }
   state.people = []; state.group = 'document';
   state.statusTouched = false; state.status = viewDefaultStatus_();
@@ -1594,6 +1653,12 @@ function listMode_(key){
   return key === state.rowsKey ? 'dim' : 'clear';
 }
 function refreshActions(opts){
+  if (state.teamsEmpty && !state.docId) { // NT-tuqn: nothing selected is a real state; no list call
+    ++state.listSeq; state.rows = []; state.rowsKey = ''; state.references = [];
+    hideLoadError_(); setStale_(false); setBusy(false);
+    renderPickers_(); render();
+    return Promise.resolve();
+  }
   if (!state.teamId && !state.docId) return Promise.resolve();
   const quiet = !!(opts && opts.quiet);
   const seq = ++state.listSeq;
@@ -1733,6 +1798,7 @@ function runAdminHealth(){
 // a team this operator doesn't personally belong to).
 function teamDisplayName(teamId){
   if (!teamId) return '';
+  if (teamId === NO_TEAM_TOKEN_) return 'No team';
   const t = state.teams.find(t => t.teamId === teamId);
   return t ? t.teamName : teamId;
 }
@@ -1911,8 +1977,13 @@ function clearAllFilters_(){
   $('filtersClear').click();
 }
 function emptyCard_(){
+  if (state.teamsEmpty && !state.docId) {
+    return { html: cardHtml_({ id: 'cardNoTeamsSelected', head: 'No teams selected', body: 'Choose at least one team (or No team) in the Teams filter.',
+      actions: '<button class="btn primary" id="cardAllTeams" type="button">Show all teams</button>' }),
+      bind: () => $('cardAllTeams').addEventListener('click', () => setTeamIds_([])) };
+  }
   const searching = !!state.search.trim() && state.rows.length > 0;
-  const filtered = state.status !== viewDefaultStatus_() || !!state.age || state.people.length > (peopleMeOnly_() ? 1 : 0) || state.teamIds.length > 0 ||
+  const filtered = state.status !== viewDefaultStatus_() || !!state.age || state.people.length > (peopleMeOnly_() ? 1 : 0) || state.teamIds.length > 0 || state.teamsEmpty ||
     (windowApplies_() && state.windowDays !== 60);
   if (state.docId && state.docTracked === true && !searching && !filtered) {
     return { html: cardHtml_({ id: 'cardNoItems', head: 'No action items in this document yet',
@@ -2234,7 +2305,7 @@ function fromHtml_(from){
 }
 
 function isOpenRow_(r){ return !r.status_resolved; }
-function rowTier_(r){ return state.teamId === ALL_TEAMS_ID ? (state.teamTiers[r.team_id] || 'NONE') : state.tier; }
+function rowTier_(r){ const t = r.team_id; return state.teamId === ALL_TEAMS_ID && !state.docId ? (state.teamTiers[t] || (t ? 'NONE' : 'VIEW')) : state.tier; } // NT-tuqn: a no-team row is at least viewable
 function daysSince_(iso){ const t = iso ? Date.parse(iso) : NaN; return isNaN(t) ? null : Math.max(0, Math.floor((Date.now() - t) / 86400000)); }
 // NT-2wr2.17: every assignee of a row: the primary first, co-assignees marked '+' and muted, '(me)' on the caller.
 // More than 3 collapse behind '+N more' (tap to expand); the whole list is also the tooltip.
@@ -2953,7 +3024,7 @@ function windowApplies_(){ return !(state.docId || state.status === 'open' || st
 function activeChips_(){
   const c = [];
   if (state.docId) c.push({ k: 'doc', t: 'Document: ' + (state.docName || 'this document') });
-  if (!state.docId && state.teamIds.length) c.push({ k: 'teams', t: 'Teams: ' + state.teamIds.map(teamDisplayName).join(', ') });
+  if (!state.docId && (state.teamIds.length || state.teamsEmpty)) c.push({ k: 'teams', t: 'Teams: ' + teamsLabel_() });
   if (state.people.length) c.push({ k: 'people', t: 'People: ' + peopleLabel_() });
   if (state.status !== viewDefaultStatus_()) c.push({ k: 'status', t: 'Status: ' + optText_('statusSel', state.status) });
   if (state.age) c.push({ k: 'age', t: 'Age: ' + (AGE_LABELS_[state.age] || state.age) });
@@ -3015,7 +3086,7 @@ $('filtersScrim').addEventListener('click', () => setFiltersOpen_(false));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') setFiltersOpen_(false); });
 $('filtersClear').addEventListener('click', () => {
   state.age = ''; state.windowDays = 60; state.statusTouched = false;
-  state.people = []; state.teamIds = []; state.teamId = teamScope_();
+  state.people = []; state.teamIds = []; state.teamsEmpty = false; state.teamId = teamScope_();
   state.status = viewDefaultStatus_();
   if (state.docId) setDocFilter_('', '');
   renderPickers_(); syncUrl_(); notifyTeams_();
@@ -3067,7 +3138,7 @@ function syncUrl_(){
   try {
     const u = new URL(location.href);
     const put = (k, v) => { if (v) u.searchParams.set(k, v); else u.searchParams.delete(k); };
-    put('teams', state.teamIds.join(','));
+    put('teams', persistedTeamIds_().join(','));
     put('people', state.people.join(','));
     put('group', state.group);
     u.searchParams.delete('team'); u.searchParams.delete('person');
@@ -3075,12 +3146,17 @@ function syncUrl_(){
   } catch (e) { /* history unavailable: the filters still work */ }
 }
 function notifyTeams_(){ teamListeners_.forEach(fn => { try { fn(state.teamIds.slice()); } catch (e) { /* a subscriber's error is its own */ } }); }
+// ids: team ids and/or 'none'. [] = every option; {empty:true} = nothing selected (its own state, no list call).
 function setTeamIds_(ids, o){
-  ids = (ids || []).filter((id, i, a) => a.indexOf(id) === i && state.teams.some(t => t.teamId === id));
-  if (ids.length >= state.teams.length) ids = [];
-  const same = ids.length === state.teamIds.length && ids.every(id => state.teamIds.indexOf(id) !== -1);
+  const empty = !!(o && o.empty);
+  ids = empty ? [] : (ids || []).filter((id, i, a) => a.indexOf(id) === i &&
+    (state.teams.some(t => t.teamId === id) || (id === NO_TEAM_TOKEN_ && noTeamShown_())));
+  if (!empty && ids.length >= teamOptionValues_().length && teamOptionValues_().every(v => ids.indexOf(v) !== -1)) ids = [];
+  const same = empty === state.teamsEmpty && ids.length === state.teamIds.length && ids.every(id => state.teamIds.indexOf(id) !== -1);
   if (same) return;
-  state.teamIds = ids;
+  state.teamIds = ids; state.teamsEmpty = empty;
+  if (!empty) state.lastTeamIds = ids.slice();
+  state.noTeamRefetched = false;
   state.teamId = teamScope_();
   if (state.docId) setDocFilter_('', ''); // a Teams change leaves the single-document scope
   if (!state.statusTouched) state.status = viewDefaultStatus_();
@@ -3102,6 +3178,7 @@ function peopleLabel_(){
   return state.people.map(x => x === 'me' ? 'Me' : x === 'unassigned' ? 'Unassigned' : personName_(x)).join(', ');
 }
 function teamsLabel_(){
+  if (state.teamsEmpty) return 'None';
   return state.teamIds.length ? state.teamIds.map(teamDisplayName).join(', ') : 'All';
 }
 // One multi-select: a button that shows the choice and a checkbox list under it. cfg: {title, options(), selected(),
@@ -3119,7 +3196,7 @@ function buildPicker_(host, cfg){
   inst.pop.addEventListener('click', e => e.stopPropagation());
   inst.pop.addEventListener('change', e => {
     const cb = e.target;
-    if (cb.dataset.any) cfg.clear(); else cfg.toggle(cb.value, cb.checked);
+    if (cb.dataset.any) { if (cfg.setAll) cfg.setAll(cb.checked); else cfg.clear(); } else cfg.toggle(cb.value, cb.checked);
   });
   multiPickers_.push(inst);
   return inst;
@@ -3130,16 +3207,27 @@ function renderPicker_(inst){
   inst.btn.setAttribute('aria-expanded', String(inst.open));
   inst.pop.classList.toggle('hidden', !inst.open);
   if (!inst.open) return;
-  inst.pop.innerHTML = cfg.options().map(o => `<label><input type="checkbox" value="${escape(o.value)}"${sel.indexOf(o.value) !== -1 ? ' checked' : ''} /> ${escape(o.label)}</label>`).join('') +
+  const opts = cfg.options();
+  // NT-tuqn: the all-box is 'all' when every option is checked, 'some' (indeterminate) when partial. People keeps 'Anyone' = nothing chosen.
+  const anyState = cfg.allState ? cfg.allState() : (sel.length ? 'none' : 'all');
+  inst.pop.innerHTML = opts.map(o => `<label><input type="checkbox" value="${escape(o.value)}"${sel.indexOf(o.value) !== -1 ? ' checked' : ''} /> ${escape(o.label)}</label>`).join('') +
     '<div class="msdiv"></div>' +
-    `<label><input type="checkbox" data-any="1"${sel.length ? '' : ' checked'} /> ${escape(cfg.anyLabel)}</label>`;
+    `<label><input type="checkbox" data-any="1"${anyState === 'all' ? ' checked' : ''} /> ${escape(cfg.anyLabel)}</label>`;
+  const anyBox = inst.pop.querySelector('input[data-any]');
+  if (anyBox) anyBox.indeterminate = anyState === 'some';
 }
 const teamsCfg_ = {
   title: 'Teams', anyLabel: 'All teams',
-  options: () => state.teams.map(t => ({ value: t.teamId, label: t.teamName || t.teamId })),
-  selected: () => state.teamIds,
+  options: () => state.teams.map(t => ({ value: t.teamId, label: t.teamName || t.teamId }))
+    .concat(noTeamShown_() ? [{ value: NO_TEAM_TOKEN_, label: 'No team' }] : []),
+  selected: () => selectedTokens_(),
+  allState: () => { const n = selectedTokens_().length, all = teamOptionValues_().length; return n === 0 ? 'none' : n >= all ? 'all' : 'some'; },
   summary: () => teamsLabel_(),
-  toggle: (v, on) => setTeamIds_(on ? state.teamIds.concat([v]) : state.teamIds.filter(x => x !== v)),
+  toggle: (v, on) => {
+    const cur = selectedTokens_(), next = on ? cur.concat([v]) : cur.filter(x => x !== v);
+    if (next.length) setTeamIds_(next); else setTeamIds_([], { empty: true });
+  },
+  setAll: on => { if (on) setTeamIds_([]); else setTeamIds_([], { empty: true }); }, // clicking when checked clears all, otherwise checks all
   clear: () => setTeamIds_([])
 };
 const peopleCfg_ = {
@@ -3160,7 +3248,7 @@ const peopleCfg_ = {
 buildPicker_($('teamsMs'), teamsCfg_);
 buildPicker_($('peopleMs'), peopleCfg_);
 function renderPickers_(){
-  $('teamsMs').classList.toggle('hidden', state.teams.length < 2);
+  $('teamsMs').classList.toggle('hidden', state.teams.length + (noTeamShown_() ? 1 : 0) < 2);
   multiPickers_.forEach(renderPicker_);
 }
 document.addEventListener('click', () => { if (multiPickers_.some(i => i.open)) { multiPickers_.forEach(i => { i.open = false; }); renderPickers_(); } });
@@ -3243,7 +3331,13 @@ window.TrackerShell = {
     try { history.pushState({ tv: 'items' }, '', location.href); } catch (e) { /* no history entry: Back leaves the page */ }
     return openDoc_(docId, '', teamId);
   },
-  selectedTeamIds(){ return state.teamIds.length ? state.teamIds.slice() : state.teams.map(t => t.teamId); },
+  // NT-tuqn: real team ids only (never the 'none' token); an empty selection returns [] (check teamsReady() / isEmptySelection()
+  // rather than reading [] as 'teams not loaded'); includeNoTeam() says whether No team is part of the selection.
+  selectedTeamIds(){ return state.teamsEmpty ? [] : (state.teamIds.length ? realTeamIds_() : state.teams.map(t => t.teamId)); },
+  includeNoTeam(){ return wantsNoTeam_(); },
+  isEmptySelection(){ return state.teamsEmpty; },
+  teamsReady(){ return state.teamsLoaded; },
+  noteNoTeam(res){ noteNoTeam_(res); renderPickers_(); },
   setTeamIds(ids){ setTeamIds_(ids); },
   mountTeamsPicker(el){
     const inst = buildPicker_(el, teamsCfg_);
