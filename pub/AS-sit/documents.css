@@ -63,3 +63,19 @@
 #documentsView .dv-fhead .foldersel{margin:0}
 #documentsView .dv-untracked .dv-fhead .dv-sum,#documentsView .dv-untracked .dv-fhead .dv-path{color:var(--muted)}
 #documentsView .dv-untracked .dv-fhead{background:#fcfcfd}
+/* NT-2wr2.35.1: one selection model. Every checkbox sits in a 44x44 label hit area; the Items bar classes (.listhead, .bulkhost,
+   .bulkbar, .bulkmsg) come from index.html. Row/folder Add, Sync, Exclude buttons are gone (bar only). */
+#documentsView .dv-chk{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:44px;margin:-8px -8px -8px -10px;cursor:pointer;flex:0 0 auto}
+#documentsView .dv-chk input{margin:0}
+#documentsView .dv-selall{justify-content:flex-start;margin:0;padding:0 6px;font-size:13px}
+#documentsView .dv-thead .dv-chk{margin:-6px -8px -6px 0}
+#documentsView .listhead{margin:0 0 8px}
+#documentsView .dv-row .dv-acts{margin-left:auto}
+#documentsView .bulkbar .btn[disabled]{opacity:.5;cursor:not-allowed}
+#documentsView .bulkbar .linkbtn[disabled]{opacity:.5;cursor:not-allowed}
+@media (max-width:640px){
+  #documentsView .dv-row .dv-acts{flex:1 0 100%;margin-left:0;padding-left:34px}
+  #documentsView .dv-row .dv-acts .btn,#documentsView .bulkbar .btn,#documentsView .bulkmsg .linkbtn{min-height:44px}
+  #documentsView .bulkbar .linkbtn{min-height:44px;min-width:44px}
+  #documentsView .bulkbar{gap:6px}
+}

@@ -17,7 +17,7 @@
     teams: [], folders: [],
     show: { tracked: true, not_tracked: true, excluded: false },
     search: '', group: 'team', mod: '', collapsed: {}, selected: {},      // selected: docId -> teamId
-    scanning: {}, scanMsg: {}, busy: false, bulkMsg: '', seq: 0, clearing: false,
+    scanning: {}, scanMsg: {}, busy: false, bulkMsg: null, run: null, stop: false, seq: 0, clearing: false,
     excludeOk: true, scanOk: true, pendingScroll: null, addedPending: {}
   };
   try {
@@ -61,10 +61,11 @@
         '<button class="btn" id="dvCollapseAll" type="button">Collapse all</button>' +
       '</div>' +
       '<div id="dvStatus" class="sub"></div>' +
+      '<div class="listhead" id="dvHead"></div>' +
       '<div id="dvList"></div>' +
       '<div class="bulkhost"><div class="bulkbar hidden" id="dvBar"></div><div class="bulkmsg hidden" id="dvMsg"></div></div>' +
       '<div id="dvModal"></div>';
-    ['dvTeams', 'dvShowBtn', 'dvShowMenu', 'dvMod', 'dvGroup', 'dvSearch', 'dvScanAll', 'dvExpandAll', 'dvCollapseAll', 'dvStatus', 'dvList', 'dvBar', 'dvMsg', 'dvModal']
+    ['dvTeams', 'dvShowBtn', 'dvShowMenu', 'dvMod', 'dvGroup', 'dvSearch', 'dvScanAll', 'dvExpandAll', 'dvCollapseAll', 'dvStatus', 'dvHead', 'dvList', 'dvBar', 'dvMsg', 'dvModal']
       .forEach(function (id) { el[id] = document.getElementById(id); });
     try { SH().mountTeamsPicker(el.dvTeams); } catch (e) {}
     try { SH().onTeamsChange(function () { if (!root.classList.contains('hidden')) load(); }); } catch (e) {}
@@ -92,6 +93,10 @@
     el.dvList.addEventListener('click', onListClick);
     el.dvList.addEventListener('change', onListChange);
     el.dvBar.addEventListener('click', onBarClick);
+    el.dvMsg.addEventListener('click', onBarClick);
+    el.dvHead.addEventListener('change', onHeadChange);
+    el.dvList.addEventListener('click', onRowTap);
+    bindLongPress();
   }
 
   // ---- data -------------------------------------------------------------------------------------------------------
@@ -190,25 +195,20 @@
     if (d.state === 'excluded') return '<span class="dv-pill excluded">Excluded</span>';
     return '<span class="dv-pill not_tracked">Not tracked</span>';
   }
+  // NT-2wr2.35.1 (D1): a row carries no Add/Sync/Exclude; those run from the selection bar. View items stays (navigation).
+  function chk(attrs, label) { return '<label class="dv-chk"><input type="checkbox" ' + attrs + ' aria-label="' + esc(label) + '"></label>'; }
   function rowHtml(f, d) {
     var key = esc(d.docId), tid = esc(f.teamId), acts = '';
-    var tracked = d.state === 'tracked', pending = !!st.addedPending[d.docId];
-    var canAdd = d.state !== 'tracked' && !pending;
-    if (tracked) acts += '<button class="btn small" data-act="view" data-doc="' + key + '" data-team="' + tid + '">View items</button>';
-    if (tracked && d.canEdit !== false) acts += '<button class="btn small" data-act="sync" data-doc="' + key + '" data-team="' + tid + '">Sync</button>';
-    if (canAdd) {
-      acts += d.canEdit === false ? '<span class="dv-viewonly">View only</span>'
-        : '<button class="btn small" data-act="add" data-doc="' + key + '" data-team="' + tid + '">Add</button>';
-    }
-    if (st.excludeOk && d.state !== 'excluded' && !pending) acts += '<button class="btn small" data-act="exclude" data-doc="' + key + '" data-team="' + tid + '">Exclude</button>';
+    if (d.state === 'tracked') acts = '<div class="dv-acts"><button class="btn small" data-act="view" data-doc="' + key + '" data-team="' + tid + '">View items</button></div>';
     var sel = st.selected[d.docId] != null;
     var meta = [d.modified ? 'Edited ' + fmtDate(d.modified) : '', st.teams.length > 1 && st.group !== 'team' ? teamName(f.teamId) : ''].filter(Boolean).join(' · ');
+    var metaHtml = esc(meta) + (d.canEdit === false ? (meta ? ' · ' : '') + '<span class="dv-viewonly">View only</span>' : '');
     // The folder is named on the row only when no folder header sits above it (Group by None).
     var folderLine = st.group === 'none' ? '<div class="dv-folderline"><span aria-hidden="true">📁</span> ' + folderLink(f, 'dv-where') + '</div>' : '';
-    return '<div class="dv-row' + (sel ? ' sel' : '') + '"><input type="checkbox" class="rowsel" data-sel="' + key + '" data-team="' + tid + '"' +
-      (sel ? ' checked' : '') + ' aria-label="Select ' + esc(d.docName) + '">' +
+    return '<div class="dv-row' + (sel ? ' sel' : '') + '">' +
+      chk('class="rowsel" data-sel="' + key + '" data-team="' + tid + '"' + (sel ? ' checked' : ''), 'Select ' + (d.docName || '(untitled)')) +
       '<div class="dv-title"><a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.docName || '(untitled)') + '</a>' +
-      '<div class="dv-meta">' + esc(meta) + '</div>' + folderLine + '</div>' + pill(d) + '<div class="dv-acts">' + acts + '</div></div>';
+      '<div class="dv-meta">' + metaHtml + '</div>' + folderLine + '</div>' + pill(d) + acts + '</div>';
   }
   // Expand all / Collapse all (NT-2wr2.33): every team and every folder at every level, rendered or not.
   function collapseAll() {
@@ -224,21 +224,68 @@
     var txt = t + ' tracked · ' + u + ' not tracked' + (x && st.show.excluded ? ' · ' + x + ' excluded' : '');
     return '<span class="sub dv-sum" style="margin:0" title="' + shown + ' shown">' + txt + '</span>';
   }
-  // Folder header checkbox state: checked when every visible row is selected, indeterminate when only some are.
-  function syncFolderChecks() {
-    Array.prototype.forEach.call(root.querySelectorAll('input[data-fsel]'), function (c) {
-      var f = folderByKey(c.getAttribute('data-fsel')); if (!f) return;
-      var docs = visibleDocs(f), n = docs.filter(function (d) { return st.selected[d.docId] != null; }).length;
-      c.checked = n > 0 && n === docs.length; c.indeterminate = n > 0 && n < docs.length;
-    });
+  // ---- selection model (NT-2wr2.35.1) --------------------------------------------------------------------------------
+  // scopes: header key ('F:<folderKey>' / 'T:<teamId>') -> [{docId, teamId}] of every SHOWN document in that subtree (collapsed
+  // folders included, filtered-out ones excluded). Rebuilt on every render.
+  var scopes = {};
+  function subtreeDocs(n) {
+    var out = n.own.map(function (d) { return { docId: d.docId, teamId: n.f.teamId }; });
+    n.kids.forEach(function (k) { out = out.concat(subtreeDocs(k)); });
+    return out;
   }
-  function onFolderSelect(c) {
-    var f = folderByKey(c.getAttribute('data-fsel')); if (!f) return;
-    visibleDocs(f).forEach(function (d) { if (c.checked) st.selected[d.docId] = f.teamId; else delete st.selected[d.docId]; });
-    Array.prototype.forEach.call(c.closest('.dv-folder').querySelectorAll('input[data-sel]'), function (r) {
-      r.checked = c.checked; var row = r.closest('.dv-row'); if (row) row.classList.toggle('sel', c.checked);
+  function shownMap() { // docId -> teamId for every document the current Show, Modified and search show
+    var m = {};
+    st.folders.forEach(function (f) { visibleDocs(f).forEach(function (d) { m[d.docId] = f.teamId; }); });
+    return m;
+  }
+  function shownList() { var m = shownMap(); return Object.keys(m).map(function (k) { return { docId: k, teamId: m[k] }; }); }
+  function setScope(list, on) { list.forEach(function (i) { if (on) st.selected[i.docId] = i.teamId; else delete st.selected[i.docId]; }); }
+  function tri(c, list) {
+    var n = list.filter(function (i) { return st.selected[i.docId] != null; }).length;
+    c.checked = n > 0 && n === list.length; c.indeterminate = n > 0 && n < list.length;
+  }
+  // Brings every checkbox, row highlight and the bar in line with st.selected (no list re-render, so focus and scroll stay).
+  function syncSelection() {
+    Array.prototype.forEach.call(root.querySelectorAll('input[data-sel]'), function (r) {
+      var on = st.selected[r.getAttribute('data-sel')] != null; r.checked = on;
+      var row = r.closest('.dv-row'); if (row) row.classList.toggle('sel', on);
     });
-    syncFolderChecks(); renderBar();
+    Array.prototype.forEach.call(root.querySelectorAll('input[data-fsel]'), function (c) { tri(c, scopes[c.getAttribute('data-fsel')] || []); });
+    var all = document.getElementById('dvSelectAll');
+    if (all) tri(all, shownList());
+    renderBar();
+  }
+  function onHeadChange(ev) {
+    if (ev.target.id !== 'dvSelectAll') return;
+    setScope(shownList(), ev.target.checked);
+    syncSelection();
+  }
+  function onFolderSelect(c) { setScope(scopes[c.getAttribute('data-fsel')] || [], c.checked); syncSelection(); }
+  function toggleDoc(docId, teamId) { if (st.selected[docId] != null) delete st.selected[docId]; else st.selected[docId] = teamId; syncSelection(); }
+  // Phone: once selecting, a tap on a row toggles it; a long press starts selecting (touch only; moving the finger cancels).
+  function onRowTap(ev) {
+    var row = ev.target.closest && ev.target.closest('.dv-row');
+    if (row && Object.keys(st.selected).length && window.matchMedia('(max-width:640px)').matches && !ev.target.closest('a,button,input,select,label')) {
+      var c = row.querySelector('input[data-sel]'); if (c) toggleDoc(c.getAttribute('data-sel'), c.getAttribute('data-team'));
+    }
+  }
+  function bindLongPress() {
+    var timer = null, sx = 0, sy = 0, cancel = function () { clearTimeout(timer); timer = null; };
+    el.dvList.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'touch') return;
+      var row = e.target.closest && e.target.closest('.dv-row');
+      if (!row || e.target.closest('a,button,input,select,label')) return;
+      var c = row.querySelector('input[data-sel]'); if (!c) return;
+      sx = e.clientX; sy = e.clientY;
+      timer = setTimeout(function () {
+        timer = null; toggleDoc(c.getAttribute('data-sel'), c.getAttribute('data-team'));
+        if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) { /* no haptics */ } }
+        el.dvList.addEventListener('click', function (ev) { ev.stopPropagation(); ev.preventDefault(); }, { capture: true, once: true }); // swallow the click that ends the press
+      }, 500);
+    });
+    el.dvList.addEventListener('pointermove', function (e) { if (timer && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) cancel(); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) { el.dvList.addEventListener(t, cancel); });
+    el.dvList.addEventListener('contextmenu', function (e) { if (e.target.closest && e.target.closest('.dv-row') && window.matchMedia('(pointer:coarse)').matches) e.preventDefault(); });
   }
   // ---- tree (NT-2wr2.33) ---------------------------------------------------------------------------------------------
   // Within one (teamId, rootFolderId) a subfolder's parent is the entry whose path, minus the root name, is its path minus the
@@ -286,19 +333,17 @@
       scan = '<span class="dv-scan"><span>' + esc(st.scanMsg[id] || ago(n.f.scannedAt)) + '</span>' +
         (st.scanOk ? '<button class="btn small" data-act="scan" data-fid="' + esc(n.f.folderId) + '" data-team="' + esc(n.f.teamId) + '"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Scanning…' : 'Scan') + '</button>' : '') + '</span>';
     }
-    var fsel = '', fex = '';
-    if (docs.length) {
-      fsel = '<input type="checkbox" class="foldersel" data-fsel="' + esc(sid) + '" aria-label="Select all in ' + esc(label) + '" title="Select all listed documents in this folder">';
-      var open = docs.filter(function (d) { return d.state !== 'excluded'; }).length;
-      if (st.excludeOk && open) fex = '<button class="btn small" data-act="fexclude" data-fkey="' + esc(sid) + '" aria-label="Exclude the ' + open + ' listed document' + (open === 1 ? '' : 's') + ' in ' + esc(label) + '"' +
-        ' title="Excludes the ' + open + ' document' + (open === 1 ? '' : 's') + ' currently listed in this folder. Documents added to it later show as Not tracked again.">Exclude listed (' + open + ')</button>';
+    var fsel = '', scope = subtreeDocs(n);
+    if (scope.length) {
+      scopes['F:' + id] = scope;
+      fsel = chk('class="foldersel" data-fsel="F:' + esc(id) + '" title="Select every shown document in this folder and its subfolders"', 'Select all ' + scope.length + ' shown in ' + label);
     }
     var tcount = (f.docs || []).filter(function (d) { return d.state === 'tracked'; }).length;
     var body = docs.length ? docs.map(function (d) { return rowHtml(f, d); }).join('')
       : kids.length ? '' : '<div class="dv-empty">' + (f.scannedAt && !cur.kids.length && !(f.docs || []).length ? 'No Google Docs in this folder'
         : (f.scannedAt || !f.folderId ? 'No documents match the Show filter.' : 'Not scanned yet. Scan to list its documents.')) + '</div>';
     return '<section class="dv-folder' + (collapsed ? ' collapsed' : '') + (tcount ? '' : ' dv-untracked') + '" data-fkey="' + esc(id) + '"><div class="dv-fhead">' +
-      toggleBtn(id, label, collapsed) + fsel + pathHtml + chip + '<span class="sub dv-count" style="margin:0">' + n.shown + ' shown</span>' + summaryHtml(f, docs.length) + fex + scan + '</div>' +
+      toggleBtn(id, label, collapsed) + fsel + pathHtml + chip + '<span class="sub dv-count" style="margin:0">' + n.shown + ' shown</span>' + summaryHtml(f, docs.length) + scan + '</div>' +
       '<div class="dv-rows">' + body + '</div>' + kids.map(folderHtml).join('') + '</section>';
   }
   function toggleBtn(key, name, collapsed) {
@@ -312,7 +357,10 @@
     t.roots.concat(t.other).forEach(function (x) { n += x.shown; });
     var scan = t.teamId !== '' && st.scanOk && t.roots.length ?
       '<button class="btn small dv-teamscan" data-act="scanteam" data-team="' + esc(t.teamId) + '"' + (Object.keys(st.scanning).length ? ' disabled' : '') + '>Scan team</button>' : '';
-    return '<section class="dv-team' + (collapsed ? ' collapsed' : '') + '"><div class="dv-thead">' + toggleBtn(key, name, collapsed) +
+    var scope = []; t.roots.concat(t.other).forEach(function (x) { scope = scope.concat(subtreeDocs(x)); });
+    var tsel = '';
+    if (scope.length) { scopes['T:' + t.teamId] = scope; tsel = chk('class="foldersel teamsel" data-fsel="T:' + esc(t.teamId) + '"', 'Select all ' + scope.length + ' shown in ' + name); }
+    return '<section class="dv-team' + (collapsed ? ' collapsed' : '') + '"><div class="dv-thead">' + toggleBtn(key, name, collapsed) + tsel +
       '<strong>' + esc(name) + '</strong><span class="sub" style="margin:0">' + n + ' shown</span>' + scan + '</div>' +
       t.roots.concat(otherNodes(t)).map(folderHtml).join('') + '</section>';
   }
@@ -325,7 +373,7 @@
   }
   // Every selected team with a root and every root always renders; a subfolder renders only when its subtree has a shown document.
   function listHtml() {
-    rendered = 0;
+    rendered = 0; scopes = {};
     if (st.group === 'none') { var vf = visibleFolders(); rendered = vf.length; return vf.length ? flatHtml(vf) : ''; }
     var teams = buildTrees(st.folders);
     teams.forEach(function (t) { t.roots.concat(t.other).forEach(tally); });
@@ -362,6 +410,9 @@
     var html = (st.loaded && !st.error && st.folders.length) ? listHtml() : '', folders = { length: rendered };
     if (st.loading) el.dvStatus.textContent = 'Loading documents…';
     else el.dvStatus.textContent = st.error ? '' : (st.loaded ? folders.length + ' folder' + (folders.length === 1 ? '' : 's') : '');
+    var sm = html ? shownMap() : {}, nShown = Object.keys(sm).length; // NT-2wr2.35.1 (D3): list header
+    el.dvHead.innerHTML = html && !st.clearing && nShown ? '<div class="sub" id="dvCount" role="status" style="margin:0">' + nShown + ' document' + (nShown === 1 ? '' : 's') + ' in ' + folders.length + ' folder' + (folders.length === 1 ? '' : 's') + '</div>' +
+      '<label class="dv-chk dv-selall" title="Select every document the current Show, Modified and search filters show, including those in collapsed folders"><input type="checkbox" id="dvSelectAll" aria-label="Select all ' + nShown + ' shown documents"> Select all ' + nShown + '</label>' : '';
     if (st.error) el.dvList.innerHTML = '<div class="empty">' + esc(st.error) + ' <button class="linkbtn" data-act="retry">Retry</button></div>';
     else if (st.loading && st.clearing) el.dvList.innerHTML = '<div class="statecard busyph"><h2><span class="busylbl">Loading documents…</span></h2><p><span class="spinner" aria-hidden="true"></span></p></div>';
     else if (st.loading && !st.loaded) el.dvList.innerHTML = '';
@@ -370,8 +421,7 @@
     else if (!st.folders.length) el.dvList.innerHTML = '<div class="empty"><strong>No documents yet</strong><br>Your teams have no folders you can see here. Ask your team lead to share the team folder with your account.</div>';
     else if (!html) el.dvList.innerHTML = '<div class="empty"><strong>Nothing matches these filters</strong><br>Change Show or Modified, or clear the search.</div>';
     else el.dvList.innerHTML = html;
-    renderBar();
-    syncFolderChecks();
+    syncSelection();
     SH().reapplyBusy();
   }
   function rowsFor(ids) {
@@ -381,20 +431,41 @@
       });
     };
   }
+  // D4: eligibility over every selected document, hidden ones included. canEdit null counts as eligible (the server decides).
+  function isPending(d) { return !!st.addedPending[d.docId]; }
+  function canAdd(d) { return !!d && d.state !== 'tracked' && !isPending(d) && d.canEdit !== false; }
+  function canSync(d) { return !!d && d.state === 'tracked' && d.canEdit !== false; }
+  function canExclude(d) { return !!d && d.state !== 'excluded' && !isPending(d); }
+  function selectedItems() { return Object.keys(st.selected).map(function (i) { return { docId: i, teamId: st.selected[i] }; }); }
+  function eligible(items, fn) { return items.filter(function (i) { return fn(findDoc(i.docId)); }); }
+  function actBtn(act, label, n, why, primary) {
+    var off = st.busy || !n;
+    return '<button class="btn small' + (primary ? ' primary' : '') + '" type="button" data-bar="' + act + '"' + (off ? ' disabled' : '') +
+      ' title="' + esc(st.busy ? 'Wait for the current run to finish' : n ? label + ' the ' + n + ' selected document' + (n === 1 ? '' : 's') + ' that can be ' + why : 'None of the selected documents can be ' + why) + '">' + label + ' (' + n + ')</button>';
+  }
   function renderBar() {
-    var ids = Object.keys(st.selected), n = ids.length;
+    var items = selectedItems(), n = items.length;
     el.dvBar.classList.toggle('hidden', !n);
-    if (n) {
-      var f = allDocs(); var addable = ids.filter(function (i) { var d = f[i]; return d && d.state !== 'tracked' && d.canEdit !== false; }).length;
-      var syncable = ids.filter(function (i) { var d = f[i]; return d && d.state === 'tracked' && d.canEdit !== false; }).length;
-      el.dvBar.innerHTML = '<strong>' + n + ' selected</strong>' +
-        (syncable ? '<button class="btn small primary" data-bar="sync"' + (st.busy ? ' disabled' : '') + '>Sync (' + syncable + ')</button>' : '') +
-        (addable || !syncable ? '<button class="btn small' + (syncable ? '' : ' primary') + '" data-bar="add"' + (addable && !st.busy ? '' : ' disabled') + '>Add' + (addable ? ' (' + addable + ')' : '') + '</button>' : '') +
-        (st.excludeOk ? '<button class="btn small" data-bar="exclude"' + (st.busy ? ' disabled' : '') + '>Exclude</button>' : '') +
-        '<button class="linkbtn" data-bar="clear">Clear</button>';
+    if (!n) el.dvBar.innerHTML = '';
+    else {
+      var sm = shownMap(), hid = items.filter(function (i) { return sm[i.docId] == null; }).length;
+      el.dvBar.innerHTML = '<span id="dvBarCount" role="status">' + n + ' selected' + (hid ? ' (' + hid + ' hidden by filters)' : '') + '</span>' +
+        '<button class="linkbtn" type="button" data-bar="clear" title="Deselect everything"' + (st.busy ? ' disabled' : '') + '>Clear</button>' +
+        actBtn('add', 'Add', eligible(items, canAdd).length, 'added', true) +
+        actBtn('sync', 'Sync', eligible(items, canSync).length, 'synced', false) +
+        (st.excludeOk ? actBtn('exclude', 'Exclude', eligible(items, canExclude).length, 'excluded', false) : '') +
+        (st.run ? '<button class="btn small" type="button" data-bar="stop"' + (st.stop ? ' disabled' : '') + ' title="Finish the current document and skip the rest">' + (st.stop ? 'Stopping…' : 'Stop') + '</button>' : '');
     }
-    el.dvMsg.classList.toggle('hidden', !st.bulkMsg);
-    el.dvMsg.innerHTML = st.bulkMsg ? '<span>' + esc(st.bulkMsg) + '</span><button class="linkbtn" data-bar="dismiss">Dismiss</button>' : '';
+    var m = st.bulkMsg;
+    el.dvMsg.classList.toggle('hidden', !m);
+    el.dvMsg.setAttribute('role', m && m.error ? 'alert' : 'status');
+    el.dvMsg.innerHTML = m ? '<span>' + esc(m.text) + '</span>' + (st.run ? '' : '<button class="linkbtn" type="button" data-bar="dismiss">Dismiss</button>') : '';
+  }
+  // Message in .bulkmsg; a finished run's message clears after 20 s (Items behaviour).
+  function setMsg(text, error, timed) {
+    clearTimeout(setMsg.t);
+    st.bulkMsg = text ? { text: text, error: !!error } : null;
+    if (text && timed) setMsg.t = setTimeout(function () { st.bulkMsg = null; renderBar(); }, 20000);
   }
   function allDocs() {
     var m = {}; st.folders.forEach(function (f) { (f.docs || []).forEach(function (d) { m[d.docId] = d; }); }); return m;
@@ -406,8 +477,7 @@
     if (ev.target.hasAttribute('data-fsel')) { onFolderSelect(ev.target); return; }
     var id = ev.target.getAttribute('data-sel'); if (!id) return;
     if (ev.target.checked) st.selected[id] = ev.target.getAttribute('data-team'); else delete st.selected[id];
-    var row = ev.target.closest('.dv-row'); if (row) row.classList.toggle('sel', ev.target.checked);
-    renderBar(); syncFolderChecks();
+    syncSelection();
   }
   function onListClick(ev) {
     var b = ev.target.closest('[data-act]'); if (!b) return;
@@ -417,83 +487,62 @@
     else if (act === 'scan') scanFolder(team, b.getAttribute('data-fid'));
     else if (act === 'scanteam') scanRoots(allRoots(team));
     else if (act === 'view') { st.pendingScroll = window.scrollY; SH().openItemsForDoc(doc, team); }
-    else if (act === 'sync') syncDocs([{ docId: doc, teamId: team }]);
-    else if (act === 'add') addDocs([{ docId: doc, teamId: team }]);
-    else if (act === 'exclude') excludeDocs([{ docId: doc, teamId: team }]);
-    else if (act === 'fexclude') {
-      var ff = folderByKey(b.getAttribute('data-fkey')); if (!ff) return;
-      excludeDocs(visibleDocs(ff).filter(function (d) { return d.state !== 'excluded'; }).map(function (d) { return { docId: d.docId, teamId: ff.teamId }; }));
-    }
   }
   function onBarClick(ev) {
-    var b = ev.target.closest('[data-bar]'); if (!b) return; var a = b.getAttribute('data-bar');
-    var items = Object.keys(st.selected).map(function (i) { return { docId: i, teamId: st.selected[i] }; });
-    if (a === 'clear') { st.selected = {}; render(); }
-    else if (a === 'dismiss') { st.bulkMsg = ''; renderBar(); }
-    else if (a === 'sync') syncDocs(items);
-    else if (a === 'add') addDocs(items);
-    else if (a === 'exclude') excludeDocs(items);
+    var b = ev.target.closest('[data-bar]'); if (!b || b.disabled) return; var a = b.getAttribute('data-bar');
+    if (a === 'clear') { if (!st.busy) { st.selected = {}; syncSelection(); } }
+    else if (a === 'dismiss') { setMsg(''); renderBar(); }
+    else if (a === 'stop') { st.stop = true; renderBar(); }
+    else if (a === 'sync') runSeq('sync', eligible(selectedItems(), canSync));
+    else if (a === 'add') runSeq('add', eligible(selectedItems(), canAdd));
+    else if (a === 'exclude') excludeDocs(eligible(selectedItems(), canExclude));
   }
   function restoreScroll() {
     if (st.pendingScroll != null) { var y = st.pendingScroll; st.pendingScroll = null; setTimeout(function () { window.scrollTo(0, y); }, 0); }
   }
 
-  // ---- Add (team_sync_document, sequential) -----------------------------------------------------------------------
-  function addDocs(items) {
-    items = items.filter(function (i) { var d = findDoc(i.docId); return d && d.state !== 'tracked' && d.canEdit !== false; });
+  // ---- Add / Sync (team_sync_document, one document per call, sequential, Stop finishes the current one) ------------
+  // Add sends teamId '' (the server resolves it); Sync sends the document's own teamId. Succeeded documents leave the selection;
+  // failed and skipped ones stay selected.
+  function runSeq(kind, items) {
     if (!items.length || st.busy) return;
-    st.busy = true; var added = 0, denied = 0, i = 0;
-    function next() {
-      if (i >= items.length) {
-        st.busy = false; st.selected = {};
-        st.bulkMsg = added + ' added' + (denied ? ', ' + denied + ' not allowed' : '') + (added ? '. Their items appear after the next sync.' : '');
-        if (denied && !added) SH().toastError(st.bulkMsg); else SH().toast(st.bulkMsg);
-        render(); setTimeout(function () { load(true); }, 4000); return;
-      }
-      var it = items[i++];
-      st.bulkMsg = 'Adding ' + i + ' of ' + items.length + '…'; renderBar();
-      SH().withBusy(rowsFor([it.docId]), 'row', 'Adding…', function () {
-        return SH().postJson({ action: 'team_sync_document', teamId: '', docId: it.docId }).then(function (res) {
-          if (res && res.ok) { added++; st.addedPending[it.docId] = true; } else denied++;
-        }).catch(function () { denied++; });
-      }, { live: false }).then(function () { render(); next(); });
+    var add = kind === 'add', word = add ? 'Adding' : 'Syncing', ok = {}, okN = 0, failed = 0, i = 0;
+    st.busy = true; st.stop = false; st.run = kind;
+    function finish() {
+      var skipped = items.length - i;
+      st.busy = false; st.run = null; st.stop = false;
+      items.forEach(function (it) { if (ok[it.docId]) delete st.selected[it.docId]; });
+      var text = okN + (add ? ' added' : ' synced') + (failed ? ', ' + failed + ' failed (still selected)' : '') + (skipped ? ', ' + skipped + ' skipped (stopped, still selected)' : '') +
+        (add && okN ? '. Their items appear after the next sync.' : '');
+      setMsg(text, !okN, true);
+      if (!okN) SH().toastError(text); else SH().toast(text);
+      render(); if (add) setTimeout(function () { load(true); }, 4000); else load(true);
     }
-    render(); next();
-  }
-
-  // ---- Sync (team_sync_document for tracked documents, sequential, each with the document's own teamId) -----------
-  function syncDocs(items) {
-    items = items.filter(function (i) { var d = findDoc(i.docId); return d && d.state === 'tracked' && d.canEdit !== false; });
-    if (!items.length || st.busy) return;
-    st.busy = true; var synced = 0, failed = 0, i = 0;
     function next() {
-      if (i >= items.length) {
-        st.busy = false; st.selected = {};
-        st.bulkMsg = synced + ' synced' + (failed ? ', ' + failed + ' not allowed/failed' : '');
-        if (failed && !synced) SH().toastError(st.bulkMsg); else SH().toast(st.bulkMsg);
-        render(); load(true); return;
-      }
+      if (i >= items.length || st.stop) { finish(); return; }
       var it = items[i++];
-      st.bulkMsg = 'Syncing ' + i + ' of ' + items.length + '…'; renderBar();
-      SH().withBusy(rowsFor([it.docId]), 'row', 'Syncing…', function () {
-        return SH().postJson({ action: 'team_sync_document', teamId: it.teamId, docId: it.docId }).then(function (res) {
-          if (res && res.ok !== false && !res.error) synced++; else failed++;
+      setMsg(word + ' ' + i + ' of ' + items.length + '…'); renderBar();
+      SH().withBusy(rowsFor([it.docId]), 'row', word + '…', function () {
+        return SH().postJson({ action: 'team_sync_document', teamId: add ? '' : it.teamId, docId: it.docId }).then(function (res) {
+          if (res && res.ok !== false && !res.error) { ok[it.docId] = true; okN++; if (add) st.addedPending[it.docId] = true; } else failed++;
         }).catch(function () { failed++; });
-      }, { live: false }).then(function () { next(); });
+      }, { live: false }).then(function () { render(); next(); });
     }
     render(); next();
   }
 
   // ---- Exclude (team_exclude_documents) ---------------------------------------------------------------------------
   function excludeDocs(items) {
-    items = items.filter(function (i) { var d = findDoc(i.docId); return d && d.state !== 'excluded'; });
     if (!items.length || st.busy) return;
     var tracked = items.map(function (i) { return findDoc(i.docId); }).filter(function (d) { return d.state === 'tracked'; });
-    if (!tracked.length) return runExclude(items);
-    var n = tracked.reduce(function (s, d) { return s + (d.itemCount != null ? d.itemCount : (d.openCount || 0)); }, 0);
-    var text = tracked.length === 1
+    var sm = shownMap(), hid = items.filter(function (i) { return sm[i.docId] == null; }).length;
+    if (!tracked.length && !hid) return runExclude(items);
+    var n = tracked.reduce(function (s, d) { return s + (d.itemCount != null ? d.itemCount : (d.openCount || 0)); }, 0), text = '';
+    if (tracked.length) text = tracked.length === 1
       ? 'This document has ' + n + ' tracked item' + (n === 1 ? '' : 's') + '. Excluding it removes them from Tracker.'
       : tracked.length + ' of these documents are tracked, with ' + n + ' tracked items in all. Excluding them removes those items from Tracker.';
+    else text = 'Exclude ' + items.length + ' document' + (items.length === 1 ? '' : 's') + '?';
+    if (hid) text += ' ' + hid + ' of these ' + (hid === 1 ? 'is' : 'are') + ' hidden by your filters.';
     el.dvModal.innerHTML = '<div class="dv-confirm" role="dialog" aria-modal="true"><div class="box"><p>' + esc(text) + '</p>' +
       '<div class="btns"><button class="btn" id="dvCancel">Cancel</button><button class="btn danger" id="dvGo">Exclude</button></div></div></div>';
     document.getElementById('dvCancel').addEventListener('click', function () { el.dvModal.innerHTML = ''; });
@@ -501,7 +550,7 @@
     document.getElementById('dvGo').focus();
   }
   function runExclude(items) {
-    st.busy = true; render();
+    st.busy = true; setMsg('Excluding ' + items.length + '…'); render();
     return SH().withBusy(rowsFor(items.map(function (i) { return i.docId; })), 'row', 'Excluding…', function () {
       return new Promise(function (resolve) { runExcludeJobs(items, resolve); });
     });
@@ -510,19 +559,22 @@
     var byTeam = {}; items.forEach(function (i) { (byTeam[i.teamId] = byTeam[i.teamId] || []).push(i.docId); });
     var jobs = [];
     Object.keys(byTeam).forEach(function (t) { for (var k = 0; k < byTeam[t].length; k += 50) jobs.push({ teamId: t, docIds: byTeam[t].slice(k, k + 50) }); });
-    var done = 0, refused = 0, removed = 0, j = 0, unavailable = false;
+    var done = 0, refused = 0, removed = 0, j = 0, unavailable = false, ok = {};
     function next() {
       if (j >= jobs.length) {
-        st.busy = false; st.selected = {};
-        if (unavailable) { st.excludeOk = false; st.bulkMsg = 'Exclude is not available right now.'; }
-        else st.bulkMsg = done + ' excluded' + (refused ? ', ' + refused + ' not allowed' : '') + (removed ? '. ' + removed + ' items removed from Tracker.' : '');
-        if (unavailable || (refused && !done)) SH().toastError(st.bulkMsg); else SH().toast(st.bulkMsg);
+        st.busy = false;
+        Object.keys(ok).forEach(function (id) { delete st.selected[id]; });
+        var text;
+        if (unavailable) { st.excludeOk = false; text = 'Exclude is not available right now.'; }
+        else text = done + ' excluded' + (refused ? ', ' + refused + ' refused (still selected)' : '') + (removed ? '. ' + removed + ' items removed from Tracker.' : '');
+        setMsg(text, unavailable || !done, true);
+        if (unavailable || (refused && !done)) SH().toastError(text); else SH().toast(text);
         render(); load(true).then(resolve, resolve); return;
       }
       var job = jobs[j++];
       SH().postJson({ action: 'team_exclude_documents', teamId: job.teamId, docIds: job.docIds }).then(function (res) {
         if (res && res.ok && Array.isArray(res.results)) {
-          res.results.forEach(function (r) { if (r.outcome === 'excluded') { done++; removed += r.removedItems || 0; } else refused++; });
+          res.results.forEach(function (r) { if (r.outcome === 'excluded') { done++; ok[r.docId] = true; removed += r.removedItems || 0; } else refused++; });
         } else if (res && (res.reason === 'forbidden' || res.error || res.ok === false)) { refused += job.docIds.length; if (!res.reason && !res.ok) unavailable = unavailable || /unknown|action/i.test(String(res.error || '')); }
         else refused += job.docIds.length;
       }).catch(function () { refused += job.docIds.length; }).then(next);
