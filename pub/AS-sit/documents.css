@@ -9,15 +9,17 @@
 #documentsView .dv-showmenu label{display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer}
 #documentsView .dv-folder{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 10px;overflow:hidden}
 #documentsView .dv-fhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 12px;background:#f9fafb;border-bottom:1px solid var(--line)}
-#documentsView .dv-folder.collapsed .dv-fhead{border-bottom:0}
-#documentsView .dv-toggle{border:0;background:none;cursor:pointer;font-size:13px;color:var(--muted);padding:2px 4px}
+#documentsView .dv-folder.collapsed > .dv-fhead{border-bottom:0}
+#documentsView .dv-toggle{border:0;background:none;cursor:pointer;color:var(--text);padding:0;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;margin:-6px 0}
+#documentsView .dv-chev{width:18px;height:18px;transition:transform .12s}
+#documentsView .collapsed > .dv-fhead .dv-chev,#documentsView .collapsed > .dv-thead .dv-chev{transform:rotate(-90deg)}
 #documentsView .dv-path{font-weight:600;font-size:14px;color:var(--text);text-decoration:none;word-break:break-word}
 #documentsView a.dv-path{color:var(--blue);text-decoration:underline;display:inline-flex;align-items:center;min-height:44px}
 #documentsView a.dv-path::after{content:"\2197" / "";margin-left:4px;font-size:12px;text-decoration:none}
 #documentsView a.dv-where{color:var(--blue);text-decoration:underline}
 #documentsView a.dv-path:hover{color:var(--blue);text-decoration:underline}
 #documentsView .dv-scan{margin-left:auto;display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted)}
-#documentsView .dv-folder.collapsed .dv-rows{display:none}
+#documentsView .dv-folder.collapsed > .dv-rows,#documentsView .dv-folder.collapsed > .dv-folder{display:none}
 #documentsView .dv-row{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid #eef2f7}
 #documentsView .dv-row:last-child{border-bottom:0}
 #documentsView .dv-row.sel{background:var(--blue2)}
@@ -29,8 +31,10 @@
 #documentsView a.dv-where:hover{color:var(--blue);text-decoration:underline}
 #documentsView .dv-team{margin:0 0 14px}
 #documentsView .dv-thead{display:flex;align-items:center;gap:10px;padding:4px 2px 8px;font-size:15px}
-#documentsView .dv-team.collapsed .dv-tbody{display:none}
-#documentsView .dv-tbody .dv-folder{margin-left:10px}
+#documentsView .dv-team.collapsed > .dv-folder{display:none}
+#documentsView .dv-team > .dv-folder{margin-left:10px}
+#documentsView .dv-folder > .dv-folder{margin:8px 8px 8px 14px}
+#documentsView .dv-thead .dv-teamscan{margin-left:auto}
 #documentsView .dv-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;border:1px solid var(--line);white-space:nowrap}
 #documentsView .dv-pill.tracked{background:var(--green2);border-color:#a7f3d0;color:#065f46}
 #documentsView .dv-pill.not_tracked{background:#f3f4f6;color:#374151}
@@ -55,7 +59,6 @@
 #documentsView .dv-folder[aria-busy="true"] .dv-fhead{background:var(--blue2)}
 /* NT-2wr2.29: team chip on folder headers, auto-scan progress line */
 #documentsView .dv-chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;background:var(--blue2);border:1px solid var(--line);color:var(--text);white-space:nowrap}
-#documentsView .dv-prog{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 2px 10px;font-size:13px;color:var(--muted)}
 /* NT-o96r: folder header select-all, summary, Exclude listed; folders with nothing tracked read muted */
 #documentsView .dv-fhead .foldersel{margin:0}
 #documentsView .dv-untracked .dv-fhead .dv-sum,#documentsView .dv-untracked .dv-fhead .dv-path{color:var(--muted)}
