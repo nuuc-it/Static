@@ -25,6 +25,7 @@ its own folder beneath `pub/`.
 | `pub/AS` | NUUTS-Track (`scripts/portal-static.js` via `gas-static`, PROD build; cut over from GActionSheet 2026-10-11) | production | <https://nuuc-it.github.io/Static/pub/AS/> |
 | `pub/AS-sit` | NUUTS-Track (`scripts/portal-static.js` via `gas-static`, chained off the Shell `deploy:test`) | test | <https://nuuc-it.github.io/Static/pub/AS-sit/> |
 | `pub/ballot` | RankChoiceVoting (`tools/static-pages.js` via `gas-static`, NUUC build) | nuuc | <https://nuuc-it.github.io/Static/pub/ballot/> |
+| `pub/ballot-sit` | RankChoiceVoting (same pipeline, SIT build; moved from f3go30/static-pages 2026-11-20 for NUUC-Dispatch sign-in) | sit | <https://nuuc-it.github.io/Static/pub/ballot-sit/> |
 | `pub/pmix-sit` | PracticeMix (`tools/static-pages.js` via `gas-static`) | test | <https://nuuc-it.github.io/Static/pub/pmix-sit/> |
 | `pub/pmix` | PracticeMix (same pipeline, PROD build) | prod | <https://nuuc-it.github.io/Static/pub/pmix/> |
 | `pub/pmix-cal` | PracticeMix (`tools/build-choir-ics.js` via `.github/workflows/choir-calendar.yml`, twice daily from the live schedule; not a `gas-static` folder) | prod | <https://nuuc-it.github.io/Static/pub/pmix-cal/choir.ics> |
@@ -53,6 +54,7 @@ Keep it in step with the table above.
   "pub/AS": { "project": "NUUTS-Track", "env": "production", "url": "https://nuuc-it.github.io/Static/pub/AS/" },
   "pub/AS-sit": { "project": "NUUTS-Track", "env": "test", "url": "https://nuuc-it.github.io/Static/pub/AS-sit/" },
   "pub/ballot": { "project": "RankChoiceVoting", "env": "nuuc", "url": "https://nuuc-it.github.io/Static/pub/ballot/" },
+  "pub/ballot-sit": { "project": "RankChoiceVoting", "env": "sit", "url": "https://nuuc-it.github.io/Static/pub/ballot-sit/" },
   "pub/pmix-sit": { "project": "PracticeMix", "env": "test", "url": "https://nuuc-it.github.io/Static/pub/pmix-sit/" },
   "pub/pmix": { "project": "PracticeMix", "env": "prod", "url": "https://nuuc-it.github.io/Static/pub/pmix/" },
   "pub/pmix-cal": { "project": "PracticeMix", "env": "prod", "url": "https://nuuc-it.github.io/Static/pub/pmix-cal/choir.ics" },
