@@ -1,0 +1,2303 @@
+<!DOCTYPE html>
+<html data-theme="f3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>RankChoiceVoting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Stencil+One&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Combined styles for all four views (list/edit/analyze/ballot). Colors, fonts, and radii are
+     CSS custom properties so a per-environment "design language" can be swapped by toggling
+     data-theme on <html> (stamped by tools/build-static-pages.js) without duplicating markup or
+     rules. Three themes exist today:
+       - (no data-theme / "legacy") the original Material-ish look this app has always had.
+       - "f3" — the F3 tactical design language from docs/f3-dl-idea.md, used for sit/prod.
+       - "nuuc" — the Northlake UU design language from docs/nuuc-dl-idea.md, used for nuuc. */
+  :root {
+    --bg-page: #ffffff;
+    --text-primary: #202124;
+    --text-secondary: #5f6368;
+    --text-muted: #9aa0a6;
+    --text-body: #3c4043;
+    --border: #dadce0;
+    --surface-secondary: #f8f9fa;
+    --link: #1a73e8;
+    --accent: #1a73e8;
+    --accent-text: #ffffff;
+    --disabled-bg: #c7c7c7;
+    --success-bg: #e6f4ea;
+    --success-text: #188038;
+    --info-bg: #e8f0fe;
+    --info-text: #174ea6;
+    --error: #d93025;
+    --warning-border: #f9ab00;
+    --warning-bg: #fef7e0;
+    --warning-badge-bg: #f9ab00;
+    --warning-badge-text: #202124;
+    --dragging-shadow: rgba(0, 0, 0, 0.15);
+    --font-display: inherit;
+    --font-body: Arial, sans-serif;
+    --font-mono: 'Courier New', monospace;
+    --tracking-display: normal;
+    --transform-display: none;
+    --weight-display: bold; /* matches the browser UA default this theme has always relied on */
+    --radius-card: 8px;
+    --radius-button: 6px;
+    --radius-badge: 10px;
+  }
+  html[data-theme="f3"] {
+    /* F3 tactical design language (docs/f3-dl-idea.md §6 token reference, refined palette). */
+    --bg-page: #1B1E21;
+    --text-primary: #FFFFFF;
+    --text-secondary: #9DA5B4;
+    --text-muted: #9DA5B4;
+    --text-body: #C7CDD3;
+    --border: #383D43;
+    --surface-secondary: #24282D;
+    --link: #C83737;
+    --accent: #C83737;
+    --accent-text: #FFFFFF;
+    --disabled-bg: #4A5257;
+    --success-bg: rgba(46, 139, 87, 0.16);
+    --success-text: #2E8B57;
+    --info-bg: rgba(74, 134, 232, 0.16);
+    --info-text: #4A86E8;
+    --error: #C83737;
+    --warning-border: #E6A23C;
+    --warning-bg: rgba(230, 162, 60, 0.16);
+    --warning-badge-bg: #E6A23C;
+    --warning-badge-text: #1B1E21;
+    --dragging-shadow: rgba(0, 0, 0, 0.4);
+    /* The 3 Fs' accent colors (docs/f3-dl-idea.md §2) — not wired into any component yet since
+       this app has no per-F sections, but declared here so a future one can use them without
+       reaching for a raw hex. */
+    --f1-blue: #4A86E8;
+    --f2-amber: #E6A23C;
+    --f3-green: #2E8B57;
+    --font-display: 'Saira Stencil One', sans-serif;
+    --font-body: 'Inter', Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
+    --tracking-display: 0.03em;
+    --transform-display: uppercase;
+    /* Saira Stencil One ships one weight (400) only — asking for bold makes the browser
+       synthesize a faux-bold by fattening the stencil glyphs, blurring out the cutouts into a
+       distracting fat sans-serif look (see h1/h2/h3 rule below). normal keeps the real stencil
+       face. */
+    --weight-display: normal;
+    --radius-card: 8px;
+    --radius-button: 4px;
+    --radius-badge: 12px;
+  }
+  html[data-theme="nuuc"] {
+    /* Northlake UU design language (docs/nuuc-dl-idea.md §2/§6) — warm Pacific Northwest
+       palette built on the Flaming Chalice identity: Parchment surfaces, Deep Chalice Teal
+       links/accents, Warm Gold for warnings/highlights, Evergreen/Lake Blue held in reserve
+       (see :root's --f1/--f2/--f3 comment above for the same "declared, not yet wired into a
+       component" pattern). */
+    --bg-page: #FBF9F5;
+    --text-primary: #2D3748;
+    --text-secondary: #5A6B7A;
+    --text-muted: #64748B;
+    --text-body: #3C4A57;
+    --border: #E2DDD3;
+    --surface-secondary: #F0F4F6;
+    --link: #007791;
+    --accent: #007791;
+    --accent-text: #ffffff;
+    --disabled-bg: #C7C7C7;
+    --success-bg: rgba(42, 77, 56, 0.1);
+    --success-text: #2A4D38;
+    --info-bg: #F0F4F6;
+    --info-text: #4B7B94;
+    --error: #C0392B;
+    --warning-border: #D97706;
+    --warning-bg: rgba(217, 119, 6, 0.12);
+    --warning-badge-bg: #D97706;
+    --warning-badge-text: #2D3748;
+    --dragging-shadow: rgba(0, 0, 0, 0.15);
+    /* Reserve colors from docs/nuuc-dl-idea.md §2 not wired into any component yet, following
+       the f3 theme's --f1/--f2/--f3 precedent above. */
+    --nuuc-evergreen: #2A4D38;
+    --nuuc-lake-blue: #4B7B94;
+    --font-display: 'Lora', Georgia, serif;
+    --font-body: 'Plus Jakarta Sans', Arial, sans-serif;
+    --font-mono: 'Plus Jakarta Sans', 'Courier New', monospace;
+    --tracking-display: normal;
+    --transform-display: none;
+    --weight-display: bold;
+    --radius-card: 12px;
+    --radius-button: 8px;
+    --radius-badge: 9999px;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { background: var(--bg-page); }
+  body {
+    font-family: var(--font-body);
+    max-width: 640px;
+    margin: 24px auto;
+    padding: 0 16px;
+    color: var(--text-primary);
+    background: var(--bg-page);
+  }
+  /* font-weight is themed (--weight-display, see :root / html[data-theme="f3"] above) rather
+     than left to the browser UA default (bold) — the f3 theme's Black Ops One face has no bold
+     weight to give it, and asking anyway makes the browser synthesize a faux-bold that fattens
+     the stencil glyphs into a blurry, distracting look. font-synthesis: none is belt-and-braces
+     against that same faux-bold/faux-italic synthesis. */
+  h1, h2, h3 { font-family: var(--font-display); font-weight: var(--weight-display); font-synthesis: none; letter-spacing: var(--tracking-display); text-transform: var(--transform-display); }
+  h1 { font-size: 1.4rem; }
+  a { color: var(--link); }
+  form { margin-bottom: 24px; }
+  label { display: block; font-weight: bold; margin: 10px 0 6px; }
+  input[type="text"], input[type="url"], textarea {
+    width: 100%;
+    font-size: 1rem;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
+    font-family: inherit;
+    background: var(--bg-page);
+    color: var(--text-primary);
+  }
+  textarea { resize: vertical; }
+  /* A one-line value that wraps instead of scrolling sideways; height follows the text. */
+  textarea.single-line { resize: none; overflow: hidden; }
+  button, a.btn {
+    font-size: 1rem;
+    padding: 10px 16px;
+    min-height: 44px; /* WCAG 2.5.5 touch-target minimum — no hover fallback on touch */
+    border: none;
+    border-radius: var(--radius-button);
+    background: var(--accent);
+    color: var(--accent-text);
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  button { width: 100%; margin-top: 12px; }
+  button:disabled { background: var(--disabled-bg); cursor: default; }
+  button.secondary, a.btn.secondary { background: var(--surface-secondary); color: var(--text-primary); }
+  .hidden { display: none !important; }
+  /* Optional Google sign-in (rcballot-dx3) — only rendered on Dispatch-enabled builds. */
+  .signin-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 16px; font-size: 0.9em; color: var(--text-secondary); }
+  .signin-bar img.avatar { width: 28px; height: 28px; border-radius: 50%; }
+  .signin-bar .signin-error { color: var(--error-text, #d93025); flex-basis: 100%; }
+  .app-version-footer { color: var(--text-muted); font-size: 0.75em; margin-top: 24px; font-family: var(--font-mono); }
+
+  /* --- List view --- */
+  .ballot-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+  .ballot-card { border: 1px solid var(--border); border-radius: var(--radius-card); padding: 12px 16px; background: var(--surface-secondary); }
+  .ballot-card h3 { margin: 0 0 2px; font-size: 1.05rem; }
+  .ballot-card .ballot-id { color: var(--text-secondary); font-size: 0.85em; margin-bottom: 6px; font-family: var(--font-mono); }
+  .ballot-card .ballot-meta { color: var(--text-secondary); font-size: 0.9em; margin-bottom: 10px; }
+  .ballot-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ballot-actions a.btn { flex: 1 1 auto; min-width: 100px; }
+  .ballot-info { margin-top: 10px; }
+  .ballot-info summary { cursor: pointer; color: var(--link); font-size: 0.9em; padding: 6px 0; min-height: 44px; display: flex; align-items: center; }
+  .ballot-info p { margin: 4px 0 0; color: var(--text-body); font-size: 0.9em; white-space: pre-wrap; }
+  @media (max-width: 420px) { button, a.btn { width: 100%; } }
+
+  /* --- Edit view --- */
+  p.sub { color: var(--text-secondary); margin: 0; }
+  #createdBanner { background: var(--success-bg); color: var(--success-text); border-radius: var(--radius-button); padding: 10px 12px; margin-bottom: 16px; }
+  .edit-instructions { background: var(--info-bg); border-radius: var(--radius-button); padding: 12px 14px; color: var(--info-text); font-size: 0.9em; margin-bottom: 20px; }
+  .edit-instructions p { margin: 0 0 6px; }
+  .edit-instructions p:last-child { margin-bottom: 0; }
+  .section-divider { color: var(--text-muted); font-size: 0.8em; text-align: center; margin: 32px 0 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: bold; }
+  .subsection-header { font-size: 0.95rem; font-weight: bold; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); color: var(--text-primary); }
+  .subsection-header .optional-tag { font-weight: normal; font-size: 0.8em; color: var(--text-secondary); margin-left: 6px; }
+  .field-block { margin: 18px 0; }
+  .field-row { display: flex; align-items: flex-start; gap: 4px; justify-content: space-between; }
+  /* The display text is the first child of every .field-row (h1#titleDisplay, p#footerDisplay,
+     etc.) — flex:1 1 auto plus min-width:0 lets it actually shrink/wrap inside the row instead
+     of pushing past the pencil button. */
+  .field-row > :first-child { flex: 1 1 auto; min-width: 0; }
+  /* width: auto overrides the generic `button { width: 100%; }` rule below — that rule wins the
+     cascade for the "width" property on any <button> whose own rule doesn't set one, which
+     .pencil-btn didn't; combined with flex:0 0 auto that made it claim the row's full width and
+     crush the display text next to it down to nothing. */
+  .pencil-btn { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; width: auto; flex: 0 0 auto; margin-top: 0; }
+  .field-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-button); background: var(--surface-secondary); }
+  .field-help { margin: 0 0 10px; color: var(--text-secondary); font-size: 0.9em; }
+  .field-panel-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .field-panel-actions button { flex: 1; }
+  .field-status { min-height: 1.2em; margin-top: 8px; font-size: 0.9em; color: var(--text-secondary); }
+  .field-status.error { color: var(--error); }
+  .fixed-block { margin: 14px 0; }
+  .field-name-tag { display: block; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: bold; margin-bottom: 4px; }
+  .admin-only-section { margin-top: 32px; padding: 14px; border: 1px dashed var(--warning-border); border-radius: var(--radius-card); background: var(--warning-bg); }
+  .admin-only-section .subsection-header { border-bottom: none; margin-top: 0; }
+  .admin-only-badge { display: inline-block; background: var(--warning-badge-bg); color: var(--warning-badge-text); font-size: 0.65em; font-weight: bold; text-transform: uppercase; padding: 2px 6px; border-radius: var(--radius-badge); margin-left: 8px; vertical-align: middle; }
+
+  /* --- Candidate/topic rows (shared by edit + ballot views) --- */
+  ul#orphanList { list-style: none; padding: 0; margin: 12px 0; }
+  ul#orphanList li { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-button); padding: 8px 10px; margin-bottom: 6px; }
+  ul#candidateList, ul#topicList { list-style: none; padding: 0; margin: 12px 0; }
+  ul#candidateList li, ul#topicList li { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-button); padding: 8px 10px; margin-bottom: 6px; }
+  /* Admin candidate rows: tight spacing (control sizes unchanged), details clamped to two lines (click to expand). */
+  ul#candidateList li { padding: 0 8px; margin-bottom: 2px; }
+  #candidateList .topic-row { gap: 4px; grid-template-columns: auto 1fr auto auto auto auto; }
+  #candidateList .topic-info-content { margin-top: 0; padding-left: 34px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+  #candidateList .topic-info-content.expanded { display: block; }
+  #candidateList .topic-info-content[hidden] { display: none; }
+  #candidateList button.topic-info-content { background: none; border: none; text-align: left; font: inherit; color: inherit; width: 100%; }
+  #candidateList .topic-info-link { margin-top: 0; padding-left: 34px; }
+  /* Respondent ranking rows: tight spacing only; handle/ℹ️ sizes unchanged. */
+  ul#topicList li { padding: 0 8px; margin-bottom: 2px; }
+  #topicList .topic-row { gap: 6px; }
+  #topicList .topic-info-content { margin-top: 0; padding-bottom: 4px; }
+  ul#topicList li { display: flex; flex-direction: column; user-select: none; }
+  ul#topicList li.dragging { position: relative; z-index: 10; background: var(--info-bg); box-shadow: 0 4px 10px var(--dragging-shadow); }
+  .topic-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+  .handle { font-size: 1.1rem; color: var(--text-secondary); padding: 10px 4px; min-height: 44px; display: flex; align-items: center; }
+  #topicList .handle { cursor: grab; touch-action: none; }
+  .rich { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .rich a { overflow-wrap: anywhere; }
+  /* Details preview (Show-Details-Preview on): bold name over a muted first-paragraph line clamped to 2 lines. */
+  #topicList .topic-text.with-preview { white-space: normal; min-width: 0; }
+  #topicList .topic-text.with-preview .topic-name { display: block; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #topicList .topic-text .topic-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-secondary); font-size: 0.85em; font-weight: normal; overflow-wrap: anywhere; }
+  #topicList .topic-text.expanded .topic-preview { display: none; }
+  .details-first { color: var(--text-body); }
+  .details-rest { color: var(--text-muted); }
+  .feedback-block { margin: 16px 0; }
+  .feedback-block label { display: block; margin-bottom: 4px; }
+  .feedback-block textarea { margin-top: 0; }
+  .topic-text { min-width: 0; overflow-wrap: break-word; font-weight: bold; }
+  #topicList .topic-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: normal; }
+  .topic-text.has-details { cursor: pointer; }
+  .topic-text.has-details, .info-toggle, .topic-info-content { touch-action: manipulation; }
+  /* Same width:auto fix as .pencil-btn above — .info-toggle is a <button> too and would
+     otherwise inherit width:100% and blow out its grid cell in .topic-row. */
+  .info-toggle { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; width: auto; margin-top: 0; }
+  .topic-info-content { margin-top: 4px; padding-left: 34px; color: var(--text-body); font-size: 0.9em; white-space: pre-wrap; }
+  .topic-info-content.empty { font-style: italic; color: var(--text-muted); }
+  .topic-info-link { display: block; margin-top: 4px; padding-left: 34px; font-size: 0.9em; }
+  .candidate-edit-panel { margin-top: 8px; }
+  .add-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-button); background: var(--surface-secondary); }
+  .add-panel textarea { margin-top: 10px; }
+  .add-panel-actions { display: flex; gap: 8px; }
+  .add-panel-actions button { flex: 1; }
+  footer.ballot-footer { color: var(--text-secondary); font-size: 0.85em; margin-top: 24px; }
+  p.ballot-contact { color: var(--text-secondary); font-size: 0.85em; margin-top: 4px; }
+  #status, #status2 { color: var(--text-secondary); min-height: 1.2em; margin-top: 8px; }
+  #status.error, #status2.error { color: var(--error); }
+
+  /* --- Analyze view --- */
+  .method-note { background: var(--info-bg); color: var(--info-text); font-size: 0.9em; padding: 10px 12px; border-radius: var(--radius-button); margin-bottom: 16px; }
+  table.results-table { border-collapse: collapse; margin-bottom: 15px; width: 100%; }
+  table.results-table th, table.results-table td { border: 1px solid var(--border); padding: 6px 8px; }
+  table.results-table th { background: var(--surface-secondary); text-align: left; }
+  table.results-table td.center { text-align: center; }
+</style>
+</head>
+<body>
+  <!-- Admin-view sign-in (rcballot-dx3.3): filled by renderSignIn_ on Dispatch-enabled builds only. -->
+  <div id="adminSigninBar" class="signin-bar hidden"></div>
+
+  <!-- ============================= LIST VIEW ============================= -->
+  <div id="view-list" class="hidden">
+    <h1>Ballot Admin</h1>
+    <h2>Create New Ballot</h2>
+    <p id="createError" class="field-status error hidden"></p>
+    <form id="createForm">
+      <label for="newBallotId">Ballot ID (used in the ballot link and sheet name — letters, numbers, "-", "_" only)</label>
+      <input type="text" id="newBallotId" required>
+      <button type="submit">Create Ballot</button>
+    </form>
+    <p id="listStatus">Loading…</p>
+    <div id="ballotList" class="ballot-list"></div>
+  </div>
+
+  <!-- ============================= EDIT VIEW ============================= -->
+  <div id="view-edit" class="hidden">
+    <p><a id="backLink" href="?cmd=admin">&larr; Back to ballot list</a> <span class="ballot-nav" id="editNavTop"></span></p>
+    <div id="createdBanner" class="hidden">Ballot created — fill in the fields below using the pencil icons.</div>
+    <p id="editLoadStatus">Loading…</p>
+
+    <div id="editRoot" class="hidden">
+      <div class="edit-instructions">
+        <p><strong>Editing this ballot:</strong> below is the landing page immediately followed by the ballot page, laid out and styled exactly as respondents see them.</p>
+        <p>A small label (like "TITLE") marks each editable field — tap its pencil (✏️), make your change, and Save; it applies immediately, so there's nothing else to save. Unlabeled text is fixed page copy, shown for context only — it's already there, so there's no need to add it again.</p>
+        <p>When you're done, use "&larr; Back to ballot list" below.</p>
+      </div>
+
+      <p class="section-divider">Landing Page</p>
+
+      <div class="field-block">
+        <span class="field-name-tag">Title</span>
+        <div class="field-row">
+          <h1 id="titleDisplay"></h1>
+          <button type="button" class="pencil-btn" id="titleEditBtn" aria-label="Edit Title">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="titlePanel">
+          <p class="field-help">Shown as the page title everywhere — landing page and ballot page.</p>
+          <label for="titleInput">Title</label>
+          <textarea id="titleInput" class="single-line" rows="1"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="titleSaveBtn">Save</button>
+            <button type="button" class="secondary" id="titleCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="titleStatus"></div>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <span class="field-name-tag">Description</span>
+        <div class="field-row">
+          <p class="sub rich" id="descriptionDisplay"></p>
+          <button type="button" class="pencil-btn" id="descriptionEditBtn" aria-label="Edit Description">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="descriptionPanel">
+          <p class="field-help">Shown on the landing page, before a respondent enters their name. Include any "how to start" guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <label for="descriptionInput">Description</label>
+          <textarea id="descriptionInput" rows="3"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="descriptionSaveBtn">Save</button>
+            <button type="button" class="secondary" id="descriptionCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="descriptionStatus"></div>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <span class="field-name-tag">Description Link <span class="optional-tag">(optional)</span></span>
+        <div class="field-row">
+          <p class="sub rich" id="descriptionLinkDisplay"></p>
+          <button type="button" class="pencil-btn" id="descriptionLinkEditBtn" aria-label="Edit Description Link">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="descriptionLinkPanel">
+          <p class="field-help">An optional link shown on its own line at the end of the Description (for example, to a document with background material). Link URL must start with http:// or https://. Link Text is the clickable label; if you leave it blank the URL itself is shown. Leave Link URL blank for no link. The link opens in a new tab.</p>
+          <label for="descriptionLinkTextInput">Link Text (optional)</label>
+          <input type="text" id="descriptionLinkTextInput">
+          <label for="descriptionLinkUrlInput">Link URL</label>
+          <input type="url" id="descriptionLinkUrlInput" placeholder="https://…">
+          <div class="field-panel-actions">
+            <button type="button" id="descriptionLinkSaveBtn">Save</button>
+            <button type="button" class="secondary" id="descriptionLinkCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="descriptionLinkStatus"></div>
+        </div>
+      </div>
+
+      <div class="fixed-block">
+        <label for="staticNameInput">Your name</label>
+        <input type="text" id="staticNameInput" disabled placeholder="(respondent types their name here)">
+        <button type="button" disabled style="margin-top:10px;">Continue</button>
+      </div>
+
+      <p class="section-divider">Ballot Page</p>
+
+      <div class="field-block">
+        <span class="field-name-tag">Ballot Instructions</span>
+        <div class="field-row">
+          <p class="sub rich" id="instructionsDisplay"></p>
+          <button type="button" class="pencil-btn" id="instructionsEditBtn" aria-label="Edit Ballot Instructions">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="instructionsPanel">
+          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking. Include the drag/reorder guidance here too — there's no separate fixed instruction text below it anymore. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <label for="instructionsInput">Ballot Instructions</label>
+          <textarea id="instructionsInput" rows="3"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="instructionsSaveBtn">Save</button>
+            <button type="button" class="secondary" id="instructionsCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="instructionsStatus"></div>
+        </div>
+      </div>
+
+      <p id="layoutError" class="field-status error hidden" role="alert"></p>
+      <p class="subsection-header">Candidates</p>
+
+      <div class="field-block">
+        <span class="field-name-tag">Details Preview</span>
+        <div class="field-row">
+          <p id="detailsPreviewDisplay"></p>
+          <button type="button" class="pencil-btn" id="detailsPreviewEditBtn" aria-label="Edit Details Preview setting">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="detailsPreviewPanel">
+          <p class="field-help">When on, each ballot item that has Details shows its name in bold with the FIRST PARAGRAPH of its Details (the text before the first blank line) as a short muted summary underneath, cut to two lines. Tapping the item expands the full Details, including every later paragraph and the link. When off, only the name shows until a respondent taps it. Write each candidate's Details with this in mind: first paragraph = the summary shown under the name; later paragraphs (after a blank line) appear only when the item is expanded.</p>
+          <label><input type="checkbox" id="detailsPreviewInput"> Show the first paragraph of Details under each item name</label>
+          <div class="field-panel-actions">
+            <button type="button" id="detailsPreviewSaveBtn">Save</button>
+            <button type="button" class="secondary" id="detailsPreviewCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="detailsPreviewStatus"></div>
+        </div>
+      </div>
+
+      <ul id="candidateList"></ul>
+      <div class="field-status" id="candidateListStatus"></div>
+      <div id="orphanBlock" class="hidden">
+        <p class="subsection-header">Unlinked vote columns</p>
+        <p class="field-help">These are votes cast for a choice that no longer exists on this ballot. That happens when a choice was deleted after people had voted, or when a column was renamed directly in the spreadsheet. These votes are <b>not counted</b>. Each voter's rankings of the other choices still count normally. <b>Link</b> a column to a current choice to bring its votes back (for example, if the choice was deleted by mistake, or was re-added under a new name). <b>Discard</b> it if the choice was removed on purpose; the column and its votes are then permanently deleted.</p>
+        <ul id="orphanList"></ul>
+        <div class="field-status" id="orphanStatus"></div>
+      </div>
+
+      <div class="field-block">
+        <button type="button" class="secondary" id="addCandidateBtn">+ Add Candidate</button>
+        <div class="field-panel hidden" id="addCandidatePanel">
+          <p class="field-help">Adds a new candidate to the ballot.</p>
+          <label for="newCandidateNameInput">Name</label>
+          <input type="text" id="newCandidateNameInput">
+          <label for="newCandidateDetailsInput">Details (optional)</label>
+          <textarea id="newCandidateDetailsInput" rows="4" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>
+          <p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <label for="newCandidateLinkTextInput">Link Text (optional)</label>
+          <input type="text" id="newCandidateLinkTextInput">
+          <label for="newCandidateLinkUrlInput">Link URL (optional)</label>
+          <input type="url" id="newCandidateLinkUrlInput" placeholder="https://…">
+          <div class="field-panel-actions">
+            <button type="button" id="addCandidateSaveBtn">Add</button>
+            <button type="button" class="secondary" id="addCandidateCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="addCandidateStatus"></div>
+        </div>
+      </div>
+
+      <p class="subsection-header">Add New Candidates <span class="optional-tag">(only shown to respondents when enabled)</span></p>
+
+      <div class="field-block">
+        <div class="field-row">
+          <p class="sub" id="addSettingsDisplay"></p>
+          <button type="button" class="pencil-btn" id="addSettingsEditBtn" aria-label="Edit Adding New Candidates settings">✏️</button>
+        </div>
+        <p class="sub rich" id="addInstructionsDisplay"></p>
+        <div class="field-panel hidden" id="addSettingsPanel">
+          <p class="field-help">Controls whether respondents can add their own candidate from the ballot page, and what instructions they see above the "+ Add New" button. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <label><input type="checkbox" id="acceptNewInput"> Accept new candidates from respondents</label>
+          <label for="addInstructionsInput">Instructions to Add</label>
+          <textarea id="addInstructionsInput" rows="2"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="addSettingsSaveBtn">Save</button>
+            <button type="button" class="secondary" id="addSettingsCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="addSettingsStatus"></div>
+        </div>
+      </div>
+
+      <div class="fixed-block" id="addNewButtonPreview">
+        <button type="button" disabled>+ Add New</button>
+      </div>
+
+      <p class="subsection-header">Feedback</p>
+
+      <div class="field-block">
+        <span class="field-name-tag">Feedback Prompt</span>
+        <div class="field-row">
+          <p class="rich" id="feedbackPromptDisplay"></p>
+          <button type="button" class="pencil-btn" id="feedbackPromptEditBtn" aria-label="Edit Feedback Prompt">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="feedbackPromptPanel">
+          <p class="field-help">The question shown above the always-visible feedback box on the ballot page, just above Submit. Leave it blank to use the default, "Any feedback you'd like to add?".</p>
+          <label for="feedbackPromptInput">Feedback Prompt</label>
+          <textarea id="feedbackPromptInput" rows="2"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="feedbackPromptSaveBtn">Save</button>
+            <button type="button" class="secondary" id="feedbackPromptCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="feedbackPromptStatus"></div>
+        </div>
+      </div>
+
+      <div class="fixed-block">
+        <textarea id="staticFeedbackInput" rows="3" disabled></textarea>
+      </div>
+
+      <div class="fixed-block">
+        <button type="button" disabled>Submit</button>
+        <button type="button" class="secondary" disabled style="margin-top:8px;">Back</button>
+      </div>
+
+      <div class="field-block">
+        <span class="field-name-tag">Footer</span>
+        <div class="field-row">
+          <p class="rich" id="footerDisplay"></p>
+          <button type="button" class="pencil-btn" id="footerEditBtn" aria-label="Edit Footer">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="footerPanel">
+          <p class="field-help">Shown at the bottom of the ballot page. Line breaks are kept and bare http(s):// links become clickable.</p>
+          <label for="footerInput">Footer</label>
+          <textarea id="footerInput" rows="2"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="footerSaveBtn">Save</button>
+            <button type="button" class="secondary" id="footerCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="footerStatus"></div>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <span class="field-name-tag">Contact</span>
+        <div class="field-row">
+          <p class="rich" id="contactDisplay"></p>
+          <button type="button" class="pencil-btn" id="contactEditBtn" aria-label="Edit Contact">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="contactPanel">
+          <p class="field-help">Shown at the bottom of the ballot page, below the footer, as "Contact: ...". Line breaks are kept and bare http(s):// links become clickable.</p>
+          <label for="contactInput">Contact</label>
+          <textarea id="contactInput" rows="2"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="contactSaveBtn">Save</button>
+            <button type="button" class="secondary" id="contactCancelBtn">Cancel</button>
+          </div>
+          <div class="field-status" id="contactStatus"></div>
+        </div>
+      </div>
+
+      <div class="admin-only-section">
+        <p class="subsection-header">Admin-Only Notes <span class="admin-only-badge">Admin only</span></p>
+        <div class="field-block">
+          <div class="field-row">
+            <p id="adminOnlyNotesDisplay"></p>
+            <button type="button" class="pencil-btn" id="adminOnlyNotesEditBtn" aria-label="Edit Admin-Only Notes">✏️</button>
+          </div>
+          <div class="field-panel hidden" id="adminOnlyNotesPanel">
+            <p class="field-help">Never shown to respondents — shown as a "More info" disclosure in the ballot list.</p>
+            <label for="adminOnlyNotesInput">Admin-Only Notes</label>
+            <textarea id="adminOnlyNotesInput" rows="3"></textarea>
+            <div class="field-panel-actions">
+              <button type="button" id="adminOnlyNotesSaveBtn">Save</button>
+              <button type="button" class="secondary" id="adminOnlyNotesCancelBtn">Cancel</button>
+            </div>
+            <div class="field-status" id="adminOnlyNotesStatus"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ballot admins (rcballot-dx3.3): shown only when the server reports sign-in enabled. -->
+      <div class="field-block hidden" id="adminsBlock">
+        <p class="subsection-header">Ballot admins</p>
+        <p class="field-help" id="adminsHelp"></p>
+        <div class="field-row">
+          <p id="adminsDisplay"></p>
+          <button type="button" class="pencil-btn" id="adminsEditBtn" aria-label="Edit ballot admins">✏️</button>
+        </div>
+        <div class="field-panel hidden" id="adminsPanel">
+          <p class="field-help">Comma-separated Google account emails. Only these people (and the site's super-admins) can edit this ballot. Leave blank to let anyone edit it.</p>
+          <label for="adminsInput">Admins</label>
+          <textarea id="adminsInput" rows="2"></textarea>
+          <div class="field-panel-actions">
+            <button type="button" id="adminsSaveBtn">Save</button>
+            <button type="button" class="secondary" id="adminsCancelBtn">Cancel</button>
+          </div>
+        </div>
+        <div class="field-panel-actions">
+          <button type="button" class="hidden" id="claimBtn">Make me an admin</button>
+        </div>
+        <div class="field-status" id="adminsStatus"></div>
+      </div>
+
+      <div class="field-block danger-zone" id="dangerZone">
+        <p class="subsection-header">Danger zone</p>
+        <p class="field-help">Clear all responses removes every vote from this ballot, so it starts fresh (anyone who voted can vote again). The choices and settings are kept. A backup copy of the current sheet is saved first, in a sheet named like <code>Backup-&lt;id&gt;-yyyyMMdd-HHmm</code>.</p>
+        <label for="clearConfirmInput">Type the ballot id to confirm</label>
+        <input type="text" id="clearConfirmInput" autocomplete="off">
+        <div class="field-panel-actions">
+          <button type="button" class="secondary" id="clearResponsesBtn" disabled>Clear all responses</button>
+        </div>
+        <div class="field-status" id="clearStatus"></div>
+      </div>
+
+      <p style="margin-top:24px;"><a id="backLinkBottom" href="?cmd=admin">&larr; Back to ballot list</a> <span class="ballot-nav" id="editNavBottom"></span></p>
+    </div>
+  </div>
+
+  <!-- ============================= ANALYZE VIEW ============================= -->
+  <div id="view-analyze" class="hidden">
+    <p><a href="?cmd=admin">&larr; Back to ballot list</a> <span class="ballot-nav" id="analyzeNav"></span></p>
+    <p id="analyzeStatus">Loading…</p>
+    <div id="analyzeRoot" class="hidden"></div>
+  </div>
+
+  <!-- ============================= BALLOT VIEW ============================= -->
+  <div id="view-ballot" class="hidden">
+    <h1 id="pageTitle">RankChoiceVoting Ballot</h1>
+    <p class="sub rich" id="pageDescription"></p>
+
+    <div id="step-noBallot" class="hidden">
+      <p>No ballot is currently available at this link. If you were given a link with a ballot name in it (e.g. <code>?cmd=ballot&amp;id=my-ballot</code>), double check it's correct.</p>
+    </div>
+
+    <div id="step-name" class="hidden">
+      <!-- The "enter your name to start/resume" guidance used to be hardcoded here, duplicating
+           whatever the admin-editable Description above already says. It's now folded into
+           Description's own default text (see BallotModel.js's createBallotSheet_) instead, so
+           there's one editable block of copy here rather than an editable one stacked on a
+           fixed one. Applies to newly created ballots; an existing ballot's Description keeps
+           whatever it already has. -->
+      <!-- Optional Google sign-in (rcballot-dx3.2): filled by renderSignIn_ on Dispatch-enabled
+           builds only; typing a name without signing in always works. -->
+      <div id="ballotSigninBar" class="signin-bar hidden"></div>
+      <label for="nameInput">Your name</label>
+      <input type="text" id="nameInput" autocomplete="name">
+      <button id="startBtn">Continue</button>
+      <div id="status"></div>
+    </div>
+
+    <div id="step-rank" class="hidden">
+      <!-- Same fold as step-name above, but for Instructions/"drag items to reorder" — see
+           BallotModel.js's createBallotSheet_ default. -->
+      <ul id="topicList"></ul>
+
+      <div id="addSection">
+        <p class="sub rich" id="addInstructionsText"></p>
+        <button id="addNewBtn" type="button" class="secondary">+ Add New</button>
+        <div id="addPanel" class="add-panel hidden">
+          <label for="newItemInput">Name</label>
+          <input type="text" id="newItemInput">
+          <label for="newItemDetailsInput">Details (optional)</label>
+          <textarea id="newItemDetailsInput" rows="2" placeholder="Anything voters should know about this item"></textarea>
+          <div class="add-panel-actions">
+            <button id="addBtn" type="button">Add</button>
+            <button id="addCancelBtn" type="button" class="secondary">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="feedbackSection" class="feedback-block">
+        <label for="commentInput" id="feedbackPromptLabel">Any feedback you'd like to add?</label>
+        <textarea id="commentInput" rows="4"></textarea>
+      </div>
+
+      <button id="submitBtn">Submit</button>
+      <button id="backBtn" class="secondary">Back</button>
+
+      <div id="status2"></div>
+    </div>
+
+    <div id="step-done" class="hidden">
+      <p>Thanks, <span id="doneName"></span>! Your ranking has been saved.</p>
+      <button id="editAgainBtn" class="secondary">Re-rank</button>
+    </div>
+
+    <footer class="ballot-footer rich" id="pageFooter"></footer>
+    <p class="ballot-contact rich" id="pageContact"></p>
+  </div>
+
+  <footer class="app-version-footer" id="appVersionFooter"></footer>
+
+<script>
+  // Stamped by tools/build-static-pages.js per env — see that file's header. Left null here so
+  // this source file also runs unbuilt (local/manual testing with ?webapp= — see resolveWebappUrl_).
+  var STATIC_BUILD_VERSION_ = "0.1.18.3";
+  var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzKpwFfgRqHx1v3A0pvVAbUNAMab_A8rqOf0jqgRP5DPTmNNPU6_qelWHMG1QPkXbhP/exec";
+  var STATIC_DEV_CONTACT_ = "stuart.donaldson@gmail.com";
+  // {url, clientId, aud} for NUUC-Dispatch sign-in, from gas-project.json envs.<env>.dispatch
+  // (tools/static-pages.js). null (PROD, or an unbuilt page) or any empty field = sign-in off.
+  var STATIC_DISPATCH_ = {"url":"https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec","clientId":"657771271619-8ebgf03k3rp872vlib3ibsktl9sk4ig1.apps.googleusercontent.com","aud":"rcballot-test"};
+
+  var params = new URLSearchParams(window.location.search);
+  var cmd = params.get('cmd') || 'admin';
+  var action = params.get('action') || '';
+  var ballotId = params.get('id') || '';
+
+  // A ?webapp= query param always overrides the baked-in default — lets static-pages/src be
+  // opened directly (unbuilt) against any deployment for manual testing, same convention as
+  // F3Go30's static client.
+  function resolveWebappUrl_() {
+    return params.get('webapp') || STATIC_WEBAPP_URL_ || '';
+  }
+  var webappUrl_ = resolveWebappUrl_();
+
+  // Appended to every troubleshooting message callApi_ raises below — "the developer" beats a
+  // dead end when there's genuinely nothing the respondent/admin can do about it themselves.
+  function _troubleshootingContact_() {
+    return STATIC_DEV_CONTACT_ ? ' If it keeps happening, contact ' + STATIC_DEV_CONTACT_ + '.'
+      : ' If it keeps happening, contact the site administrator.';
+  }
+
+
+  // ======================================================================
+  // OPTIONAL GOOGLE SIGN-IN (rcballot-dx3) — GIS button -> NUUC-Dispatch verify_identity ->
+  // signed assertion, kept in localStorage and sent in every callApi_ envelope. The server
+  // verifies it (script/Identity.js); this page never decides who someone is. Pattern:
+  // ../NForms/static/src/index.html.
+  // ======================================================================
+  var DISPATCH_ = (STATIC_DISPATCH_ && STATIC_DISPATCH_.url && STATIC_DISPATCH_.clientId && STATIC_DISPATCH_.aud)
+    ? STATIC_DISPATCH_ : null;
+  // SIT and PROD share one origin (f3go30.github.io), so storage is scoped to this build's audience.
+  var AUTH_KEY_ = 'rcvAuth.v1:' + (DISPATCH_ ? DISPATCH_.aud : '');
+  var AUTH_RENEW_SKEW_ = 300;
+  // email comes from Dispatch's verified response; name/picture are decoded from the GIS
+  // credential on this page — display-only and UNVERIFIED (the server treats them that way).
+  var auth_ = { assertion: null, email: '', name: '', picture: '' };
+  var authListeners_ = [];
+
+  function jwtPayload_(jwt) {
+    try {
+      var seg = String(jwt).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (seg.length % 4) seg += '=';
+      return JSON.parse(decodeURIComponent(escape(atob(seg))));
+    } catch (e) { return null; }
+  }
+  function saveAuth_() {
+    var p = jwtPayload_(auth_.assertion);
+    if (!p || typeof p.exp !== 'number') return;
+    try { localStorage.setItem(AUTH_KEY_, JSON.stringify({ assertion: auth_.assertion, exp: p.exp, email: auth_.email, name: auth_.name, picture: auth_.picture })); } catch (e) {}
+  }
+  function clearAuth_() { try { localStorage.removeItem(AUTH_KEY_); } catch (e) {} }
+  function loadAuth_() {
+    if (!DISPATCH_) return;
+    var c = null;
+    try { c = JSON.parse(localStorage.getItem(AUTH_KEY_) || 'null'); } catch (e) { return; }
+    if (!c || !c.assertion || typeof c.exp !== 'number' || Math.floor(Date.now() / 1000) >= c.exp - AUTH_RENEW_SKEW_) { clearAuth_(); return; }
+    auth_ = { assertion: c.assertion, email: c.email || '', name: c.name || '', picture: c.picture || '' };
+  }
+  function signedIn_() { return !!auth_.assertion; }
+  /** kind: 'in' (fresh sign-in), 'out' (signed out), 'error' (sign-in attempt failed). */
+  function notifyAuth_(kind) { authListeners_.forEach(function (fn) { try { fn(kind); } catch (e) {} }); }
+  function signOut_() {
+    auth_ = { assertion: null, email: '', name: '', picture: '' };
+    clearAuth_();
+    if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+    notifyAuth_('out');
+  }
+
+  var gisLoading_ = false;
+  var gisReady_ = false;
+  var gisWaiters_ = [];
+  function withGis_(cb) {
+    if (gisReady_) { cb(); return; }
+    gisWaiters_.push(cb);
+    if (gisLoading_) return;
+    gisLoading_ = true;
+    var sc = document.createElement('script');
+    sc.src = 'https://accounts.google.com/gsi/client';
+    sc.async = true;
+    sc.onload = function () {
+      google.accounts.id.initialize({ client_id: DISPATCH_.clientId, callback: onGoogleCredential_, auto_select: false });
+      gisReady_ = true;
+      gisWaiters_.splice(0).forEach(function (fn) { fn(); });
+    };
+    document.head.appendChild(sc);
+  }
+
+  var signInError_ = '';
+  function onGoogleCredential_(resp) {
+    signInError_ = '';
+    var gis = jwtPayload_(resp && resp.credential) || {};
+    fetch(DISPATCH_.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'verify_identity', idToken: resp.credential, aud: DISPATCH_.aud })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (!res || !res.verified || !res.assertion) throw new Error('Sign-in could not be verified (' + ((res && res.error) || 'no assertion') + ').');
+      auth_ = { assertion: res.assertion, email: res.email || '', name: String(gis.name || ''), picture: String(gis.picture || '') };
+      saveAuth_();
+      notifyAuth_('in');
+    }).catch(function (err) {
+      signInError_ = (err && err.message) || 'Sign-in failed.';
+      notifyAuth_('error');
+    });
+  }
+
+  /** Renders the sign-in control into container (no-op on builds without sign-in). */
+  function renderSignIn_(container, intro) {
+    if (!DISPATCH_) return;
+    container.textContent = '';
+    container.classList.remove('hidden');
+    if (signedIn_()) {
+      if (/^https:\/\//.test(auth_.picture)) {
+        var img = document.createElement('img');
+        img.className = 'avatar';
+        img.alt = '';
+        img.referrerPolicy = 'no-referrer';
+        img.src = auth_.picture;
+        container.appendChild(img);
+      }
+      container.appendChild(document.createTextNode('Signed in as ' + auth_.email + ' · '));
+      var out = document.createElement('a');
+      out.href = '#';
+      out.textContent = 'Sign out';
+      out.addEventListener('click', function (e) { e.preventDefault(); signOut_(); });
+      container.appendChild(out);
+    } else {
+      if (intro) {
+        var p = document.createElement('span');
+        p.textContent = intro;
+        container.appendChild(p);
+      }
+      var btn = document.createElement('div');
+      container.appendChild(btn);
+      withGis_(function () { google.accounts.id.renderButton(btn, { type: 'standard', shape: 'pill', text: 'signin_with' }); });
+    }
+    if (signInError_) {
+      var er = document.createElement('div');
+      er.className = 'signin-error';
+      er.textContent = signInError_;
+      container.appendChild(er);
+    }
+  }
+  loadAuth_();
+
+  /**
+   * Calls a whitelisted GAS RPC (see ApiBridge.js's _API_WHITELIST_) via doPost ?cmd=api.
+   * POSTs as text/plain (not application/json) so the browser treats this as a CORS "simple
+   * request" and skips a preflight OPTIONS — Apps Script web apps don't implement OPTIONS, so a
+   * real application/json POST would otherwise fail outright cross-origin.
+   *
+   * Every rejection here is rewritten into an actionable, plain-language message before it
+   * reaches a setStatus() call — the raw failure modes (a rejected fetch(), a non-2xx response,
+   * an unparseable body) each surface as cryptic browser/JSON-parser text otherwise ("Failed to
+   * fetch", "Unexpected token < in JSON at position 0", ...), which tells a respondent nothing
+   * they can act on. A GAS deployment mid-redeploy is the single most common real trigger for
+   * all three: `clasp deploy` briefly repoints the /exec alias, during which requests can fail
+   * outright (rejected fetch) or land on an interstitial HTML page instead of JSON (non-2xx /
+   * bad body) — hence the "try again in a minute" framing.
+   *
+   * @param {string} name RPC name.
+   * @param {...*} args passed straight through to the GAS function.
+   * @return {Promise<*>} resolves with the RPC's return value, rejects with an Error on any
+   *   {error} response (mirrors google.script.run's withSuccessHandler/withFailureHandler).
+   */
+  function callApi_(name) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    if (!webappUrl_) return Promise.reject(new Error('No backend configured (missing STATIC_WEBAPP_URL_/?webapp=).'));
+    return fetch(webappUrl_ + '?cmd=api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      // Auth envelope (rcballot-dx3): the assertion rides beside name/args, never as an RPC
+      // argument; the server verifies it once per request (script/ApiBridge.js).
+      body: JSON.stringify(signedIn_()
+        ? { name: name, args: args, assertion: auth_.assertion, profile: { name: auth_.name, picture: auth_.picture } }
+        : { name: name, args: args })
+    })
+      .catch(function () {
+        // fetch() itself only rejects for network-level failures (offline, DNS, CORS, the
+        // deployment bouncing mid-redeploy) — never for a resolved-but-non-2xx response, which
+        // is handled below. The browser's own wording here ("Failed to fetch" / "NetworkError
+        // when attempting to fetch resource" / "Load failed") is accurate but meaningless to a
+        // respondent, so it's replaced rather than surfaced.
+        throw new Error('Could not reach the ballot server — check your internet connection.' + _troubleshootingContact_());
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          // A non-2xx response here is almost always GAS serving an HTML interstitial
+          // (permission prompt, deployment error page) instead of the JSON payload callApi_
+          // expects — res.json() below would otherwise fail on it with an opaque parser error.
+          throw new Error('The ballot server returned an error (HTTP ' + res.status + '), possibly because it’s ' +
+            'being redeployed right now — try again in a minute.' + _troubleshootingContact_());
+        }
+        return res.json().catch(function () {
+          throw new Error('The ballot server sent back a response this page couldn’t read — try reloading the page.' + _troubleshootingContact_());
+        });
+      })
+      .then(function (json) {
+        // The server no longer accepts this sign-in (expired, revoked key): drop it so the
+        // next call is plainly anonymous and the page offers sign-in again.
+        if (json && json.auth && json.auth.status === 'rejected' && signedIn_()) {
+          signInError_ = 'Your sign-in expired — please sign in again.';
+          signOut_();
+        }
+        if (json && json.error) throw new Error(json.error);
+        return json && json.result;
+      });
+  }
+
+  function escapeHtml_(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  // <rich-text-helpers> — unit-tested by test/test_rich_text.js (extracted between these markers).
+  // Admin-entered copy keeps its line breaks (CSS white-space: pre-wrap on .rich) and bare
+  // http(s) URLs become links. Output is built from DOM nodes (text nodes + <a>) and never
+  // assigned through innerHTML, so admin text cannot inject markup.
+  var RICH_URL_RE_ = /https?:\/\/[^\s<>"']+/gi;
+
+  /** Splits text into [{type:'text'|'link', value}] — links are bare http(s) URLs minus trailing punctuation. */
+  function parseRichText_(text) {
+    var src = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+    var out = [];
+    var last = 0;
+    var m;
+    RICH_URL_RE_.lastIndex = 0;
+    while ((m = RICH_URL_RE_.exec(src)) !== null) {
+      var url = m[0];
+      var trail = url.match(/[.,;:!?)\]}]+$/);
+      if (trail) url = url.slice(0, url.length - trail[0].length);
+      if (!/^https?:\/\/[^\s]+/i.test(url)) continue;
+      if (m.index > last) out.push({ type: 'text', value: src.slice(last, m.index) });
+      out.push({ type: 'link', value: url });
+      last = m.index + url.length;
+      RICH_URL_RE_.lastIndex = last;
+    }
+    if (last < src.length) out.push({ type: 'text', value: src.slice(last) });
+    return out;
+  }
+
+  /** Replaces el's content with text (line breaks via CSS pre-wrap) plus clickable bare URLs. */
+  function setRich_(el, text) {
+    el.textContent = '';
+    parseRichText_(text).forEach(function (seg) {
+      if (seg.type === 'link') {
+        var a = document.createElement('a');
+        a.href = seg.value;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = seg.value;
+        el.appendChild(a);
+      } else {
+        el.appendChild(document.createTextNode(seg.value));
+      }
+    });
+  }
+
+  /** The trimmed URL when it is an absolute http(s) URL without whitespace or markup characters, else ''. */
+  function safeHttpUrl_(url) {
+    var u = String(url == null ? '' : url).trim();
+    return /^https?:\/\/[^\s<>"']+$/i.test(u) ? u : '';
+  }
+
+  /**
+   * setRich_ plus the optional Description link on its own line at the end: label = linkText,
+   * falling back to the URL; only http(s) URLs render (anything else is ignored). DOM-built.
+   */
+  function setRichWithLink_(el, text, linkText, linkUrl) {
+    setRich_(el, text);
+    var url = safeHttpUrl_(linkUrl);
+    if (!url) return;
+    if (el.textContent !== '' || el.children.length) el.appendChild(document.createTextNode('\n'));
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = String(linkText == null ? '' : linkText).trim() || url;
+    el.appendChild(a);
+  }
+
+  /** Text before the first blank line (a line holding only whitespace), trimmed; '' for none. */
+  function firstParagraph_(text) {
+    var src = String(text == null ? '' : text).replace(/\r\n?/g, '\n').replace(/^\s*\n/, '');
+    return src.split(/\n[ \t]*\n/)[0].trim();
+  }
+
+  /** Everything after the first paragraph (blank lines trimmed); '' when there is only one paragraph. */
+  function remainingParagraphs_(text) {
+    var src = String(text == null ? '' : text).replace(/\r\n?/g, '\n').replace(/^\s*\n/, '');
+    var i = src.search(/\n[ \t]*\n/);
+    return i === -1 ? '' : src.slice(i).trim();
+  }
+  // </rich-text-helpers>
+
+  /**
+   * Fills container with admin navigation links for ballot id (DOM-built, id URL-encoded):
+   * kinds are 'view' (live ballot, new tab), 'edit' and 'analyze', as on the list card.
+   */
+  function fillBallotNav_(container, id, kinds) {
+    container.textContent = '';
+    var enc = encodeURIComponent(id);
+    kinds.forEach(function (kind) {
+      var a = document.createElement('a');
+      if (kind === 'view') {
+        a.href = '?cmd=ballot&id=' + enc;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'View ballot \u2197';
+      } else if (kind === 'edit') {
+        a.href = '?cmd=admin&action=edit&id=' + enc;
+        a.textContent = 'Edit';
+      } else {
+        a.href = '?cmd=admin&action=analyze&id=' + enc;
+        a.textContent = 'Run Analysis';
+      }
+      container.appendChild(document.createTextNode(' \u00b7 '));
+      container.appendChild(a);
+    });
+  }
+
+  /** Admin-RPC failure text; a server-side 'Not authorized' refusal says how to get access. */
+  function adminErrorText_(err) {
+    var msg = (err && err.message) || String(err);
+    if (!/^Not authorized/.test(msg)) return msg;
+    return 'Access refused. ' + msg + (signedIn_() ? ' You are signed in as ' + auth_.email + '.' : ' Use the sign-in button at the top of the page.');
+  }
+
+  function setAppVersionFooter_(appVersion, appDeployTarget) {
+    var el = document.getElementById('appVersionFooter');
+    el.textContent = appVersion ? 'v' + appVersion + (appDeployTarget ? ' (' + appDeployTarget + ')' : '') : '';
+  }
+
+  // ======================================================================
+  // LIST VIEW
+  // ======================================================================
+  (function () {
+    var listStatus = document.getElementById('listStatus');
+    var ballotListEl = document.getElementById('ballotList');
+    var createForm = document.getElementById('createForm');
+    var createError = document.getElementById('createError');
+    var newBallotIdInput = document.getElementById('newBallotId');
+
+    function buildCard(b) {
+      var card = document.createElement('div');
+      card.className = 'ballot-card';
+
+      var html = '<h3>' + escapeHtml_(b.title) + '</h3>' +
+        '<div class="ballot-id">' + escapeHtml_(b.id) + '</div>' +
+        '<div class="ballot-meta">' + b.candidateCount + ' candidate' + (b.candidateCount === 1 ? '' : 's') +
+        ' &middot; ' + b.responseCount + ' response' + (b.responseCount === 1 ? '' : 's') +
+        ' (' + b.uniqueRespondentCount + ' unique respondent' + (b.uniqueRespondentCount === 1 ? '' : 's') + ')' +
+        (b.claimed && !b.canAdmin ? ' &middot; 🔒 admins only' : '') + '</div>' +
+        '<div class="ballot-actions">' +
+        '<a class="btn" target="_blank" href="?cmd=ballot&id=' + encodeURIComponent(b.id) + '">View Ballot</a>' +
+        '<a class="btn" href="?cmd=admin&action=edit&id=' + encodeURIComponent(b.id) + '">Edit</a>' +
+        '<a class="btn" href="?cmd=admin&action=analyze&id=' + encodeURIComponent(b.id) + '">Run Analysis</a>' +
+        '</div>';
+
+      if (b.adminNotes) {
+        html += '<details class="ballot-info"><summary>ℹ️ More info</summary><p>' + escapeHtml_(b.adminNotes) + '</p></details>';
+      }
+      if (b.staleRespondents && b.staleRespondents.length) {
+        html += '<details class="ballot-info"><summary>⚠️ ' + b.staleRespondents.length +
+          ' respondent' + (b.staleRespondents.length === 1 ? '' : 's') +
+          ' may want to review (candidates added since they responded)</summary><p>' +
+          escapeHtml_(b.staleRespondents.join(', ')) + '</p></details>';
+      }
+      card.innerHTML = html;
+      return card;
+    }
+
+    function loadList() {
+      callApi_('getAdminListData_').then(function (ballots) {
+        listStatus.classList.add('hidden');
+        if (!ballots.length) {
+          listStatus.textContent = 'No ballot sheets found yet — create one above.';
+          listStatus.classList.remove('hidden');
+          return;
+        }
+        ballotListEl.innerHTML = '';
+        ballots.forEach(function (b) { ballotListEl.appendChild(buildCard(b)); });
+      }, function (err) {
+        listStatus.textContent = 'Could not load ballots: ' + err.message;
+        listStatus.classList.remove('hidden');
+      });
+    }
+
+    createForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var id = newBallotIdInput.value.trim();
+      if (!id) return;
+      createError.classList.add('hidden');
+      callApi_('createBallotForAdmin_', id).then(function () {
+        window.location.href = '?cmd=admin&action=create&id=' + encodeURIComponent(id);
+      }, function (err) {
+        createError.textContent = err.message;
+        createError.classList.remove('hidden');
+      });
+    });
+
+    window.initListView_ = function () {
+      document.getElementById('view-list').classList.remove('hidden');
+      loadList();
+    };
+  })();
+
+  // ======================================================================
+  // EDIT VIEW
+  // ======================================================================
+  (function () {
+    var fieldData = {};
+    var loadStatus = document.getElementById('editLoadStatus');
+    var createdBanner = document.getElementById('createdBanner');
+    var editRoot = document.getElementById('editRoot');
+    var candidateList = document.getElementById('candidateList');
+    var titleDisplay = document.getElementById('titleDisplay');
+    var descriptionDisplay = document.getElementById('descriptionDisplay');
+    var instructionsDisplay = document.getElementById('instructionsDisplay');
+    var footerDisplay = document.getElementById('footerDisplay');
+    var contactDisplay = document.getElementById('contactDisplay');
+    var adminOnlyNotesDisplay = document.getElementById('adminOnlyNotesDisplay');
+    var addNewButtonPreview = document.getElementById('addNewButtonPreview');
+
+    function setStatus(el, msg, isError) {
+      el.textContent = msg || '';
+      el.className = 'field-status' + (isError ? ' error' : '');
+    }
+
+    // textarea.single-line: wraps like a paragraph but holds one line of text — Enter is
+    // ignored, pasted line breaks become spaces, and the box grows to fit what's typed.
+    function fitSingleLine(el) {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+    document.querySelectorAll('textarea.single-line').forEach(function (el) {
+      el.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+      el.addEventListener('input', function () {
+        if (/[\r\n]/.test(el.value)) el.value = el.value.replace(/\s*[\r\n]+\s*/g, ' ');
+        fitSingleLine(el);
+      });
+    });
+
+    function wireSimpleField(key, rpcName, renderDisplay) {
+      var display = document.getElementById(key + 'Display');
+      var editBtn = document.getElementById(key + 'EditBtn');
+      var panel = document.getElementById(key + 'Panel');
+      var input = document.getElementById(key + 'Input');
+      var saveBtn = document.getElementById(key + 'SaveBtn');
+      var cancelBtn = document.getElementById(key + 'CancelBtn');
+      var status = document.getElementById(key + 'Status');
+
+      editBtn.addEventListener('click', function () {
+        input.value = fieldData[key] || '';
+        setStatus(status, '', false);
+        panel.classList.remove('hidden');
+        if (input.classList.contains('single-line')) fitSingleLine(input);
+      });
+
+      cancelBtn.addEventListener('click', function () { panel.classList.add('hidden'); });
+
+      saveBtn.addEventListener('click', function () {
+        var value = input.classList.contains('single-line') ? input.value.replace(/\s*[\r\n]+\s*/g, ' ').trim() : input.value.trim();
+        saveBtn.disabled = true;
+        setStatus(status, 'Saving…', false);
+        callApi_(rpcName, ballotId, value).then(function () {
+          saveBtn.disabled = false;
+          fieldData[key] = value;
+          if (renderDisplay) renderDisplay(display, value); else display.textContent = value;
+          panel.classList.add('hidden');
+          setStatus(status, '', false);
+        }, function (err) {
+          saveBtn.disabled = false;
+          setStatus(status, 'Could not save: ' + err.message, true);
+        });
+      });
+    }
+
+    var candidateListStatus = document.getElementById('candidateListStatus');
+    var orphanBlock = document.getElementById('orphanBlock');
+    var orphanList = document.getElementById('orphanList');
+    var orphanStatus = document.getElementById('orphanStatus');
+
+    function renderOrphans() {
+      var orphans = fieldData.orphanColumns || [];
+      orphanBlock.classList.toggle('hidden', !orphans.length);
+      orphanList.innerHTML = '';
+      orphans.forEach(function (o) {
+        var li = document.createElement('li');
+        var label = document.createElement('span');
+        label.className = 'topic-text';
+        label.textContent = o.label + ' (' + o.votes + ' vote' + (o.votes === 1 ? '' : 's') + ') ';
+        var select = document.createElement('select');
+        fieldData.candidates.forEach(function (c) {
+          var opt = document.createElement('option');
+          opt.value = c.name;
+          opt.textContent = c.name;
+          select.appendChild(opt);
+        });
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'secondary';
+        btn.textContent = 'Link to candidate';
+        btn.addEventListener('click', function () {
+          if (!select.value) return;
+          btn.disabled = true;
+          setStatus(orphanStatus, 'Linking…', false);
+          callApi_('adminLinkOrphanColumn', ballotId, o.label, select.value).then(function () {
+            fieldData.orphanColumns = fieldData.orphanColumns.filter(function (x) { return x !== o; });
+            renderOrphans();
+            // Linking moves votes onto a candidate: refresh its count for the delete confirm.
+            callApi_('getAdminEditData', ballotId).then(function (data) {
+              if (data && !data.error) data.candidates.forEach(function (n) {
+                fieldData.candidates.forEach(function (c) { if (c.name === n.name) c.votes = n.votes; });
+              });
+            }, function () {});
+            setStatus(orphanStatus, '', false);
+          }, function (err) {
+            btn.disabled = false;
+            setStatus(orphanStatus, 'Could not link: ' + err.message, true);
+          });
+        });
+        var discardBtn = document.createElement('button');
+        discardBtn.type = 'button';
+        discardBtn.className = 'secondary';
+        discardBtn.textContent = 'Discard';
+        discardBtn.addEventListener('click', function () {
+          if (!window.confirm('Permanently discard the "' + o.label + '" column and its ' + o.votes + ' vote' + (o.votes === 1 ? '' : 's') + '? Other rankings by those voters are kept. This cannot be undone.')) return;
+          discardBtn.disabled = true;
+          btn.disabled = true;
+          setStatus(orphanStatus, 'Discarding…', false);
+          callApi_('adminDiscardOrphanColumn', ballotId, o.label).then(function () {
+            fieldData.orphanColumns = fieldData.orphanColumns.filter(function (x) { return x !== o; });
+            renderOrphans();
+            setStatus(orphanStatus, '', false);
+          }, function (err) {
+            discardBtn.disabled = false;
+            btn.disabled = false;
+            setStatus(orphanStatus, 'Could not discard: ' + err.message, true);
+          });
+        });
+        li.appendChild(label);
+        li.appendChild(select);
+        li.appendChild(btn);
+        li.appendChild(discardBtn);
+        orphanList.appendChild(li);
+      });
+    }
+
+    var clearConfirmInput = document.getElementById('clearConfirmInput');
+    var clearResponsesBtn = document.getElementById('clearResponsesBtn');
+    var clearStatus = document.getElementById('clearStatus');
+    clearConfirmInput.addEventListener('input', function () {
+      clearResponsesBtn.disabled = clearConfirmInput.value.trim() !== ballotId;
+    });
+    clearResponsesBtn.addEventListener('click', function () {
+      if (clearConfirmInput.value.trim() !== ballotId) return;
+      if (!window.confirm('Delete ALL responses on "' + ballotId + '"? A backup sheet is made first.')) return;
+      clearResponsesBtn.disabled = true;
+      setStatus(clearStatus, 'Clearing…', false);
+      callApi_('adminClearResponses', ballotId, clearConfirmInput.value.trim()).then(function (r) {
+        clearConfirmInput.value = '';
+        fieldData.orphanColumns = [];
+        renderOrphans();
+        fieldData.candidates.forEach(function (c) { c.votes = 0; });
+        setStatus(clearStatus, 'Cleared ' + r.responsesCleared + ' response' + (r.responsesCleared === 1 ? '' : 's') + '. Backup saved as sheet "' + r.backupSheet + '".', false);
+      }, function (err) {
+        clearResponsesBtn.disabled = clearConfirmInput.value.trim() !== ballotId;
+        setStatus(clearStatus, 'Could not clear: ' + err.message, true);
+      });
+    });
+
+    function renderCandidates(candidates) {
+      candidateList.innerHTML = '';
+      candidates.forEach(function (candidate, i) {
+        candidateList.appendChild(buildCandidateItem(candidate, i));
+      });
+    }
+
+    // Admin candidate rows show the first paragraph (the Details Preview summary) in normal text
+    // and any later paragraphs muted, so the convention is visible on the list itself.
+    function renderCandidateDetails_(el, detailsText) {
+      el.textContent = '';
+      if (!detailsText) { el.textContent = 'No details yet.'; return; }
+      var first = document.createElement('span');
+      first.className = 'details-first';
+      first.title = 'First paragraph — the summary shown under the name when Details Preview is on';
+      first.textContent = firstParagraph_(detailsText);
+      el.appendChild(first);
+      var rest = remainingParagraphs_(detailsText);
+      if (rest) {
+        var r = document.createElement('span');
+        r.className = 'details-rest';
+        r.title = 'Later paragraphs — shown only when the item is expanded';
+        r.textContent = '\n\n' + rest;
+        el.appendChild(r);
+      }
+    }
+
+    function buildCandidateItem(candidate, index) {
+      var li = document.createElement('li');
+
+      var row = document.createElement('div');
+      row.className = 'topic-row';
+
+      var handle = document.createElement('span');
+      handle.className = 'handle';
+      handle.textContent = '☰';
+
+      var text = document.createElement('span');
+      text.className = 'topic-text';
+      text.textContent = candidate.name;
+
+      var editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'pencil-btn';
+      editBtn.textContent = '✏️';
+      editBtn.setAttribute('aria-label', 'Edit ' + candidate.name);
+
+      row.appendChild(handle);
+      row.appendChild(text);
+      row.appendChild(editBtn);
+
+      function moveTo(newIndex) {
+        var from = fieldData.candidates.indexOf(candidate);
+        if (newIndex < 0 || newIndex >= fieldData.candidates.length) return;
+        var next = fieldData.candidates.slice();
+        next.splice(from, 1);
+        next.splice(newIndex, 0, candidate);
+        setStatus(candidateListStatus, 'Saving…', false);
+        callApi_('adminReorderCandidates', ballotId, next.map(function (c) { return c.name; })).then(function () {
+          fieldData.candidates = next;
+          renderCandidates(next);
+          setStatus(candidateListStatus, '', false);
+        }, function (err) {
+          setStatus(candidateListStatus, 'Could not reorder: ' + err.message, true);
+        });
+      }
+      var upBtn = document.createElement('button');
+      upBtn.type = 'button';
+      upBtn.className = 'pencil-btn';
+      upBtn.textContent = '▲';
+      upBtn.setAttribute('aria-label', 'Move ' + candidate.name + ' up');
+      upBtn.addEventListener('click', function () { moveTo(fieldData.candidates.indexOf(candidate) - 1); });
+      var downBtn = document.createElement('button');
+      downBtn.type = 'button';
+      downBtn.className = 'pencil-btn';
+      downBtn.textContent = '▼';
+      downBtn.setAttribute('aria-label', 'Move ' + candidate.name + ' down');
+      downBtn.addEventListener('click', function () { moveTo(fieldData.candidates.indexOf(candidate) + 1); });
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'pencil-btn';
+      delBtn.textContent = '🗑️';
+      delBtn.setAttribute('aria-label', 'Delete ' + candidate.name);
+      delBtn.addEventListener('click', function () {
+        var votes = candidate.votes || 0;
+        var voteNote = votes > 0 ? ' It has ' + votes + ' vote' + (votes === 1 ? '' : 's') + '.' : '';
+        if (!window.confirm('Delete "' + candidate.name + '"?' + voteNote + ' Its votes are kept in an unlinked column and no longer counted.')) return;
+        setStatus(candidateListStatus, 'Deleting…', false);
+        callApi_('adminDeleteCandidate', ballotId, candidate.name).then(function () {
+          fieldData.candidates = fieldData.candidates.filter(function (c) { return c !== candidate; });
+          renderCandidates(fieldData.candidates);
+          setStatus(candidateListStatus, '', false);
+          // Its rank column (if any) is now an orphan: reload the list from the server.
+          callApi_('getAdminEditData', ballotId).then(function (data) {
+            if (data && !data.error) { fieldData.orphanColumns = data.orphanColumns; renderOrphans(); }
+          }, function () {});
+        }, function (err) {
+          setStatus(candidateListStatus, 'Could not delete: ' + err.message, true);
+        });
+      });
+      row.appendChild(upBtn);
+      row.appendChild(downBtn);
+      row.appendChild(delBtn);
+
+      var details = document.createElement('button');
+      details.type = 'button';
+      details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
+      renderCandidateDetails_(details, candidate.details);
+      details.hidden = !candidate.details;
+      details.setAttribute('aria-expanded', 'false');
+      details.addEventListener('click', function () {
+        details.setAttribute('aria-expanded', String(details.classList.toggle('expanded')));
+      });
+
+      var link = document.createElement('a');
+      link.className = 'topic-info-link';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.hidden = true;
+
+      var panel = document.createElement('div');
+      panel.className = 'field-panel candidate-edit-panel hidden';
+      panel.innerHTML =
+        '<p class="field-help">What respondents drag-order to rank. Edit this candidate’s name, details, and link below.</p>' +
+        '<label>Name</label><input type="text" class="cand-name-input">' +
+        '<label>Details (optional)</label><textarea rows="4" class="cand-details-input" placeholder="First paragraph = summary shown under the name when Details Preview is on. Leave a blank line, then add longer text that appears only when the item is expanded."></textarea>' +
+        '<p class="field-help">Candidate Details: the first paragraph (text before the first blank line) is the summary shown under the name when Details Preview is on; later paragraphs (after a blank line) appear only when the item is expanded. Line breaks are kept and bare http(s):// links become clickable.</p>' +
+        '<label>Link Text (optional)</label><input type="text" class="cand-link-text-input">' +
+        '<label>Link URL (optional)</label><input type="url" class="cand-link-url-input" placeholder="https://…">' +
+        '<div class="field-panel-actions">' +
+        '<button type="button" class="cand-save-btn">Save</button>' +
+        '<button type="button" class="secondary cand-cancel-btn">Cancel</button>' +
+        '</div>' +
+        '<div class="field-status cand-status"></div>';
+
+      li.appendChild(row);
+      li.appendChild(details);
+      li.appendChild(link);
+      li.appendChild(panel);
+
+      function renderLink() {
+        if (candidate.linkUrl) {
+          link.href = candidate.linkUrl;
+          link.textContent = candidate.linkText || candidate.linkUrl;
+          link.hidden = false;
+        } else {
+          link.hidden = true;
+        }
+      }
+      renderLink();
+
+      var nameInput = panel.querySelector('.cand-name-input');
+      var detailsInput = panel.querySelector('.cand-details-input');
+      var linkTextInput = panel.querySelector('.cand-link-text-input');
+      var linkUrlInput = panel.querySelector('.cand-link-url-input');
+      var saveBtn = panel.querySelector('.cand-save-btn');
+      var cancelBtn = panel.querySelector('.cand-cancel-btn');
+      var statusEl = panel.querySelector('.cand-status');
+
+      function showDisplay() {
+        row.hidden = false;
+        details.hidden = !candidate.details;
+        renderLink();
+        panel.classList.add('hidden');
+      }
+
+      editBtn.addEventListener('click', function () {
+        nameInput.value = candidate.name;
+        detailsInput.value = candidate.details || '';
+        linkTextInput.value = candidate.linkText || '';
+        linkUrlInput.value = candidate.linkUrl || '';
+        setStatus(statusEl, '', false);
+        row.hidden = true;
+        details.hidden = true;
+        link.hidden = true;
+        panel.classList.remove('hidden');
+      });
+
+      cancelBtn.addEventListener('click', showDisplay);
+
+      saveBtn.addEventListener('click', function () {
+        var newName = nameInput.value.trim();
+        if (!newName) {
+          setStatus(statusEl, 'Name cannot be empty.', true);
+          return;
+        }
+        var newDetails = detailsInput.value.trim();
+        var newLinkText = linkTextInput.value.trim();
+        var newLinkUrl = linkUrlInput.value.trim();
+        saveBtn.disabled = true;
+        setStatus(statusEl, 'Saving…', false);
+        callApi_('adminSaveCandidate', ballotId, index, newName, newDetails, newLinkText, newLinkUrl).then(function (result) {
+          saveBtn.disabled = false;
+          candidate.name = result.name;
+          candidate.details = result.details;
+          candidate.linkText = result.linkText;
+          candidate.linkUrl = result.linkUrl;
+          text.textContent = candidate.name;
+          renderCandidateDetails_(details, candidate.details);
+          details.className = 'topic-info-content' + (candidate.details ? '' : ' empty');
+          details.setAttribute('aria-expanded', 'false');
+          editBtn.setAttribute('aria-label', 'Edit ' + candidate.name);
+          showDisplay();
+        }, function (err) {
+          saveBtn.disabled = false;
+          setStatus(statusEl, 'Could not save: ' + err.message, true);
+        });
+      });
+
+      return li;
+    }
+
+    var addCandidateBtn = document.getElementById('addCandidateBtn');
+    var addCandidatePanel = document.getElementById('addCandidatePanel');
+    var newCandidateNameInput = document.getElementById('newCandidateNameInput');
+    var newCandidateDetailsInput = document.getElementById('newCandidateDetailsInput');
+    var newCandidateLinkTextInput = document.getElementById('newCandidateLinkTextInput');
+    var newCandidateLinkUrlInput = document.getElementById('newCandidateLinkUrlInput');
+    var addCandidateSaveBtn = document.getElementById('addCandidateSaveBtn');
+    var addCandidateCancelBtn = document.getElementById('addCandidateCancelBtn');
+    var addCandidateStatus = document.getElementById('addCandidateStatus');
+
+    function closeAddCandidatePanel() {
+      addCandidatePanel.classList.add('hidden');
+      addCandidateBtn.hidden = false;
+    }
+
+    addCandidateBtn.addEventListener('click', function () {
+      newCandidateNameInput.value = '';
+      newCandidateDetailsInput.value = '';
+      newCandidateLinkTextInput.value = '';
+      newCandidateLinkUrlInput.value = '';
+      setStatus(addCandidateStatus, '', false);
+      addCandidatePanel.classList.remove('hidden');
+      addCandidateBtn.hidden = true;
+    });
+
+    addCandidateCancelBtn.addEventListener('click', closeAddCandidatePanel);
+
+    addCandidateSaveBtn.addEventListener('click', function () {
+      var name = newCandidateNameInput.value.trim();
+      if (!name) {
+        setStatus(addCandidateStatus, 'Name cannot be empty.', true);
+        return;
+      }
+      var details = newCandidateDetailsInput.value.trim();
+      var linkText = newCandidateLinkTextInput.value.trim();
+      var linkUrl = newCandidateLinkUrlInput.value.trim();
+      addCandidateSaveBtn.disabled = true;
+      setStatus(addCandidateStatus, 'Saving…', false);
+      callApi_('adminAddCandidate', ballotId, name, details, linkText, linkUrl).then(function () {
+        addCandidateSaveBtn.disabled = false;
+        fieldData.candidates.push({ name: name, details: details, linkText: linkText, linkUrl: linkUrl });
+        renderCandidates(fieldData.candidates);
+        closeAddCandidatePanel();
+      }, function (err) {
+        addCandidateSaveBtn.disabled = false;
+        setStatus(addCandidateStatus, 'Could not add: ' + err.message, true);
+      });
+    });
+
+    var addSettingsDisplay = document.getElementById('addSettingsDisplay');
+    var addInstructionsDisplay = document.getElementById('addInstructionsDisplay');
+    var addSettingsEditBtn = document.getElementById('addSettingsEditBtn');
+    var addSettingsPanel = document.getElementById('addSettingsPanel');
+    var acceptNewInput = document.getElementById('acceptNewInput');
+    var addInstructionsInput = document.getElementById('addInstructionsInput');
+    var addSettingsSaveBtn = document.getElementById('addSettingsSaveBtn');
+    var addSettingsCancelBtn = document.getElementById('addSettingsCancelBtn');
+    var addSettingsStatus = document.getElementById('addSettingsStatus');
+
+    function renderAddSettingsDisplay() {
+      addSettingsDisplay.textContent = fieldData.acceptNew
+        ? 'On — respondents can add their own candidate.'
+        : 'Off — respondents cannot add candidates.';
+      setRich_(addInstructionsDisplay, fieldData.addInstructions
+        ? 'Instructions shown to respondents: "' + fieldData.addInstructions + '"'
+        : '');
+      addInstructionsDisplay.hidden = !fieldData.addInstructions;
+      addNewButtonPreview.hidden = !fieldData.acceptNew;
+    }
+
+    addSettingsEditBtn.addEventListener('click', function () {
+      acceptNewInput.checked = !!fieldData.acceptNew;
+      addInstructionsInput.value = fieldData.addInstructions || '';
+      setStatus(addSettingsStatus, '', false);
+      addSettingsPanel.classList.remove('hidden');
+    });
+
+    addSettingsCancelBtn.addEventListener('click', function () { addSettingsPanel.classList.add('hidden'); });
+
+    addSettingsSaveBtn.addEventListener('click', function () {
+      var accept = acceptNewInput.checked;
+      var instructions = addInstructionsInput.value.trim();
+      addSettingsSaveBtn.disabled = true;
+      setStatus(addSettingsStatus, 'Saving…', false);
+      callApi_('adminSaveAddSettings', ballotId, accept, instructions).then(function () {
+        addSettingsSaveBtn.disabled = false;
+        fieldData.acceptNew = accept;
+        fieldData.addInstructions = instructions;
+        renderAddSettingsDisplay();
+        addSettingsPanel.classList.add('hidden');
+        setStatus(addSettingsStatus, '', false);
+      }, function (err) {
+        addSettingsSaveBtn.disabled = false;
+        setStatus(addSettingsStatus, 'Could not save: ' + err.message, true);
+      });
+    });
+
+    wireSimpleField('title', 'adminSaveTitle');
+    // The Description display carries the optional Description link at its end, so a Description
+    // save re-renders with the saved link, and a link save re-renders with the saved Description.
+    function renderDescriptionDisplay() {
+      setRichWithLink_(descriptionDisplay, fieldData.description, fieldData.descriptionLinkText, fieldData.descriptionLinkUrl);
+    }
+    wireSimpleField('description', 'adminSaveDescription', function (el, v) {
+      fieldData.description = v;
+      renderDescriptionDisplay();
+    });
+
+    // Description link (Description-Link-Text + Description-Link-URL), saved together in one RPC.
+    var descriptionLinkDisplay = document.getElementById('descriptionLinkDisplay');
+    var descriptionLinkPanel = document.getElementById('descriptionLinkPanel');
+    var descriptionLinkTextInput = document.getElementById('descriptionLinkTextInput');
+    var descriptionLinkUrlInput = document.getElementById('descriptionLinkUrlInput');
+    var descriptionLinkSaveBtn = document.getElementById('descriptionLinkSaveBtn');
+    var descriptionLinkStatus = document.getElementById('descriptionLinkStatus');
+    function renderDescriptionLinkDisplay() {
+      if (safeHttpUrl_(fieldData.descriptionLinkUrl)) {
+        setRichWithLink_(descriptionLinkDisplay, '', fieldData.descriptionLinkText, fieldData.descriptionLinkUrl);
+      } else {
+        descriptionLinkDisplay.textContent = '(none)';
+      }
+    }
+    document.getElementById('descriptionLinkEditBtn').addEventListener('click', function () {
+      descriptionLinkTextInput.value = fieldData.descriptionLinkText || '';
+      descriptionLinkUrlInput.value = fieldData.descriptionLinkUrl || '';
+      setStatus(descriptionLinkStatus, '', false);
+      descriptionLinkPanel.classList.remove('hidden');
+    });
+    document.getElementById('descriptionLinkCancelBtn').addEventListener('click', function () { descriptionLinkPanel.classList.add('hidden'); });
+    descriptionLinkSaveBtn.addEventListener('click', function () {
+      var text = descriptionLinkTextInput.value.trim();
+      var url = descriptionLinkUrlInput.value.trim();
+      if (url && !safeHttpUrl_(url)) {
+        setStatus(descriptionLinkStatus, 'Link URL must start with http:// or https:// and contain no spaces.', true);
+        return;
+      }
+      descriptionLinkSaveBtn.disabled = true;
+      setStatus(descriptionLinkStatus, 'Saving…', false);
+      callApi_('adminSaveDescriptionLink', ballotId, text, url).then(function () {
+        descriptionLinkSaveBtn.disabled = false;
+        fieldData.descriptionLinkText = text;
+        fieldData.descriptionLinkUrl = url;
+        renderDescriptionLinkDisplay();
+        renderDescriptionDisplay();
+        descriptionLinkPanel.classList.add('hidden');
+        setStatus(descriptionLinkStatus, '', false);
+      }, function (err) {
+        descriptionLinkSaveBtn.disabled = false;
+        setStatus(descriptionLinkStatus, 'Could not save: ' + err.message, true);
+      });
+    });
+    wireSimpleField('instructions', 'adminSaveInstructions', setRich_);
+    wireSimpleField('footer', 'adminSaveFooter', setRich_);
+    wireSimpleField('contact', 'adminSaveContact', setRich_);
+    wireSimpleField('feedbackPrompt', 'adminSaveFeedbackPrompt', function (el, v) { setRich_(el, v || fieldData.defaultFeedbackPrompt || ''); });
+
+    // Details Preview toggle (Show-Details-Preview): same pencil/panel pattern as the other fields.
+    var detailsPreviewDisplay = document.getElementById('detailsPreviewDisplay');
+    var detailsPreviewPanel = document.getElementById('detailsPreviewPanel');
+    var detailsPreviewInput = document.getElementById('detailsPreviewInput');
+    var detailsPreviewSaveBtn = document.getElementById('detailsPreviewSaveBtn');
+    var detailsPreviewStatus = document.getElementById('detailsPreviewStatus');
+    function renderDetailsPreviewDisplay() {
+      detailsPreviewDisplay.textContent = fieldData.showDetailsPreview
+        ? 'On — the first paragraph of each item\u2019s Details shows under its name.'
+        : 'Off — item names only; Details appear when an item is expanded.';
+    }
+    document.getElementById('detailsPreviewEditBtn').addEventListener('click', function () {
+      detailsPreviewInput.checked = !!fieldData.showDetailsPreview;
+      setStatus(detailsPreviewStatus, '', false);
+      detailsPreviewPanel.classList.remove('hidden');
+    });
+    document.getElementById('detailsPreviewCancelBtn').addEventListener('click', function () { detailsPreviewPanel.classList.add('hidden'); });
+    detailsPreviewSaveBtn.addEventListener('click', function () {
+      var on = detailsPreviewInput.checked;
+      detailsPreviewSaveBtn.disabled = true;
+      setStatus(detailsPreviewStatus, 'Saving…', false);
+      callApi_('adminSaveShowDetailsPreview', ballotId, on).then(function () {
+        detailsPreviewSaveBtn.disabled = false;
+        fieldData.showDetailsPreview = on;
+        renderDetailsPreviewDisplay();
+        detailsPreviewPanel.classList.add('hidden');
+        setStatus(detailsPreviewStatus, '', false);
+      }, function (err) {
+        detailsPreviewSaveBtn.disabled = false;
+        setStatus(detailsPreviewStatus, 'Could not save: ' + err.message, true);
+      });
+    });
+    wireSimpleField('adminOnlyNotes', 'adminSaveAdminOnlyNotes');
+
+    window.initEditView_ = function (id, justCreated) {
+      document.getElementById('view-edit').classList.remove('hidden');
+      fillBallotNav_(document.getElementById('editNavTop'), id, ['view', 'analyze']);
+      fillBallotNav_(document.getElementById('editNavBottom'), id, ['view', 'analyze']);
+      createdBanner.classList.toggle('hidden', !justCreated);
+      callApi_('getAdminEditData', id).then(function (data) {
+        if (!data || data.error) {
+          loadStatus.textContent = 'No ballot found for id "' + id + '".';
+          return;
+        }
+        fieldData = data;
+        titleDisplay.textContent = data.title;
+        renderDescriptionDisplay();
+        renderDescriptionLinkDisplay();
+        setRich_(instructionsDisplay, data.instructions);
+        setRich_(footerDisplay, data.footer);
+        setRich_(contactDisplay, data.contact);
+        setRich_(document.getElementById('feedbackPromptDisplay'), data.feedbackPrompt || data.defaultFeedbackPrompt);
+        renderDetailsPreviewDisplay();
+        adminOnlyNotesDisplay.textContent = data.adminOnlyNotes;
+        renderAddSettingsDisplay();
+        renderCandidates(data.candidates);
+        var layoutErrorEl = document.getElementById('layoutError');
+        layoutErrorEl.textContent = data.layoutError || '';
+        layoutErrorEl.classList.toggle('hidden', !data.layoutError);
+        renderOrphans();
+        setAppVersionFooter_(data.appVersion, data.appDeployTarget);
+        loadStatus.classList.add('hidden');
+        editRoot.classList.remove('hidden');
+        renderAdmins(data);
+      }, function (err) {
+        if (/^Not authorized/.test(err.message || '')) {
+          // AC rev 2: a claimed ballot's edit page is for its admins only — say so plainly and
+          // point at the sign-in control at the top, rather than show an empty form.
+          loadStatus.textContent = 'You need to be an admin of this ballot to edit it. ' +
+            (signedIn_() ? 'You are signed in as ' + auth_.email + ', which is not one of its admins — sign in with an admin account above, or ask one of its admins to add you.'
+              : 'Sign in with Google using the button at the top of the page, or ask one of its admins to add you.');
+          return;
+        }
+        loadStatus.textContent = 'Could not load ballot: ' + adminErrorText_(err);
+      });
+    };
+
+    // ---- Ballot admins (rcballot-dx3.3). The server enforces the rule; this only edits it.
+    var adminsBlock = document.getElementById('adminsBlock');
+    var adminsHelp = document.getElementById('adminsHelp');
+    var adminsDisplay = document.getElementById('adminsDisplay');
+    var adminsPanel = document.getElementById('adminsPanel');
+    var adminsInput = document.getElementById('adminsInput');
+    var adminsStatus = document.getElementById('adminsStatus');
+    var claimBtn = document.getElementById('claimBtn');
+    var currentAdmins = [];
+    var isSuperAdmin = false;
+
+    function myEmail() { return signedIn_() ? String(auth_.email).toLowerCase() : ''; }
+
+    function renderAdmins(data) {
+      var access = data.access || {};
+      if (!access.enabled) { adminsBlock.classList.add('hidden'); return; }
+      if (access.isSuperAdmin !== undefined) isSuperAdmin = !!access.isSuperAdmin;
+      currentAdmins = data.admins || [];
+      adminsBlock.classList.remove('hidden');
+      adminsDisplay.textContent = currentAdmins.length ? currentAdmins.join(', ') : '(none — anyone can edit this ballot)';
+      adminsHelp.textContent = currentAdmins.length
+        ? 'Only these Google accounts (and the site\u2019s super-admins) can edit this ballot; anyone signed in can view its results.'
+        : 'This ballot has no admins yet, so anyone with the link can edit it.' +
+          (signedIn_() ? ' Make yourself an admin to restrict it.' : ' Sign in at the top of the page to claim it.');
+      claimBtn.classList.toggle('hidden', !(signedIn_() && currentAdmins.indexOf(String(auth_.email).toLowerCase()) === -1));
+    }
+
+    var adminsPanelHelp = adminsPanel.querySelector('.field-help');
+    document.getElementById('adminsEditBtn').addEventListener('click', function () {
+      // AC rev 2: a non-super-admin's own email is always kept — prefill it so that is visible.
+      var list = currentAdmins.slice();
+      var me = myEmail();
+      if (me && !isSuperAdmin && list.indexOf(me) === -1) list.push(me);
+      adminsInput.value = list.join(', ');
+      adminsPanelHelp.textContent = 'Comma-separated Google account emails. Only these people (and the site\u2019s super-admins) can edit this ballot. Leave blank to let anyone edit it.' +
+        (me && !isSuperAdmin ? ' Your own email (' + me + ') is always kept on the list, so you cannot lock yourself out.' : '') +
+        (me ? '' : ' Sign in to set admins.');
+      setStatus(adminsStatus, '', false);
+      adminsPanel.classList.remove('hidden');
+    });
+    document.getElementById('adminsCancelBtn').addEventListener('click', function () { adminsPanel.classList.add('hidden'); });
+
+    function saveAdmins(value) {
+      setStatus(adminsStatus, 'Saving…', false);
+      callApi_('adminSaveAdmins', ballotId, value).then(function (res) {
+        adminsPanel.classList.add('hidden');
+        setStatus(adminsStatus, 'Saved.', false);
+        renderAdmins({ access: { enabled: true }, admins: res.admins });
+      }, function (err) {
+        setStatus(adminsStatus, 'Could not save: ' + adminErrorText_(err), true);
+      });
+    }
+    document.getElementById('adminsSaveBtn').addEventListener('click', function () { saveAdmins(adminsInput.value.trim()); });
+
+    claimBtn.addEventListener('click', function () {
+      claimBtn.disabled = true;
+      setStatus(adminsStatus, 'Saving…', false);
+      callApi_('adminClaimBallot', ballotId).then(function (res) {
+        claimBtn.disabled = false;
+        setStatus(adminsStatus, 'You are now an admin of this ballot.', false);
+        renderAdmins({ access: { enabled: true }, admins: res.admins });
+      }, function (err) {
+        claimBtn.disabled = false;
+        setStatus(adminsStatus, 'Could not save: ' + adminErrorText_(err), true);
+      });
+    });
+  })();
+
+  // ======================================================================
+  // ANALYZE VIEW — ports webAdmin.js's _formatFinishOrder_/_buildResultsRows_ table shape
+  // and onOpen.js's generateCondorcetResultsHtml/formatCandidateSummaryHtml/
+  // formatRankedCandidates client-side, since doGet no longer renders that HTML server-side.
+  // ======================================================================
+  (function () {
+    var analyzeStatus = document.getElementById('analyzeStatus');
+    var analyzeRoot = document.getElementById('analyzeRoot');
+
+    function formatFinishOrder(order) {
+      if (!order || !order.length) return '';
+      return order.map(function (entry) {
+        var label = entry.names.length > 1 ? '(tie) ' + entry.names.join(' / ') : entry.names[0];
+        return entry.place + '. ' + escapeHtml_(label);
+      }).join('&nbsp;&nbsp;');
+    }
+
+    function summaryTable(summary) {
+      var html = '<table class="results-table"><tr>';
+      summary[0].forEach(function (h) { html += '<th>' + escapeHtml_(h) + '</th>'; });
+      html += '</tr>';
+      for (var i = 1; i < summary.length; i++) {
+        html += '<tr>';
+        summary[i].forEach(function (cell, j) {
+          html += '<td' + (j === 0 ? '' : ' class="center"') + '>' + escapeHtml_(cell) + '</td>';
+        });
+        html += '</tr>';
+      }
+      return html + '</table>';
+    }
+
+    function rankedCandidatesTable(rankedCandidates) {
+      var html = '<table class="results-table"><tr><th>Rank</th><th>Candidate</th><th>Score</th></tr>';
+      rankedCandidates.forEach(function (rc, i) {
+        html += '<tr><td class="center">' + (i + 1) + '</td><td>' + escapeHtml_(rc.candidate) +
+          '</td><td class="center">' + escapeHtml_(rc.score) + '</td></tr>';
+      });
+      return html + '</table>';
+    }
+
+    function condorcetMethodHtml(label, result, finishOrder, scoreExplanation) {
+      var html = '<h3>' + escapeHtml_(label) + '</h3>';
+      if (result.winner) {
+        html += '<p>' + escapeHtml_(label) + ' winner: <strong>' + escapeHtml_(result.winner) + '</strong></p>';
+      } else if ((result.tie && result.tie.length) || (result.tiedForMinScore && result.tiedForMinScore.length)) {
+        var tied = (result.tie && result.tie.length) ? result.tie : result.tiedForMinScore;
+        html += '<p>No ' + escapeHtml_(label) + ' winner (tie between: <strong>' + escapeHtml_(tied.join(', ')) + '</strong>).</p>';
+      } else {
+        html += '<p>No ' + escapeHtml_(label) + ' winner (cycle detected).</p>';
+      }
+      if (finishOrder) {
+        html += '<p><strong>Finish order:</strong> ' + formatFinishOrder(finishOrder) + '</p>';
+      }
+      html += '<p><strong>Heuristic display score (not the finish order):</strong></p>';
+      html += '<p style="font-size:0.9em;margin:5px 0;"><em>' + escapeHtml_(scoreExplanation) + '</em></p>';
+      html += rankedCandidatesTable(result.rankedCandidates);
+      return html;
+    }
+
+    function formatCommentDate(d) {
+      if (!d) return '';
+      var t = new Date(d);
+      return isNaN(t.getTime()) ? String(d) : t.toLocaleString();
+    }
+
+    // User text only ever reaches the DOM via setRich_ / textContent, never innerHTML.
+    function feedbackSection(comments) {
+      var sec = document.createElement('div');
+      var h = document.createElement('h2');
+      h.textContent = 'Feedback comments (' + comments.length + ')';
+      sec.appendChild(h);
+      if (!comments.length) {
+        var none = document.createElement('p');
+        none.className = 'muted';
+        none.textContent = 'No feedback comments yet.';
+        sec.appendChild(none);
+        return sec;
+      }
+      comments.forEach(function (c) {
+        var item = document.createElement('div');
+        item.style.marginBottom = '14px';
+        var body = document.createElement('div');
+        body.style.whiteSpace = 'pre-wrap';
+        setRich_(body, c.comment);
+        var meta = document.createElement('div');
+        meta.style.color = 'var(--text-muted)';
+        meta.style.fontSize = '0.85em';
+        meta.textContent = [c.name, formatCommentDate(c.date)].filter(Boolean).join(' · ') +
+          (c.counted === false ? ' (not counted)' : '');
+        item.appendChild(body);
+        item.appendChild(meta);
+        sec.appendChild(item);
+      });
+      return sec;
+    }
+
+    window.initAnalyzeView_ = function (id) {
+      document.getElementById('view-analyze').classList.remove('hidden');
+      fillBallotNav_(document.getElementById('analyzeNav'), id, ['edit', 'view']);
+      callApi_('getAdminAnalysisData_', id).then(function (data) {
+        analyzeStatus.classList.add('hidden');
+        if (!data || data.error) {
+          analyzeStatus.textContent = data && data.error === 'no_ballot'
+            ? 'No ballot found for id "' + id + '".'
+            : (data ? data.error : 'Could not load analysis.');
+          analyzeStatus.classList.remove('hidden');
+          return;
+        }
+
+        var html = '<h1>' + escapeHtml_(id) + ' — Analysis Results</h1>';
+        html += '<p class="method-note"><em>Method note: every "Finish order" below (RCV and each ' +
+          'Condorcet method) is computed by winner-removal — find the winner, remove them from ' +
+          'the field, and re-run the method on who’s left, repeating for each place. It is not ' +
+          'derived from a single run’s elimination order or ranked-candidates score, both of ' +
+          'which can disagree with a re-run (see rcballot-14e).</em></p>';
+
+        html += '<h2>Ranked Choice Voting</h2>';
+        if (data.rcv.winner) {
+          html += '<p><b>Winner: ' + escapeHtml_(data.rcv.winner) + '</b></p>';
+        } else if (data.rcv.tie) {
+          html += '<p><b>Tie after all eliminations:</b> ' + escapeHtml_(data.rcv.tie.join(', ')) + '</p>';
+        }
+        html += '<p><b>Finish order</b> (computed by removing each round’s winner and ' +
+          're-running RCV on who’s left, not the final round’s runner-up): ' +
+          formatFinishOrder(data.rcvFinishOrder) + '</p>';
+        html += summaryTable(data.rcv.summary);
+
+        html += condorcetMethodHtml('Basic Condorcet', data.condorcet.condorcet, data.finishOrders.condorcet,
+          'Score = Number of head-to-head victories');
+        html += condorcetMethodHtml('Schulze Method', data.condorcet.schulze, data.finishOrders.schulze,
+          'Score = Sum of strongest path strengths over all opponents');
+        html += condorcetMethodHtml('Ranked Pairs (Tideman)', data.condorcet.rankedPairs, data.finishOrders.rankedPairs,
+          'Score = Net locked edges (outgoing minus incoming)');
+        html += condorcetMethodHtml('Minimax (Simpson)', data.condorcet.minimax, data.finishOrders.minimax,
+          'Score = Worst pairwise defeat (lower is better)');
+
+        html += '<p><em>Results have been written to the Results section of the ' +
+          escapeHtml_(data.sheetName) + ' sheet.</em></p>';
+
+        analyzeRoot.innerHTML = html;
+        analyzeRoot.appendChild(feedbackSection(data.comments || []));
+        analyzeRoot.classList.remove('hidden');
+      }, function (err) {
+        if (/^Not authorized/.test(err.message || '')) {
+          // AC rev 2: results need a signed-in caller (not an admin); the sign-in control is at the top.
+          analyzeStatus.textContent = 'Sign in with Google (button at the top of the page) to view results.';
+          return;
+        }
+        analyzeStatus.textContent = 'Could not load analysis: ' + adminErrorText_(err);
+      });
+    };
+  })();
+
+  // ======================================================================
+  // BALLOT VIEW
+  // ======================================================================
+  (function () {
+    var currentName = '';
+    var acceptNew = true;
+    var itemDetailsByName = {};
+    var showDetailsPreview = false;
+    var ballotDescription = '';
+    var ballotDescriptionLinkText = '';
+    var ballotDescriptionLinkUrl = '';
+    var ballotInstructions = '';
+    var _BALLOT_NAME_STORAGE_KEY_PREFIX = 'rcvBallotName:';
+
+    function loadSavedName() {
+      try { return localStorage.getItem(_BALLOT_NAME_STORAGE_KEY_PREFIX + ballotId) || ''; } catch (err) { return ''; }
+    }
+    function saveName(name) {
+      try { localStorage.setItem(_BALLOT_NAME_STORAGE_KEY_PREFIX + ballotId, name); } catch (err) {}
+    }
+
+    var pageTitle = document.getElementById('pageTitle');
+    var pageDescription = document.getElementById('pageDescription');
+    var pageFooter = document.getElementById('pageFooter');
+    var pageContact = document.getElementById('pageContact');
+    var stepNoBallot = document.getElementById('step-noBallot');
+    var stepName = document.getElementById('step-name');
+    var stepRank = document.getElementById('step-rank');
+    var stepDone = document.getElementById('step-done');
+    var nameInput = document.getElementById('nameInput');
+    var startBtn = document.getElementById('startBtn');
+    var status = document.getElementById('status');
+    var status2 = document.getElementById('status2');
+    var topicList = document.getElementById('topicList');
+    var addSection = document.getElementById('addSection');
+    var addInstructionsText = document.getElementById('addInstructionsText');
+    var addNewBtn = document.getElementById('addNewBtn');
+    var addPanel = document.getElementById('addPanel');
+    var newItemInput = document.getElementById('newItemInput');
+    var newItemDetailsInput = document.getElementById('newItemDetailsInput');
+    var feedbackPromptLabel = document.getElementById('feedbackPromptLabel');
+    var commentInput = document.getElementById('commentInput');
+    var addBtn = document.getElementById('addBtn');
+    var addCancelBtn = document.getElementById('addCancelBtn');
+    var submitBtn = document.getElementById('submitBtn');
+    var backBtn = document.getElementById('backBtn');
+    var editAgainBtn = document.getElementById('editAgainBtn');
+    var doneName = document.getElementById('doneName');
+
+    function showStep(el) {
+      [stepNoBallot, stepName, stepRank, stepDone].forEach(function (s) { s.classList.add('hidden'); });
+      el.classList.remove('hidden');
+      // The Description link belongs to the Description only, not the rank-step Instructions.
+      if (el === stepRank) setRich_(pageDescription, ballotInstructions);
+      else setRichWithLink_(pageDescription, ballotDescription, ballotDescriptionLinkText, ballotDescriptionLinkUrl);
+    }
+
+    function setStatus(el, msg, isError) {
+      el.textContent = msg || '';
+      el.className = isError ? 'error' : '';
+    }
+
+    function renderTopics(topics) {
+      topicList.innerHTML = '';
+      topics.forEach(function (topic) { topicList.appendChild(buildItem(topic)); });
+    }
+
+    function buildItem(topic) {
+      var li = document.createElement('li');
+      li.dataset.topic = topic;
+
+      var row = document.createElement('div');
+      row.className = 'topic-row';
+
+      var handle = document.createElement('span');
+      handle.className = 'handle';
+      handle.textContent = '☰';
+
+      var text = document.createElement('span');
+      text.className = 'topic-text';
+      var detailsInfo = itemDetailsByName[topic];
+      var previewText = showDetailsPreview && detailsInfo ? firstParagraph_(detailsInfo.details) : '';
+      if (previewText) {
+        text.classList.add('with-preview');
+        var nameEl = document.createElement('span');
+        nameEl.className = 'topic-name';
+        nameEl.textContent = topic;
+        var previewEl = document.createElement('span');
+        previewEl.className = 'topic-preview';
+        previewEl.textContent = previewText;
+        text.appendChild(nameEl);
+        text.appendChild(previewEl);
+      } else {
+        text.textContent = topic;
+      }
+
+      row.appendChild(handle);
+      row.appendChild(text);
+
+      var info = itemDetailsByName[topic];
+      if (info && (info.details || info.linkUrl)) {
+        text.classList.add('has-details');
+
+        var infoContent = document.createElement('div');
+        infoContent.className = 'topic-info-content';
+        if (info.details) { var detailsBody = document.createElement('div'); detailsBody.className = 'rich'; setRich_(detailsBody, info.details); infoContent.appendChild(detailsBody); }
+        infoContent.hidden = true;
+
+        if (info.linkUrl) {
+          var infoLink = document.createElement('a');
+          infoLink.className = 'topic-info-link';
+          infoLink.href = info.linkUrl;
+          infoLink.target = '_blank';
+          infoLink.rel = 'noopener noreferrer';
+          infoLink.textContent = info.linkText || info.linkUrl;
+          infoContent.appendChild(infoLink);
+        }
+
+        var infoBtn = document.createElement('button');
+        infoBtn.type = 'button';
+        infoBtn.className = 'info-toggle';
+        infoBtn.textContent = 'ℹ️';
+        infoBtn.setAttribute('aria-label', 'Show details for ' + topic);
+        infoBtn.setAttribute('aria-expanded', 'false');
+
+        var toggleInfo = function () {
+          infoContent.hidden = !infoContent.hidden;
+          text.classList.toggle('expanded', !infoContent.hidden);
+          infoBtn.setAttribute('aria-expanded', String(!infoContent.hidden));
+        };
+        infoBtn.addEventListener('click', toggleInfo);
+        text.addEventListener('click', toggleInfo);
+
+        row.appendChild(infoBtn);
+        li.appendChild(row);
+        li.appendChild(infoContent);
+      } else {
+        li.appendChild(row);
+      }
+
+      attachDrag(li, handle);
+      return li;
+    }
+
+    function attachDrag(li, handle) {
+      var startY = 0;
+
+      function onMove(e) {
+        var clientY = e.clientY;
+        var dy = clientY - startY;
+        li.style.transform = 'translateY(' + dy + 'px)';
+
+        var items = Array.prototype.slice.call(topicList.children);
+        var draggedIndex = items.indexOf(li);
+
+        for (var i = 0; i < items.length; i++) {
+          var sib = items[i];
+          if (sib === li) continue;
+          var rect = sib.getBoundingClientRect();
+          var sibCenter = rect.top + rect.height / 2;
+          var sibIndex = items.indexOf(sib);
+
+          if (clientY < sibCenter && sibIndex < draggedIndex) {
+            topicList.insertBefore(li, sib);
+            startY = clientY;
+            li.style.transform = 'translateY(0px)';
+            return;
+          }
+          if (clientY > sibCenter && sibIndex > draggedIndex) {
+            topicList.insertBefore(li, sib.nextSibling);
+            startY = clientY;
+            li.style.transform = 'translateY(0px)';
+            return;
+          }
+        }
+      }
+
+      function onUp(e) {
+        li.style.transform = '';
+        li.classList.remove('dragging');
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
+        autosaveRanking();
+      }
+
+      handle.addEventListener('pointerdown', function (e) {
+        startY = e.clientY;
+        li.classList.add('dragging');
+        try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        e.preventDefault();
+      });
+    }
+
+    function applyBranding(config) {
+      pageTitle.textContent = config.title || 'RankChoiceVoting Ballot';
+      document.title = config.title || 'RankChoiceVoting Ballot';
+      ballotDescription = config.description || '';
+      ballotDescriptionLinkText = config.descriptionLinkText || '';
+      ballotDescriptionLinkUrl = config.descriptionLinkUrl || '';
+      ballotInstructions = config.instructions || '';
+      setRich_(pageFooter, config.footer || '');
+      setRich_(pageContact, config.contact ? 'Contact: ' + config.contact : '');
+      feedbackPromptLabel.textContent = config.feedbackPrompt || "Any feedback you'd like to add?";
+      showDetailsPreview = !!config.showDetailsPreview;
+      setAppVersionFooter_(config.appVersion, config.appDeployTarget);
+      itemDetailsByName = config.itemDetails || {};
+      acceptNew = !!config.acceptNew;
+      addSection.style.display = acceptNew ? 'block' : 'none';
+      setRich_(addInstructionsText, config.addInstructions || '');
+      addInstructionsText.style.display = config.addInstructions ? 'block' : 'none';
+    }
+
+    function loadBallot(name) {
+      setStatus(status, 'Loading…', false);
+      startBtn.disabled = true;
+      callApi_('getBallotForName', ballotId, name).then(function (result) {
+        startBtn.disabled = false;
+        setStatus(status, '', false);
+        applyBranding(result);
+        currentName = name;
+        saveName(name);
+        renderTopics(result.candidates);
+        commentInput.value = result.comment || '';
+        showStep(stepRank);
+      }, function (err) {
+        startBtn.disabled = false;
+        setStatus(status, 'Could not load ballot: ' + err.message, true);
+      });
+    }
+
+    startBtn.addEventListener('click', function () {
+      var name = nameInput.value.trim();
+      if (!name) {
+        setStatus(status, 'Please enter your name.', true);
+        return;
+      }
+      loadBallot(name);
+    });
+
+    nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') startBtn.click(); });
+
+    function openAddPanel() {
+      addPanel.classList.remove('hidden');
+      addNewBtn.hidden = true;
+      newItemInput.focus();
+    }
+    function closeAddPanel() {
+      newItemInput.value = '';
+      newItemDetailsInput.value = '';
+      addPanel.classList.add('hidden');
+      addNewBtn.hidden = false;
+    }
+
+    function addTopic() {
+      var phrase = newItemInput.value.trim();
+      if (!phrase) return;
+      var details = newItemDetailsInput.value.trim();
+      addBtn.disabled = true;
+      callApi_('addBallotTopic', ballotId, phrase, details).then(function (result) {
+        addBtn.disabled = false;
+        if (details) itemDetailsByName[result.candidate] = { details: details, linkText: '', linkUrl: '' };
+        topicList.insertBefore(buildItem(result.candidate), topicList.firstChild);
+        closeAddPanel();
+      }, function (err) {
+        addBtn.disabled = false;
+        setStatus(status2, 'Could not add item: ' + err.message, true);
+      });
+    }
+
+    addNewBtn.addEventListener('click', openAddPanel);
+    addCancelBtn.addEventListener('click', closeAddPanel);
+    addBtn.addEventListener('click', addTopic);
+    newItemInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); addTopic(); }
+    });
+
+    function getOrderedTopics() {
+      return Array.prototype.map.call(topicList.children, function (li) { return li.dataset.topic; });
+    }
+
+    function autosaveRanking() {
+      if (!currentName) return;
+      setStatus(status2, 'Saving…', false);
+      callApi_('submitBallotRanking', ballotId, currentName, getOrderedTopics(), commentInput.value.trim())
+        .then(function () { setStatus(status2, 'Saved', false); },
+          function (err) { setStatus(status2, 'Could not save: ' + err.message, true); });
+    }
+
+    submitBtn.addEventListener('click', function () {
+      submitBtn.disabled = true;
+      setStatus(status2, 'Saving…', false);
+      callApi_('submitBallotRanking', ballotId, currentName, getOrderedTopics(), commentInput.value.trim()).then(function () {
+        submitBtn.disabled = false;
+        setStatus(status2, '', false);
+        doneName.textContent = currentName;
+        showStep(stepDone);
+      }, function (err) {
+        submitBtn.disabled = false;
+        setStatus(status2, 'Could not save: ' + err.message, true);
+      });
+    });
+
+    backBtn.addEventListener('click', function () { showStep(stepName); });
+    editAgainBtn.addEventListener('click', function () { loadBallot(currentName); });
+
+    // ---- Optional sign-in on the name step (rcballot-dx3.2). Typing a name always works.
+    var ballotSigninBar = document.getElementById('ballotSigninBar');
+    function afterSignIn() {
+      // Name prefill from the GIS profile (display-only); the typed name is still what is saved.
+      if (!nameInput.value.trim() && auth_.name) nameInput.value = auth_.name;
+      callApi_('recordSignin', ballotId).catch(function () {});
+    }
+    function renderBallotSignIn() {
+      renderSignIn_(ballotSigninBar, 'Optional — sign in to keep your vote with your Google account:');
+    }
+    authListeners_.push(function (kind) {
+      renderBallotSignIn();
+      if (kind === 'in') afterSignIn();
+    });
+
+    window.initBallotView_ = function (id) {
+      document.getElementById('view-ballot').classList.remove('hidden');
+      renderBallotSignIn();
+      if (!id) {
+        showStep(stepNoBallot);
+        return;
+      }
+      callApi_('getBallotConfig', id).then(function (config) {
+        if (!config || config.error) {
+          showStep(stepNoBallot);
+          return;
+        }
+        applyBranding(config);
+        nameInput.value = loadSavedName();
+        if (signedIn_()) afterSignIn();
+        showStep(stepName);
+      }, function () { showStep(stepNoBallot); });
+    };
+  })();
+
+  // ======================================================================
+  // ROUTER — cmd/action/id read from the URL once, at the top of this file.
+  // ======================================================================
+  if (cmd !== 'ballot') {
+    // Admin views (rcballot-dx3.3): one sign-in bar; any change reloads so every view re-asks
+    // the server what this caller may see.
+    renderSignIn_(document.getElementById('adminSigninBar'), 'Ballot admins: sign in with Google.');
+    authListeners_.push(function (kind) {
+      if (kind === 'error') { renderSignIn_(document.getElementById('adminSigninBar'), 'Ballot admins: sign in with Google.'); return; }
+      if (kind === 'out') { window.location.reload(); return; }
+      callApi_('recordSignin', '').catch(function () {}).then(function () { window.location.reload(); });
+    });
+  }
+  if (cmd === 'ballot') {
+    initBallotView_(ballotId);
+  } else if (action === 'edit' || action === 'create') {
+    initEditView_(ballotId, action === 'create');
+  } else if (action === 'analyze') {
+    initAnalyzeView_(ballotId);
+  } else {
+    initListView_();
+  }
+</script>
+</body>
+</html>
