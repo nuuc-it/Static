@@ -229,13 +229,15 @@
   table.results-table th { background: var(--surface-secondary); text-align: left; }
   table.results-table td.center { text-align: center; }
 </style>
-<link rel="stylesheet" href="themes/northlake.css?v=0.2.0.3">
+<link rel="stylesheet" href="themes/northlake.css?v=0.2.0.4">
 </head>
 <body>
   <!-- Theme-neutral brand header; display, logo and styling come from the theme module. -->
   <header class="app-brand">
-    <span class="app-brand-logo" role="img" aria-label="Northlake Unitarian Universalist Church logo"></span>
-    <span class="app-brand-name">Ranked-choice ballots</span>
+    <img class="app-brand-logo" loading="lazy" src="assets/northlake-flame-transparent.png" alt="Northlake Unitarian Universalist Church">
+    <!-- On the ballot view applyBranding mirrors the ballot title here (aria-hidden: h1#pageTitle
+         stays the accessible heading); a theme that shows the header hides that h1 visually. -->
+    <span class="app-brand-name" id="appBrandName">Ranked-choice ballots</span>
   </header>
   <!-- Admin-view sign-in (rcballot-dx3.3): filled by renderSignIn_ on Dispatch-enabled builds only. -->
   <div id="adminSigninBar" class="signin-bar hidden"></div>
@@ -647,7 +649,7 @@
 <script>
   // Stamped by tools/build-static-pages.js per env — see that file's header. Left null here so
   // this source file also runs unbuilt (local/manual testing with ?webapp= — see resolveWebappUrl_).
-  var STATIC_BUILD_VERSION_ = "0.2.0.3";
+  var STATIC_BUILD_VERSION_ = "0.2.0.4";
   var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbzKpwFfgRqHx1v3A0pvVAbUNAMab_A8rqOf0jqgRP5DPTmNNPU6_qelWHMG1QPkXbhP/exec";
   var STATIC_DEV_CONTACT_ = "stuart.donaldson@gmail.com";
   // {url, clientId, aud} for NUUC-Dispatch sign-in, from gas-project.json envs.<env>.dispatch
@@ -2447,6 +2449,10 @@
     function applyBranding(config) {
       pageTitle.textContent = config.title || 'RankChoiceVoting Ballot';
       document.title = config.title || 'RankChoiceVoting Ballot';
+      var brandName = document.getElementById('appBrandName');
+      brandName.textContent = pageTitle.textContent;
+      brandName.setAttribute('aria-hidden', 'true');
+      document.body.setAttribute('data-view', 'ballot');
       ballotDescription = config.description || '';
       ballotDescriptionLinkText = config.descriptionLinkText || '';
       ballotDescriptionLinkUrl = config.descriptionLinkUrl || '';
