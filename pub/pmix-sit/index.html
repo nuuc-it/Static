@@ -581,7 +581,6 @@ body {
 .score-sync #score-timing { padding: 4px 6px; margin-bottom: 2px; border: 1px solid var(--border-strong); border-left: 4px solid #b45309; border-radius: 8px; background: rgba(180,83,9,.14); } /* atc-rebb: the target card, amber, set apart from the playhead controls below */
 .score-timing-row .btn.score-step { flex: 0 0 auto; min-width: 0; padding: 0 8px; font-size: 13px; background: transparent; color: #f5a524; border: 1.5px solid #b45309; font-weight: 600; white-space: nowrap; }
 .score-timing-row .btn.score-step:disabled { opacity: .35; }
-.score-nudge-name:not(:empty)::before { content: 'Adjust '; font-weight: 400; color: var(--text-2); } /* atc-rebb: row 2 acts on the mark just set, not on the target above */
 /* atc-rebb: in Sync the Prev / NOW / Next strip is the playhead's: one compact row in the transport card above the skip buttons (the NOW list opens upward) */
 .score-sync .score-pos { border: 0; border-bottom: 1px solid var(--border-strong); background: transparent; }
 .score-sync .score-pos .score-pos-cell { min-height: 30px; flex-direction: row; align-items: center; gap: 6px; padding: 2px 6px; }
@@ -597,9 +596,8 @@ body {
 .score-timing-row .score-time-btn { flex: 1 1 auto; font-weight: 700; font-size: 16px; background: #b45309; color: #fff; border-color: #b45309; }
 .score-time-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; line-height: 1.2; } /* atc-kowq: two lines, the verb and name, then the countdown and window (data-sub) */
 .score-time-btn::after { content: attr(data-sub); display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 400; opacity: .9; font-variant-numeric: tabular-nums; }
-.score-nudge-row { align-items: center; min-height: 44px; } /* the row keeps its height whether or not a mark is selected: nothing under the score resizes it */
+.score-nudge-row { align-items: center; justify-content: center; min-height: 40px; } /* the row keeps its height whether or not a mark is selected: nothing under the score resizes it */
 .score-nudge-row .btn { min-height: 36px; }
-.score-nudge-name { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 15px; }
 .score-time-note { flex: 0 1 auto; font-size: 12px; color: var(--text-2); }
 .score-nudge-row input { width: 5.5em; height: 36px; text-align: center; font-variant-numeric: tabular-nums; }
 .score-tn-status { display: flex; flex-direction: column; font-size: 13px; color: var(--text-2); } /* the one conditional status line: no height when both texts are empty */
@@ -689,6 +687,36 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 .score-ed-more:has(#score-goto-fld:not([hidden])) #score-jump-reps-fld, .score-ed-more:has(#score-goto-fld:not([hidden])) #score-taken-fld, .score-ed-more:has(#score-goto-fld:not([hidden])) #score-volta-fld, .score-ed-more:has(#score-goto-fld:not([hidden])) #score-endings-fld { order: 4; }
 .score-ed-more:has(#score-goto-fld:not([hidden])) #score-endings-fld .score-row { flex-wrap: wrap; }
 @media (max-width: 440px) { .score-ed-info > span { display: none; } .score-ed-info b { display: block; }  .score-ed-row { gap: 3px; } .score-ed-row .score-tbtn { min-width: 32px; padding: 0 4px; } .score-ed-row .score-primary { padding: 0 6px; } .score-ed-row input[type="text"] { min-width: 4.5em; } }
+/* atc-vyb3: desktop width only (one breakpoint, 720 px). Below it nothing changes. (1) Edit: the edit bar (Undo, Save, chip, ...) shares the line of the Done / Layout / Sync buttons: the panel is a grid, the header
+   and the tool rows dissolve into it (display:contents, no DOM move) and every direct child has its own grid row, so rows that are hidden take no height. (2) Sync: Back, timing button, Skip, -0.1, Time box,
+   +0.1 and Edit are one row of the target card (the two rows dissolve into the card's wrapping flex line); the status line and the expander body keep their own full-width lines. */
+@media (min-width: 720px) {
+  .score-panel[data-edit="on"] { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; grid-template-rows: auto auto auto auto auto auto auto auto minmax(0, 1fr) auto auto; align-items: stretch; }
+  .score-panel[data-edit="on"] > * { grid-column: 1 / -1; min-width: 0; }
+  .score-panel[data-edit="on"] > .score-bar { display: contents; }
+  .score-panel[data-edit="on"] > .score-toolrows { display: contents; }
+  .score-panel[data-edit="on"] .score-bar > * { grid-row: 1; align-self: center; }
+  .score-panel[data-edit="on"] .score-bar > #score-edit-done { grid-column: 1; margin-left: 6px; }
+  .score-panel[data-edit="on"] .score-bar > #score-subswitch { grid-column: 2; margin: 0 6px; }
+  .score-panel[data-edit="on"] .score-bar > [data-testid="score-settings"] { grid-column: 4; }
+  .score-panel[data-edit="on"] .score-bar > #score-close { grid-column: 5; margin-right: 6px; }
+  .score-panel[data-edit="on"] .score-toolrows > #score-tools { grid-column: 3; grid-row: 1; border-bottom: 0; align-self: stretch; }
+  .score-panel[data-edit="on"] .score-toolrows > #score-pos { grid-row: 2; }
+  .score-panel[data-edit="on"] .score-toolrows > #score-offsetbar { grid-row: 3; }
+  .score-panel[data-edit="on"] .score-toolrows > #score-notice { grid-row: 4; }
+  .score-panel[data-edit="on"] > #score-misplaced { grid-row: 5; }
+  .score-panel[data-edit="on"] > #score-note-view { grid-row: 6; }
+  .score-panel[data-edit="on"] > #score-choices { grid-row: 7; }
+  .score-panel[data-edit="on"] > #score-progress { grid-row: 8; }
+  .score-panel[data-edit="on"] > #score-pick { grid-row: 8; }
+  .score-panel[data-edit="on"] > .score-view { grid-row: 9; }
+  .score-panel[data-edit="on"] > #score-editor { grid-row: 10; }
+  .score-panel[data-edit="on"] > #score-sheet { grid-row: 11; }
+  .score-sync #score-timing { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .score-sync #score-timing > .score-timing-row { display: contents; }
+  .score-sync #score-timing .score-timing-row .score-time-btn { flex: 1 1 190px; min-width: 170px; max-width: 280px; }
+  .score-sync #score-timing > .score-tn-status, .score-sync #score-timing > .score-ed-more { flex: 1 0 100%; }
+}
 .score-notebar { padding: 4px 8px; font-size: 13px; background: #fffbeb; color: #78350f; border-bottom: 1px solid #b45309; white-space: pre-wrap; }
 /* Edit mode: every mark carries a 0.5 inch hit area (sized by script) so a press on it drags instead of panning (atc-ore.5 AC 20). */
 .score-panel[data-edit="on"] .score-mark { pointer-events: auto; touch-action: none; }
@@ -1672,10 +1700,10 @@ li > .schedule-cal-wrap { margin-left: 8px; }
             <button id="score-skip" data-testid="score-skip" class="btn score-tbtn score-step" title="Next mark to time (the playhead does not move)">Skip &#9654;</button>
           </div>
           <div id="score-time-edit" data-testid="score-time-edit" class="score-timing-row score-nudge-row">
-            <span id="score-nudge-name" data-testid="score-nudge-name" class="score-nudge-name"></span><span id="score-time-note" data-testid="score-time-note" class="score-time-note" hidden>No time needed (taken by pass)</span>
-            <button id="score-nudge-minus" data-testid="score-nudge-minus" class="btn score-tbtn" title="The mark just set 0.1 s earlier" hidden>-0.1</button>
-            <input id="score-time-in" data-testid="score-time-in" type="text" inputmode="decimal" maxlength="9" placeholder="Time" aria-label="Time of the mark just set (m:ss.s or seconds)" title="Type the time of the mark just set: m:ss.s or seconds; Enter sets it" hidden>
-            <button id="score-nudge-plus" data-testid="score-nudge-plus" class="btn score-tbtn" title="The mark just set 0.1 s later" hidden>+0.1</button>
+            <span id="score-time-note" data-testid="score-time-note" class="score-time-note" hidden>No time needed (taken by pass)</span>
+            <button id="score-nudge-minus" data-testid="score-nudge-minus" class="btn score-tbtn" title="The target mark 0.1 s earlier" hidden>-0.1</button>
+            <input id="score-time-in" data-testid="score-time-in" type="text" inputmode="decimal" maxlength="9" placeholder="Time" aria-label="Time of the target mark (m:ss.s or seconds)" title="Type the time of the target mark: m:ss.s or seconds; Enter sets it" hidden>
+            <button id="score-nudge-plus" data-testid="score-nudge-plus" class="btn score-tbtn" title="The target mark 0.1 s later" hidden>+0.1</button>
             <button id="score-edit-mark" data-testid="score-edit-mark" class="btn score-tbtn" aria-expanded="false" aria-label="More about this mark" title="Go to, cursor here, clear time, jump target" hidden>&#9662;</button>
           </div>
           <div id="score-tn-status" data-testid="score-tn-status" class="score-tn-status"><span id="score-tn-caption" data-testid="score-tn-caption"></span></div>
@@ -2288,10 +2316,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.6.17";
+var STATIC_BUILD_VERSION_ = "1.8.6.18";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-23T04:50:53.643Z";
+var STATIC_BUILD_DATE_ = "2026-11-23T16:23:24.626Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -11537,7 +11565,7 @@ var SCORE_UI = {
   'score-ed-sel': function (s) { return !!s.selected && s.mode === 'layout'; }, // atc-kowq: Layout's sheet; Sync shows the card's mark row and expander instead
   'score-sel-label': function (s) { return !!s.selected && s.mode === 'layout'; }, // atc-kowq: not shown in Sync (the sheet's CSS hides it too)
   'score-ed-note': function (s) { return !!s.selected && s.mode === 'sync' && !!s.hasNote; }, // atc-kowq: the expander shows the mark's note (read only; Layout edits it)
-  'score-edit-mark': function (s) { return !!s.selected && s.mode === 'sync'; },
+  'score-edit-mark': function (s) { return s.mode === 'sync' && !!s.ready && (!!s.selected || !!s.nudge); }, // atc-01xv: the expander belongs to the target (its click selects it)
   'score-goto': function (s) { return !!s.selected && s.mode === 'sync'; },
   'score-cursor-here': function (s) { return !!s.selected && s.mode === 'sync'; },
   'score-ed-more': function (s) { return !!s.selected && (s.mode === 'layout' || (s.mode === 'sync' && !!s.pop)); },
@@ -11569,7 +11597,7 @@ var SCORE_UI = {
   'score-ed-tminus': function (s) { return !!s.selected && s.mode === 'layout' && (s.kind === 'mark' || s.jumpDir === 'back'); },
   'score-ed-tplus': function (s) { return !!s.selected && s.mode === 'layout' && (s.kind === 'mark' || s.jumpDir === 'back'); },
   'score-time-edit': function (s) { return s.mode === 'sync' && !!s.ready; }, // atc-kowq: the card's mark row; always shown in Sync so a selection or a tap never resizes the score (its contents come and go)
-  'score-time-in': function (s) { return s.mode === 'sync' && !!s.ready && !!s.nudge; }, // atc-lg36: Sync types the time of the mark just set
+  'score-time-in': function (s) { return s.mode === 'sync' && !!s.ready && !!s.nudge; }, // atc-lg36 / atc-01xv: Sync types the time of the target mark
   'score-time-note': function (s) { return s.mode === 'sync' && !!s.ready && !!s.selected && !!s.passJump; }, // atc-rmug.12: a repeat's forward jump taken by pass needs no time
   'score-nudge-minus': function (s) { return s.mode === 'sync' && !!s.ready && !!s.nudge; },
   'score-nudge-plus': function (s) { return s.mode === 'sync' && !!s.ready && !!s.nudge; },
@@ -12687,7 +12715,7 @@ function initScorePanel_() {
   function syncOn() { return S.edit && S.sub === 'sync' && isOpen(); }
   function markById(id) { for (var i = 0; i < S.marks.length; i++) if (S.marks[i].id === id) return S.marks[i]; return null; }
   /** atc-rmug.31: THE Sync reset: no held target, view re-pinned, no nudge. The chip, a Sync entry, closing the editor and loading a score call it; undo clears syncKey directly (known limitation, F4). */
-  function syncRestart() { S.syncKey = null; S.unpinned = false; S.nudgeKey = null; }
+  function syncRestart() { S.syncKey = null; S.unpinned = false; }
   /** The ids needing attention in sequence-independent form (scoreSyncTarget / scoreSyncAdvance read the order from the sequence): needs-time and out-of-order marks plus untimed repeat signs. */
   function syncFlagged() {
     var nums = markNums(), vn = validNow();
@@ -12729,7 +12757,14 @@ function initScorePanel_() {
     var r = syncOn() ? syncTargetNow() : null;
     return r && r.id ? r.id : null;
   }
-  function nudgeMark() { var k = S.nudgeKey || S.selId; return k ? scoreNudgeInfo(S.marks, k) : null; } // owner 2026-11-04: the entry just set (by key; a pass mark moves its pass time), else the selected timed mark
+  /** atc-01xv (owner 2026-11-22, reverses the 2026-11-04 nudge mark): Sync has ONE mark in focus, the timing button's target. The nudges, the Time box and Edit act on it; null when it takes no time (no marks, a selected non-target, an untimed pass entry). */
+  function nudgeTarget() {
+    var r = syncTargetNow();
+    if (!r || !r.id || (selMark() && !r.sel)) return null; // a selection that is not the target (a forward jump, an end of line) shows no nudges
+    var key = S.selPass && r.sel && S.selPass.id === r.id && !S.selPass.orig ? S.selPass.key : r.key; // a pass picked in the list is the entry in focus
+    if (key !== r.id && !scoreNudgeInfo(S.marks, key)) return null; // an untimed pass entry takes its time from Time only
+    return { id: r.id, key: key };
+  }
   function pinMark() { if (!syncOn() || S.unpinned || S.offsetMode) return null; var r = syncTargetNow(); return r && r.id ? markById(r.id) : null; }
   /** A user pan or scroll of the view unpins it (the pill and Follow button tell how to go back). */
   /** owner 2026-11-03: the page point Sync shows now: the selected mark, else the pinned target, else (ribbon) the point under the now bar; null when Sync shows neither (an unpinned page view just stays). */
@@ -13066,7 +13101,7 @@ function initScorePanel_() {
       ready: isReady(), open: isOpen(), mode: S.edit ? S.sub : 'play', editor: isEditor(), signed: isSignedIn_(), readOnly: !!S.readOnly,
       playing: isPlayingNow(), hasT: scoreTimed(playMarks()).length > 0, hasMarks: S.marks.some(function (k) { return k && k.kind === 'mark'; }), ribbon: !!S.ribbon,
       selected: !!m, jumpDir: !!m && m.kind === 'jump' ? scoreJumpDir(S.marks, m) : null, hasEnding: !!m && m.kind === 'jump' && !!scoreEndingOf(S.marks, m), pick: !!S.pick, passes: !!m && m.kind !== 'jump' && m.kind !== 'eol' && m.kind !== 'note' ? passChoices(m.id).length : 0, kind: m ? (m.kind || 'mark') : '', timed: !!m && typeof m.t === 'number', pop: !!S.pop, hasNote: !!m && !!m.note, passJump: !!m && m.kind === 'jump' && typeof m.t !== 'number' && scoreJumpPass_(m) > 0 && scoreJumpDir(S.marks, m) === 'fwd',
-      offsetMode: !!S.offsetMode, toast: !!S.toast, brokenJumps: jumpWarnNow() ? 1 : 0, fieldMsg: !!$('score-field-msg').textContent, misplaced: !!misplacedText(), boxAll: !!S.boxAll, nudge: syncOn() && !!nudgeMark(), pinned: !!pinMark(), fixWin: !!S.fixShown, fixEst: !!S.fixEstShown,
+      offsetMode: !!S.offsetMode, toast: !!S.toast, brokenJumps: jumpWarnNow() ? 1 : 0, fieldMsg: !!$('score-field-msg').textContent, misplaced: !!misplacedText(), boxAll: !!S.boxAll, nudge: syncOn() && !!nudgeTarget(), pinned: !!pinMark(), fixWin: !!S.fixShown, fixEst: !!S.fixEstShown,
       saveState: sv.st, diffs: sv.n, linkNote: !!sv.link, hasShared: sv.hasShared, revertable: sv.revertable, stale: sv.stale, saving: !!S.saving, msg: S.saveMsg || ''
     };
   }
@@ -13077,7 +13112,7 @@ function initScorePanel_() {
   }
   function syncUi() {
     if (S.pick && (!S.edit || S.selId !== S.pick.jumpId)) S.pick = null; // atc-rmug.12: selecting another mark (or leaving Edit) ends the pick
-    if (S.selId !== S.lastSelId) { S.lastSelId = S.selId; if (S.selId) { S.unpinned = false; S.nudgeKey = null; } } // a selection re-pins and ends the nudge; the held target (syncKey) stays
+    if (S.selId !== S.lastSelId) { S.lastSelId = S.selId; if (S.selId) S.unpinned = false; } // a selection re-pins; the held target (syncKey) stays
     var av = String(viewOffPts()); if (av !== S.addrView) { S.addrView = av; notifyAddress(); } // atc-tty9.23: the link carries the vertical offset
     var has = scoreTimed(playMarks()).length > 0; // Follow, previous/next and the ribbon use timed marks only
     panel.setAttribute('data-mark-count', String(S.marks.length));
@@ -13224,15 +13259,13 @@ function initScorePanel_() {
     var win = m && m.kind === 'mark' ? fixWinFor(m.id) : null, sub = scoreSyncSubline(cd, win); // atc-kowq: the button's second line
     if (b.getAttribute('data-sub') !== sub) b.setAttribute('data-sub', sub);
     setText($('score-tn-caption'), scoreSyncStatus(r, win && S.preId === m.id));
-    var ni = nudgeMark(), sm = selMark(), nmM = ni ? ni.id : sm ? sm.id : null;
-    setText($('score-nudge-name'), nmM ? scoreMarkName(S.marks, nmM, nums) : ''); // the mark the nudges act on: the same name as the button and the pill
     var vn = validNow(); setText($('score-chip-text'), scoreSyncChipText(vn.need + scoreUntimedRepeatSigns(S.marks).length, vn.order, vn.jumps));
     syncFix(m);
     var pm = pinMark();
     setText($('score-pin'), pm ? 'Pinned: ' + scoreMarkName(S.marks, pm.id, markNums()) : '');
     var sfEl = $('score-sync-follow'), fp = String(!pm); if (sfEl.getAttribute('aria-pressed') !== fp) sfEl.setAttribute('aria-pressed', fp);
     var pinNow = !!pm; if (pinNow !== S.pinShown) { S.pinShown = pinNow; applyScoreUi(); }
-    var nn = !!nudgeMark(); if (nn !== S.nudgeShown) { S.nudgeShown = nn; applyScoreUi(); }
+    var nn = !!nudgeTarget(); if (nn !== S.nudgeShown) { S.nudgeShown = nn; applyScoreUi(); }
     refreshTimeFields();
   }
   /** atc-rlep.3 J5b: the window band, the estimate guide and the button's window text for target m (visibility goes through SCORE_UI; this sets text and geometry only). */
@@ -13976,9 +14009,10 @@ function initScorePanel_() {
     if (S.offsetMode) { setOffsetAt(hit); return; }
     var sh1 = ribbonStripHitAt(cx, cy), onMark = sh1 ? sh1.mark : scoreHitMark(pdfHitMarks(), hit.page, hit.x, hit.y);
     if (S.pick) { pickTap(hit, onMark, mayAdd); return; } // atc-rmug.12
-    if (onMark && onMark.id === S.selId) { if (S.sub === 'sync') { S.pop = !S.pop; syncUi(); } return; } // atc-ore.33: Sync: tapping the selected mark again toggles its expanded row; Layout's sheet is always open; atc-ore.34: no seek
+    if (onMark && onMark.id === S.selId) { if (S.sub === 'sync') { S.pop = !S.pop; syncUi(); } else focusMeasureOnTap(onMark); return; } // atc-ore.33: Sync: tapping the selected mark again toggles its expanded row; Layout's sheet is always open; atc-ore.34: no seek
     if (onMark) { // atc-ore.34: a tap only selects (atc-tty9.18); it never seeks (the editor's Go to does)
       S.selId = onMark.id; syncUi(); showSelAtNow();
+      focusMeasureOnTap(onMark);
       return;
     }
     if (S.sub === 'sync') { if (S.selId) { S.selId = null; S.rv.selAt = null; syncUi(); } return; } // adr/0020 Sync: a tap on empty clears the selection; nothing is added
@@ -14343,7 +14377,7 @@ function initScorePanel_() {
     var r = scoreUndoPop(S.undo);
     if (!r) return;
     S.undo = r.stack;
-    S.syncKey = null; S.nudgeKey = null; // atc-rmug.31: undoing a timing tap puts the target back by the rule. Known limitation (review F4, accepted): the held key is lost, so an undo in the middle of a walk restarts at the first entry needing a time
+    S.syncKey = null; // atc-rmug.31: undoing a timing tap puts the target back by the rule. Known limitation (review F4, accepted): the held key is lost, so an undo in the middle of a walk restarts at the first entry needing a time
     setMarks(r.marks);
   });
   $('score-clear').addEventListener('click', function () {
@@ -14353,23 +14387,26 @@ function initScorePanel_() {
     S.selId = null;
     commit([], true);
   });
-  function adjust(dt) { // atc-rlep.2 J4: nudges the mark just set (until the next tap or selection); seeks only while paused
-    var m = nudgeMark();
-    if (!m) return;
-    var r = scoreNudgeEntry(S.marks, S.nudgeKey || S.selId, dt); // atc-rmug.31: by key; a pass mark moves passT[key]
-    if (r.error) { $('score-field-msg').textContent = r.error; S.fieldMsgId = m.id; syncUi(); return; }
-    if (r.changed) commit(r.marks, true);
-    if (r.t !== null && !isPlayingNow()) jumpTo(r.t);
+  /** atc-01xv: Sync's nudges act on the target mark (single focus). Never advances, clears the selection, seeks or enters a target; a timed target moves by dt, an untimed one lands 0.1 s after the previous timed mark (atc-lg36). */
+  function adjust(dt) {
+    var r = nudgeTarget();
+    if (!r) return;
+    var info = scoreNudgeInfo(S.marks, r.key);
+    if (!info) { applyTime(r.key, scoreEditStartT(S.marks, r.id, true), true); return; }
+    var n = scoreNudgeEntry(S.marks, r.key, dt); // by key; a pass mark moves passT[key]
+    if (n.error) { $('score-field-msg').textContent = n.error; S.fieldMsgId = r.id; syncUi(); return; }
+    $('score-field-msg').textContent = '';
+    if (n.changed) commit(n.marks, true);
+    refreshTimeFields();
   }
-  /** atc-lg36: typed time and 0.1 s nudges. Layout acts on the selected mark (never seeks); Sync on the mark just set (seeks while paused). */
-  function timeKey(layout) { var m = layout ? selMark() : nudgeMark(); return m ? (layout ? m.id : m.key) : null; }
+  /** atc-lg36: typed time and 0.1 s nudges. Layout acts on the selected mark, Sync on the target mark; neither seeks. */
+  function timeKey(layout) { if (layout) { var m = selMark(); return m ? m.id : null; } var r = nudgeTarget(); return r ? r.key : null; }
   function timeOrder(key) { return validNow().v[key] === 'order'; }
   function applyTime(key, t, layout) {
     var r = scoreSetEntryTime(S.marks, key, t);
     if (r.error) { $('score-field-msg').textContent = r.error; S.fieldMsgId = key; syncUi(); return; }
     $('score-field-msg').textContent = '';
     if (!scoreSameMarks(r.marks, S.marks)) commit(r.marks, true);
-    if (!layout && r.t !== null && !isPlayingNow()) jumpTo(r.t);
     refreshTimeFields();
   }
   function nudgeSel(dt) { // Layout: an untimed or out-of-order mark goes to 0.1 s after the previous mark instead
@@ -14398,7 +14435,7 @@ function initScorePanel_() {
       var el = $(p[0]), key = timeKey(p[1]), m = key ? markById(key) : null;
       if (!el || (!force && document.activeElement === el)) return;
       var v = m && typeof m.t === 'number' ? fmtT(m.t) : '';
-      if (!m && !p[1]) { var ni = nudgeMark(); v = ni ? fmtT(ni.t) : ''; } // a pass mark: its pass time
+      if (!m && !p[1] && key) { var ni = scoreNudgeInfo(S.marks, key); v = ni ? fmtT(ni.t) : ''; } // a pass mark: its pass time
       if (el.value !== v) el.value = v;
     });
   }
@@ -14415,6 +14452,17 @@ function initScorePanel_() {
     var sp = S.selPass && S.selPass.id === m.id && !S.selPass.orig ? S.selPass : null; // atc-rmug.4: Untime on a pass mark removes its time, not the original's
     if (sp) { S.selPass = null; commit(scoreClearPassTime(S.marks, sp.via, sp.key), true); return; }
     commit(scoreClearTime(S.marks, m.id), true);
+  });
+  /** atc-5etl: Layout, a deliberate tap on an existing mark focuses its Measure field so the label can be typed at once. Never on a touch (coarse) pointer (it would open the on-screen keyboard), while playing, in Sync, or while another field is being edited; a drag or an add never comes here. */
+  function focusMeasureOnTap(mark) {
+    var mi = $('score-measure'), a = document.activeElement;
+    if (S.sub !== 'layout' || !S.edit || isPlayingNow() || !mark || mark.kind !== 'mark' || mi.hidden) return;
+    try { if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return; } catch (e) { /* no matchMedia: treat as fine */ }
+    if (a && a !== mi && a !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return; // another field is being edited
+    try { mi.focus({ preventScroll: true }); } catch (e) { mi.focus(); }
+  }
+  $('score-measure').addEventListener('keydown', function (e) { // atc-5etl: Enter commits (the blur fires change); Escape just leaves the field and does not close the panel
+    if (e.key === 'Enter') { e.preventDefault(); this.blur(); } else if (e.key === 'Escape') { e.stopPropagation(); this.blur(); }
   });
   var fieldId = null; // the mark the measure/note fields were last edited for: a tap on another mark can select it before `change` fires
   function noteFieldMark() { fieldId = S.selId; }
@@ -14519,7 +14567,7 @@ function initScorePanel_() {
       var pr = scoreSetPassTime(S.marks, pe.via, pe.key, tt);
       if (pr.error) { $('score-field-msg').textContent = pr.error; S.fieldMsgId = m.id; syncUi(); return; }
       $('score-field-msg').textContent = ''; S.selPass = null;
-      S.selId = null; S.lastSelId = null; S.nudgeKey = pe.key; S.unpinned = false;
+      S.selId = null; S.lastSelId = null; S.unpinned = false;
       commit(pr.marks, true);
       syncAfterTime(r.key); // atc-rebb: a selection advances like any target (reverses review F2)
       enterTarget();
@@ -14532,7 +14580,7 @@ function initScorePanel_() {
       return;
     }
     S.fixMsgId = null; $('score-field-msg').textContent = '';
-    S.selId = null; S.lastSelId = null; S.nudgeKey = r.key; S.unpinned = false;
+    S.selId = null; S.lastSelId = null; S.unpinned = false;
     commit(scoreSetMarkTime(S.marks, m.id, tt, pageSizes()).marks, true);
     syncAfterTime(r.key); // atc-rebb: a selection advances like any target (reverses review F2)
     enterTarget();
@@ -14567,7 +14615,10 @@ function initScorePanel_() {
     syncUi();
     enterTarget();
   });
-  $('score-edit-mark').addEventListener('click', function () { if (selMark()) { S.pop = !S.pop; syncUi(); } }); // atc-ore.33: S.pop = the mark editor is expanded
+  $('score-edit-mark').addEventListener('click', function () { // atc-01xv: Edit acts on the target: select it first when only held
+    if (!selMark()) { var r = nudgeTarget(); if (!r) return; S.selId = r.id; S.unpinned = false; }
+    S.pop = !S.pop; syncUi();
+  }); // atc-ore.33: S.pop = the mark editor is expanded
   $('score-pop-type').addEventListener('change', function () { // atc-tty9.14 AC 1, 4: one undo step per conversion
     var m = selMark();
     if (!m) return;
