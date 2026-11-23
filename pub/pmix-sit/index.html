@@ -526,6 +526,7 @@ body {
 .health-chip.ok { color: var(--green); }
 .health-chip.stale, .health-chip.untimed, .health-chip.order, .health-chip.test { color: var(--amber); }
 .health-chip.none, .health-chip.bad { color: var(--red); }
+.health-chip.wait { color: var(--text-3); }
 .menu-section { margin: 8px 0 0; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .menu-check { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 0; }
 .menu-reason { margin: 0; font-size: 12px; color: var(--text-2); }
@@ -2325,10 +2326,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.7.2";
+var STATIC_BUILD_VERSION_ = "1.8.7.3";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-23T18:33:51.398Z";
+var STATIC_BUILD_DATE_ = "2026-11-23T19:16:03.386Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -6026,8 +6027,25 @@ function parseTrackLabels(files) {
 }
 
 // Node.js compatibility — not executed in GAS (no `module` global there)
+/**
+ * atc-v91o.1: the track the Score health link opens: the first of Mix, Bass, Soprano, Tenor, Alto among the folder's tracks, matched on the
+ * selection page's labels (parseTrackLabels, lower-cased substring as getVoiceColor does); none of them: the first track; no tracks: null.
+ * files: [{id, name}]. Returns a file id or null.
+ */
+var HEALTH_TRACK_ORDER_ = ['mix', 'bass', 'soprano', 'tenor', 'alto'];
+function healthTrackId_(files) {
+  if (!files || !files.length) return null;
+  var labels = parseTrackLabels(files).labels;
+  for (var i = 0; i < HEALTH_TRACK_ORDER_.length; i++) {
+    for (var j = 0; j < files.length; j++) {
+      if (String(labels.get(files[j].id) || '').toLowerCase().indexOf(HEALTH_TRACK_ORDER_[i]) !== -1) return files[j].id;
+    }
+  }
+  return files[0].id;
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { parseTrackLabels };
+  module.exports = { parseTrackLabels, healthTrackId_ };
 }
 </script>
 <script>
@@ -15297,58 +15315,94 @@ function initSettingsMenu() {
 
 /**
  * Score health (atc-v91o): an admin-only Settings entry. The row appears when the server answers a scoreHealth probe (limit 0) with ok;
- * any other answer (not_admin, signed out) keeps it hidden. The panel walks the server's pages (cursor) and lists one line per music folder.
+ * any other answer (not_admin, signed out) keeps it hidden. The scan lists every folder first (scoreHealthFolders pages, rows 'waiting'), then checks them
+ * in batches (scoreHealth {folders}) and fills each row in; a checked row's name links to the folder in Play (healthTrackId_ + the ADR-0016 address, new tab) (atc-v91o.1).
  * Copy test over prod asks first (it overwrites the PROD score; the server keeps a score.json.bak-<time> copy).
  */
 function initScoreHealth() {
   const row = document.getElementById('menu-health-row'), modal = document.getElementById('health-modal');
   const list = document.getElementById('health-list'), summary = document.getElementById('health-summary');
-  let admin = null, probing = false, recs = [], scanId = 0;
+  let admin = null, probing = false, rows = [], scanId = 0;
+  const HEALTH_BATCH = 6;   // folders per scoreHealth check call
   function setAdmin(v) { admin = v; row.hidden = !v; }
   async function probe() {
     if (admin !== null || probing || !isSignedIn_()) return;
     probing = true;
     try { await callApi('scoreHealth', { limit: 0 }); setAdmin(true); } catch (e) { setAdmin(false); }   // callApi throws on not_admin finally { probing = false; }
   }
+  /** Rows: one per folder found by discovery, state 'waiting' -> 'checking' -> 'done' (row.rec is the record) or 'error'. */
+  function folderLink(rec) {
+    const tid = healthTrackId_(rec.tracks);
+    return new URL(addressSearch_('', { folder: rec.id, tracks: tid ? [tid] : [], play: !!tid }), window.location.href).href;
+  }
   function render(note) {
-    const views = recs.map((r) => scoreHealthView(r));
-    const ok = views.filter((v) => v.ok).length;
-    summary.textContent = recs.length + ' folders, ' + ok + ' ok, ' + (recs.length - ok) + ' issues' + (note ? ' ' + note : '');
+    const done = rows.filter((r) => r.state === 'done' || r.state === 'error');
+    const ok = rows.filter((r) => r.state === 'done' && scoreHealthView(r.rec).ok).length;
+    summary.textContent = rows.length + ' folders, ' + ok + ' ok, ' + (done.length - ok) + ' issues' + (note ? ' ' + note : '');
     list.textContent = '';
-    recs.forEach((r, i) => {
-      const v = views[i], d = document.createElement('div');
-      d.className = 'health-row'; d.setAttribute('data-testid', 'health-row'); d.setAttribute('data-status', v.ok ? 'ok' : v.issues[0].cls);
-      const name = document.createElement('div'); name.className = 'health-name'; name.textContent = r.path || r.name; d.appendChild(name);
-      const meta = document.createElement('div'); meta.className = 'health-meta'; meta.textContent = r.audioCount + ' music file' + (r.audioCount === 1 ? '' : 's') + (r.score && r.score.updatedAt ? ', score ' + r.score.updatedAt.slice(0, 10) : ''); d.appendChild(meta);
+    rows.forEach((r) => {
+      const d = document.createElement('div'), v = r.state === 'done' ? scoreHealthView(r.rec) : null;
+      d.className = 'health-row'; d.setAttribute('data-testid', 'health-row');
+      d.setAttribute('data-status', v ? (v.ok ? 'ok' : v.issues[0].cls) : r.state);
+      const label = r.path || r.name, name = document.createElement('div'); name.className = 'health-name';
+      if (r.state === 'done') {
+        const a = document.createElement('a'); a.setAttribute('data-testid', 'health-link'); a.href = folderLink(r.rec); a.target = '_blank'; a.rel = 'noopener'; a.textContent = label; name.appendChild(a);
+      } else name.textContent = label;
+      d.appendChild(name);
       const chips = document.createElement('div');
-      (v.ok ? [{ cls: 'ok', text: 'ok' }] : v.issues).forEach((c) => { const s = document.createElement('span'); s.className = 'health-chip ' + c.cls; s.textContent = c.text; chips.appendChild(s); });
-      if (r.note) { const s = document.createElement('span'); s.className = 'health-meta'; s.textContent = r.note; chips.appendChild(s); }
+      if (v) {
+        const rec = r.rec, meta = document.createElement('div'); meta.className = 'health-meta'; meta.textContent = rec.audioCount + ' music file' + (rec.audioCount === 1 ? '' : 's') + (rec.score && rec.score.updatedAt ? ', score ' + rec.score.updatedAt.slice(0, 10) : ''); d.appendChild(meta);
+        (v.ok ? [{ cls: 'ok', text: 'ok' }] : v.issues).forEach((c) => { const s = document.createElement('span'); s.className = 'health-chip ' + c.cls; s.textContent = c.text; chips.appendChild(s); });
+        if (rec.note) { const s = document.createElement('span'); s.className = 'health-meta'; s.textContent = rec.note; chips.appendChild(s); }
+      } else {
+        const s = document.createElement('span'); s.className = 'health-chip wait';
+        s.textContent = r.state === 'error' ? 'check failed: ' + r.error : (r.state === 'checking' ? 'checking...' : 'waiting'); chips.appendChild(s);
+      }
       d.appendChild(chips);
-      if (r.testNewer) {
+      if (v && r.rec.testNewer) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.setAttribute('data-testid', 'health-copy'); b.textContent = 'Copy test over prod';
-        b.addEventListener('click', () => copyTest(r));
+        b.addEventListener('click', () => copyTest(r.rec));
         d.appendChild(b);
       }
       list.appendChild(d);
     });
   }
+  /** Phase 1 lists every folder (waiting rows appear as pages arrive); phase 2 checks them HEALTH_BATCH at a time and fills each row in. */
   async function scan() {
-    const id = ++scanId; recs = []; render('(scanning)');
-    let cursor;
+    const id = ++scanId; rows = []; render('(finding folders...)');
+    const progress = () => '(checked ' + rows.filter((r) => r.state === 'done' || r.state === 'error').length + ' of ' + rows.length + ')';
     try {
+      let cursor;
       do {
-        const r = await callApi('scoreHealth', cursor ? { cursor: cursor } : {});
+        const r = await callApi('scoreHealthFolders', cursor ? { cursor: cursor } : {});
         if (id !== scanId) return;
-        recs = recs.concat(r.folders); cursor = r.cursor;
-        render(cursor ? '(scanning...)' : '');
+        r.folders.forEach((f) => rows.push({ id: f.id, name: f.name, path: f.path, state: 'waiting', rec: null, error: '' }));
+        cursor = r.cursor;
+        render(cursor ? '(finding folders...)' : progress());
       } while (cursor);
+      for (;;) {
+        const batch = rows.filter((r) => r.state === 'waiting').slice(0, HEALTH_BATCH);
+        if (!batch.length) break;
+        batch.forEach((r) => { r.state = 'checking'; }); render(progress());
+        const res = await callApi('scoreHealth', { folders: batch.map((r) => ({ id: r.id, name: r.name, path: r.path })) });
+        if (id !== scanId) return;
+        batch.forEach((r) => {
+          const rec = res.folders.find((f) => f.id === r.id), err = res.errors.find((e) => e.id === r.id);
+          if (rec) { r.rec = rec; r.state = 'done'; }
+          else if (err) { r.state = 'error'; r.error = err.error; }
+          else r.state = 'gone';   // no audio and no score: not a music folder
+        });
+        rows = rows.filter((r) => r.state !== 'gone');
+        render(progress());
+      }
+      render('');
     } catch (e) { if (id === scanId) render('(scan failed: ' + (e.serverError || e.message) + ')'); }
   }
   async function copyTest(r) {
     if (!window.confirm('Copy score-test.json over score.json in "' + (r.path || r.name) + '"?\n\nThis will overwrite the PROD score. A backup copy (score.json.bak-<time>) is kept in the same _pmix folder.')) return;
     try {
       const res = await callApi('scoreHealthCopyTest', { folderId: r.id });
-      r.testNewer = false; r.note = 'copied; backup ' + (res.backup || 'none'); render();
+      r.testNewer = false; r.note = 'copied; backup ' + (res.backup || 'none'); render('');
     } catch (e) { render('(copy failed: ' + (e.serverError || e.message) + ')'); }
   }
   function close() { modal.classList.add('hidden'); scanId++; }
