@@ -2326,10 +2326,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.7.3";
+var STATIC_BUILD_VERSION_ = "1.8.7.4";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-23T19:16:03.386Z";
+var STATIC_BUILD_DATE_ = "2026-11-23T21:05:48.558Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8898,6 +8898,8 @@ function scoreTrimToBudget(live, visible, budgetPx, incomingPx) {
   return out;
 }
 
+</script>
+<script>
 // ---- Follow + edit pure logic (bd atc-ore.4 AC rev 2, atc-ore.5 AC rev 3). ASCII only. ----
 // A mark is {t (s at 1.0x), page (1-based), x, y (PDF pt from the page top-left)}; the runtime adds an id that is never stored.
 var SCORE_SAME_LINE_PT = 72;
@@ -9241,6 +9243,8 @@ function scoreFollowView(marks, t, geo, cur, opt, offsets, trackId) {
   if (!marks.length || tv.v < 0) return tv;
   return scoreShiftView(tv, scoreOffsetDyAt(offsets, trackId, marks[tv.v].t), marks, geo);
 }
+</script>
+<script>
 // ---- Ribbon follow (branch continuous-scroll): in play mode the score only scrolls horizontally ----
 /** Each derived line becomes a full-width slice of its page (brace, clef and key signature included) and the slices lie
  *  end to end in page, then y, order. The slice's window is the view height with the line's y (plus the focus
@@ -9854,6 +9858,8 @@ function scoreRibbonHit(layout, rx, ry, geo, panY, only, unboxedZero) { // atc-i
   }
   return null;
 }
+</script>
+<script>
 // ---- Performance stats (branch continuous-scroll): per play stretch, fixed-size buffers, one flat scorePerf activity record ----
 var SCORE_PERF_CAP = 4096, SCORE_PERF_MAX_MS = 30000, SCORE_PERF_MIN_MS = 3000;
 function scorePerfBuf(cap) { return { a: new Float32Array(cap), n: 0, max: 0 }; }
@@ -9964,6 +9970,8 @@ function scorePerfOverlayText(st, nowMs, env) {
   t += ' | ' + (env.heapMB !== null && env.heapMB !== undefined ? 'heap ' + Math.round(env.heapMB) + ' MB | ' : '') + 'canvas ' + f(env.canvasMB) + (env.ribbonMB ? '+' + f(env.ribbonMB) : '') + ' MB';
   return t;
 }
+</script>
+<script>
 /** A seek is a jump of the audio clock that the elapsed frame time does not explain. prev/cur = {clock, ts (ms), playing}. */
 function scoreDetectSeek(prev, cur) {
   var delta = cur.clock - prev.clock;
@@ -10213,6 +10221,8 @@ function scoreDefaultMeasure(marks, id) {
   }
   return null;
 }
+</script>
+<script>
 /** atc-rmug.1 (adr/0024, score.md Jumps): a pass-mark name: base for the first visit, base + '.n' from the second ('#7.2', 'm20.2'). */
 function scorePassName(base, n) { return n > 1 ? base + '.' + n : base; }
 var SCORE_PASS_CAP_ = 5000;
@@ -10449,6 +10459,8 @@ function scorePlayMarks(marks, endT, nums) {
   if (marks) { m.src = marks; m.len = marks.length; m.end = endT; m.out = out; }
   return out;
 }
+</script>
+<script>
 /** atc-rlep.2 J4 / atc-rmug.34: the ids needing attention (a SET: scoreSyncAdvance and scoreSyncTarget read the order from the sequence): the needs-time and out-of-order marks (scoreValidate; reading order) then the untimed repeat signs (atc-rmug.12). endT = the track length, 0 when unknown; states = scoreValidate(marks, endT, nums) when the caller has it. */
 function scoreSyncFlagged(marks, nums, endT, states) {
   nums = nums || scoreMarkNumbers(marks);
@@ -10602,6 +10614,8 @@ function scorePinView(mark, geo) {
   var p = scoreMarkPoint(mark, geo), a = scoreAnchorView(mark, geo);
   return { x: scoreClamp(p.x - 0.65 * geo.W, 0, geo.maxX), y: a.y };
 }
+</script>
+<script>
 /** Reading-order items of the mark list: every mark, note and jump (EOLs excluded). Item = {k, page, y, x, o, slot, ly, left}. Shared by scoreMarkNumbers, scoreMarkListRows, scoreValidate and scorePlayedSequence (atc-rmug.28): the ONE placement rule.
  *  Placement only, never time (adr/0024 D7, owner 2026-11-08): marks keep the exact order scoreVisualRows gives them (lines by page then y, marks by x; the played order and every mark number depend on it).
  *  A jump or note is slotted in afterwards, as one insert into that fixed mark sequence, on ONE line: the line whose stanza box (adr/0018) contains its y (the start nearest in y wins), else the nearest line by y on its page (ties: the upper).
@@ -10886,6 +10900,8 @@ function scoreMarkListRows(marks, t, nums, states, endT, opts) {
     return row;
   });
 }
+</script>
+<script>
 /** atc-rmug.13: the Layout strip's cells over the structural rows (notes skipped): { prev, at, next } around the row with key curKey; at is null when the key is not in the list. A cell = {id, key, name, sub, pass, hop, via}. */
 function scoreLayoutStrip(rows, curKey) {
   var L = (rows || []).filter(function (r) { return !r.note && (!r.jump || r.hop || r.key === curKey); }), at = null; // atc-rmug.23: a jump taken is a step of the walk (one row); a jump never taken is not, unless it is the current one
@@ -11435,6 +11451,8 @@ function scoreBoxHit(box, x, y, tolPt) {
   return x > box.x && x < box.x + box.w && y > box.y && y < box.y + box.h ? 'move' : null;
 }
 
+</script>
+<script>
 // adr/0022 K2: every score device key carries the build target (pmix.<target>.<name>), like scoreEditorKey_. The legacy unprefixed
 // keys (pmix-score-*, written by PROD 1.8.4 and by TEST until K2) are read only by a build that is not TEST (scoreLegacyKeys_).
 // adr/0017: a v1 marks value (pmix-score-marks-v1:, a 1.7.2 page on this origin) is read, migrated and left in place for that page.
@@ -11600,6 +11618,8 @@ function scoreNoticeParts(state, edit, playing, stale, queued, msg) {
 }
 /** adr/0020: 'N difference(s) from the saved score'. */
 function scoreDiffText(n) { return n + (n === 1 ? ' difference' : ' differences') + ' from the saved score'; }
+</script>
+<script>
 /** atc-rlep.1 J1c: the ONE table of score-panel visibility. Element id -> predicate (s, d): s = the raw state object, d = values derived from it.
  *  scoreVisibility(s) returns the ids shown; the panel's single apply step sets `hidden` on every id here and nowhere else (a unit test scans for strays).
  *  s: ready, open, mode ('play'|'layout'|'sync'), editor, signed, readOnly, playing, hasT, ribbon, selected, kind, timed, pop, offsetMode, toast,
@@ -11761,6 +11781,8 @@ function scoreUndoPop(stack) {
 }
 function scoreClearPrompt(n) { return 'Clear all ' + n + (n === 1 ? ' mark' : ' marks') + '? You can undo this.'; }
 
+</script>
+<script>
 // ---- Shared score map, client half (bd atc-ore.7) ----
 function scoreSharedKey(folderId, target) { return scoreKey_('score-shared-v1:' + folderId, target); }
 function scoreCount(n) { return n + (n === 1 ? ' mark' : ' marks'); }
@@ -12061,6 +12083,8 @@ async function scoreAssetUrl_(url) {
   }
 }
 
+</script>
+<script>
 function initScorePanel_() {
   var $ = function (id) { return document.getElementById(id); };
   var panel = $('score-panel');
