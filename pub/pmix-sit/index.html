@@ -517,6 +517,15 @@ body {
 .menu-row .score-react { font-size: 14px; }
 .menu-row .score-react input[type="range"] { width: 140px; }
 .menu-drive { color: var(--blue); text-decoration: none; background: var(--surface-2); border: 1px solid var(--border-strong); }  /* default link blue is unreadable on the dark panel */
+.menu-row[hidden] { display: none; }
+.health-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px var(--spacing); border-bottom: 1px solid var(--border); font-size: 14px; }
+.health-row { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.health-row .health-name { font-weight: 600; }
+.health-row .health-meta { color: var(--text-3); font-size: 12px; }
+.health-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; margin-right: 4px; border: 1px solid currentColor; }
+.health-chip.ok { color: var(--green); }
+.health-chip.stale, .health-chip.untimed, .health-chip.order, .health-chip.test { color: var(--amber); }
+.health-chip.none, .health-chip.bad { color: var(--red); }
 .menu-section { margin: 8px 0 0; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .menu-check { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 0; }
 .menu-reason { margin: 0; font-size: 12px; color: var(--text-2); }
@@ -2316,10 +2325,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.6.19";
+var STATIC_BUILD_VERSION_ = "1.8.7.1";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-23T17:32:01.121Z";
+var STATIC_BUILD_DATE_ = "2026-11-23T18:21:56.217Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -8123,8 +8132,21 @@ const UI = (() => {
         <p class="menu-reason" id="menu-score-reason" data-testid="menu-score-reason" role="status"></p>
         <h4 class="menu-section">Folder</h4>
         <div class="menu-row"><a class="btn menu-drive" data-testid="menu-drive" target="_blank" rel="noopener" title="Open this folder in Google Drive"><span class="menu-icon" data-testid="menu-drive-icon" aria-hidden="true">&#128194;</span> Open Drive folder</a></div>
+        <div class="menu-row" id="menu-health-row" data-testid="menu-health-row" hidden><button type="button" id="menu-health-btn" data-testid="menu-health-btn" class="btn" title="Admin: check every music folder's score against its audio and TEST"><span class="menu-icon" aria-hidden="true">&#129657;</span> Score health</button></div>
         <div class="menu-row"><button type="button" id="menu-copy-link" data-testid="menu-copy-link" class="btn" disabled title="Copies a link to this practice setup"><span class="menu-icon" data-testid="menu-copy-icon" aria-hidden="true">&#128279;</span> Copy Link</button> <span class="menu-reason">Coming soon</span></div>
       </div>
+    </div>
+  </div>
+
+  <div id="health-modal" data-testid="health-modal" class="folder-picker hidden" role="dialog" aria-modal="true" aria-labelledby="health-title">
+    <div class="picker-overlay" id="health-overlay"></div>
+    <div class="picker-dialog schedule-dialog">
+      <div class="picker-header">
+        <h3 id="health-title">Score health</h3>
+        <button id="health-close-btn" data-testid="health-close-btn" class="btn btn-close" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="health-bar"><span id="health-summary" data-testid="health-summary" role="status"></span><button type="button" id="health-rescan" data-testid="health-rescan" class="btn">Rescan</button></div>
+      <div id="health-list" data-testid="health-list" class="schedule-body"></div>
     </div>
   </div>
 
@@ -10325,6 +10347,23 @@ function scoreProblemCounts(v) {
   var need = 0, order = 0, jumps = 0;
   Object.keys(v || {}).forEach(function (id) { var s = v[id]; if (s === 'needs') need++; else if (s === 'order') order++; else if (s === 'jump-broken' || s === 'jump-ignored' || s === 'left') jumps++; });
   return { need: need, order: order, jumps: jumps };
+}
+/** atc-v91o: one scoreHealth record (src/ScoreHealth.js) as the Settings > Score health row shows it. The marks counts are scoreValidate's states
+ *  ('needs' = a mark with no time, 'order' = out of order; endT 0 = track length unknown): no second rule set. -> {ok, untimed, outOfOrder, issues: [{cls, text}]} */
+function scoreHealthView(rec) {
+  var issues = [], untimed = 0, outOfOrder = 0, st = rec.score ? rec.score.status : 'none';
+  if (st === 'none') issues.push({ cls: 'none', text: 'no score' });
+  else if (st === 'bad') issues.push({ cls: 'bad', text: 'score unreadable' });
+  else {
+    var pc = scoreProblemCounts(scoreValidate(rec.marks || [], 0));
+    untimed = pc.need; outOfOrder = pc.order;
+    var n = rec.audioNewer || [];
+    if (n.length) issues.push({ cls: 'stale', text: 'audio newer: ' + n.slice(0, 3).join(', ') + (n.length > 3 ? ' and ' + (n.length - 3) + ' more' : '') });
+    if (untimed) issues.push({ cls: 'untimed', text: untimed + ' untimed' });
+    if (outOfOrder) issues.push({ cls: 'order', text: outOfOrder + ' out of order' });
+    if (rec.testNewer) issues.push({ cls: 'test', text: 'TEST newer' });
+  }
+  return { ok: issues.length === 0, untimed: untimed, outOfOrder: outOfOrder, issues: issues };
 }
 /** atc-rlep.3 J5a (adr/0021, score-editing.md section 5): the state of every mark id: 'ok', 'needs' (a kind 'mark' with no time), 'order' (out of order) or
  *  'past-end' (atc-15bw: the LAST timed mark has t > endT; a warning, not an error: Play treats it as AT the track end; any other mark past the end is 'order').
@@ -14784,7 +14823,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scorePartsOn, scorePartBand, scoreRibbonBands, SCORE_PART_SNAP_PT, scorePartOf, scorePartY, scoreSetPartY, scoreSnapPartY, scorePartYFor, scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreCenterTarget, scoreFollowMs, scoreHoldReleased, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreSyncBack, scoreLayoutStrip, scoreRibbonPoint, scoreRibbonXOfPoint, scorePagePointAt, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagReason, scoreLoopErrors, scorePassFlags, scoreSyncAdvance, scoreSyncEntries_, scoreSyncNeeds_, scoreSyncT_, scoreNudgeInfo, scoreNudgeEntry, scorePassChoices, scoreRepeatBar, scorePassColor, SCORE_PASS_COLORS, scoreVoltaText, scorePassName, scoreFlagTitle, scoreFixWindow, scoreFixAccept, scoreFixMessage, scoreEstimateLabel, scoreFixPreroll, scoreSyncChipText, scoreSyncFlagged, scoreUntimedRepeatSigns, scoreSyncTarget, scoreSyncButtonText, scoreSyncStatus, scoreSyncSubline, scoreSyncCountdown, scoreMarkName, scoreMarkNum, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreVisualRows, scoreMarkNumbers, scoreProblemCounts, scoreAfter_, scoreSlots_, scorePlayedSequence, scoreSequenceWalk_, scoreSequenceTimes_, scoreReadingItems_, scorePosStrip, scoreStep, scoreCurEntry, scorePlayedMarks_, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark, scoreParseTime, scorePrevTimedT, scoreEditStartT, scoreSetEntryTime,
+  scoreDeriveLines, scoreSyncBack, scoreLayoutStrip, scoreRibbonPoint, scoreRibbonXOfPoint, scorePagePointAt, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagReason, scoreLoopErrors, scorePassFlags, scoreSyncAdvance, scoreSyncEntries_, scoreSyncNeeds_, scoreSyncT_, scoreNudgeInfo, scoreNudgeEntry, scorePassChoices, scoreRepeatBar, scorePassColor, SCORE_PASS_COLORS, scoreVoltaText, scorePassName, scoreFlagTitle, scoreFixWindow, scoreFixAccept, scoreFixMessage, scoreEstimateLabel, scoreFixPreroll, scoreSyncChipText, scoreSyncFlagged, scoreUntimedRepeatSigns, scoreSyncTarget, scoreSyncButtonText, scoreSyncStatus, scoreSyncSubline, scoreSyncCountdown, scoreMarkName, scoreMarkNum, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreVisualRows, scoreMarkNumbers, scoreProblemCounts, scoreHealthView, scoreAfter_, scoreSlots_, scorePlayedSequence, scoreSequenceWalk_, scoreSequenceTimes_, scoreReadingItems_, scorePosStrip, scoreStep, scoreCurEntry, scorePlayedMarks_, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark, scoreParseTime, scorePrevTimedT, scoreEditStartT, scoreSetEntryTime,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreJumpHeader, scoreJumpRowSeekTime, scoreGotoOptions, scoreTakenState, scoreTakenPatch, scoreVoltaState, scoreEndingOf, scoreEndingsText, scoreEndingStartCheck, scoreEndingEndCheck, scoreAddEndings, scoreSetPasses, scoreJumpIsBack, scoreJumpDir, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpRowSeekTime, scoreBrokenJumps, scoreJumpWarning, scorePlayedAt, scorePlayClock, scorePassState, scorePassTargetAt, scoreSetPassTime, scoreClearPassTime, scorePlayMarks, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scoreLineOwner, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreStripSeekTime, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, scoreRibbonView, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreCarryAllowed, scoreSavedFor, scoreLinkNote, scoreLinkText, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome, scoreKey_, scoreLegacyKeys_, scoreQueueKey_, scoreQueueOwn, scoreRibbonKey_ };
@@ -15227,6 +15266,7 @@ if (typeof document !== 'undefined') {
   });
   initHelpGuide();
   initSettingsMenu();
+  initScoreHealth();
   initScheduleCalNote();
   initMediaViewer();
   initScorePanel_();
@@ -15253,6 +15293,75 @@ function initSettingsMenu() {
   document.getElementById('menu-close-btn').addEventListener('click', close);
   document.getElementById('menu-overlay').addEventListener('click', close);
   document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || modal.classList.contains('hidden')) return; e.stopImmediatePropagation(); close(); }); // the score panel's Escape handler must not also fire
+}
+
+/**
+ * Score health (atc-v91o): an admin-only Settings entry. The row appears when the server answers a scoreHealth probe (limit 0) with ok;
+ * any other answer (not_admin, signed out) keeps it hidden. The panel walks the server's pages (cursor) and lists one line per music folder.
+ * Copy test over prod asks first (it overwrites the PROD score; the server keeps a score.json.bak-<time> copy).
+ */
+function initScoreHealth() {
+  const row = document.getElementById('menu-health-row'), modal = document.getElementById('health-modal');
+  const list = document.getElementById('health-list'), summary = document.getElementById('health-summary');
+  let admin = null, probing = false, recs = [], scanId = 0;
+  function setAdmin(v) { admin = v; row.hidden = !v; }
+  async function probe() {
+    if (admin !== null || probing || !isSignedIn_()) return;
+    probing = true;
+    try { await callApi('scoreHealth', { limit: 0 }); setAdmin(true); } catch (e) { setAdmin(false); }   // callApi throws on not_admin finally { probing = false; }
+  }
+  function render(note) {
+    const views = recs.map((r) => scoreHealthView(r));
+    const ok = views.filter((v) => v.ok).length;
+    summary.textContent = recs.length + ' folders, ' + ok + ' ok, ' + (recs.length - ok) + ' issues' + (note ? ' ' + note : '');
+    list.textContent = '';
+    recs.forEach((r, i) => {
+      const v = views[i], d = document.createElement('div');
+      d.className = 'health-row'; d.setAttribute('data-testid', 'health-row'); d.setAttribute('data-status', v.ok ? 'ok' : v.issues[0].cls);
+      const name = document.createElement('div'); name.className = 'health-name'; name.textContent = r.path || r.name; d.appendChild(name);
+      const meta = document.createElement('div'); meta.className = 'health-meta'; meta.textContent = r.audioCount + ' music file' + (r.audioCount === 1 ? '' : 's') + (r.score && r.score.updatedAt ? ', score ' + r.score.updatedAt.slice(0, 10) : ''); d.appendChild(meta);
+      const chips = document.createElement('div');
+      (v.ok ? [{ cls: 'ok', text: 'ok' }] : v.issues).forEach((c) => { const s = document.createElement('span'); s.className = 'health-chip ' + c.cls; s.textContent = c.text; chips.appendChild(s); });
+      if (r.note) { const s = document.createElement('span'); s.className = 'health-meta'; s.textContent = r.note; chips.appendChild(s); }
+      d.appendChild(chips);
+      if (r.testNewer) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.setAttribute('data-testid', 'health-copy'); b.textContent = 'Copy test over prod';
+        b.addEventListener('click', () => copyTest(r));
+        d.appendChild(b);
+      }
+      list.appendChild(d);
+    });
+  }
+  async function scan() {
+    const id = ++scanId; recs = []; render('(scanning)');
+    let cursor;
+    try {
+      do {
+        const r = await callApi('scoreHealth', cursor ? { cursor: cursor } : {});
+        if (id !== scanId) return;
+        recs = recs.concat(r.folders); cursor = r.cursor;
+        render(cursor ? '(scanning...)' : '');
+      } while (cursor);
+    } catch (e) { if (id === scanId) render('(scan failed: ' + (e.serverError || e.message) + ')'); }
+  }
+  async function copyTest(r) {
+    if (!window.confirm('Copy score-test.json over score.json in "' + (r.path || r.name) + '"?\n\nThis will overwrite the PROD score. A backup copy (score.json.bak-<time>) is kept in the same _pmix folder.')) return;
+    try {
+      const res = await callApi('scoreHealthCopyTest', { folderId: r.id });
+      r.testNewer = false; r.note = 'copied; backup ' + (res.backup || 'none'); render();
+    } catch (e) { render('(copy failed: ' + (e.serverError || e.message) + ')'); }
+  }
+  function close() { modal.classList.add('hidden'); scanId++; }
+  document.addEventListener('pmix-settings-open', probe);
+  document.addEventListener('pmix-session-changed', () => { admin = null; row.hidden = true; });
+  document.getElementById('menu-health-btn').addEventListener('click', () => {
+    if (typeof window.pmixCloseSettings_ === 'function') window.pmixCloseSettings_();
+    modal.classList.remove('hidden'); scan();
+  });
+  document.getElementById('health-rescan').addEventListener('click', scan);
+  document.getElementById('health-close-btn').addEventListener('click', close);
+  document.getElementById('health-overlay').addEventListener('click', close);
+  document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || modal.classList.contains('hidden')) return; e.stopImmediatePropagation(); close(); });
 }
 
 /** Schedule popup's subscribe box (bd atc-hu9, atc-eb1): buttons and feed address come from the calendar block. */
