@@ -364,14 +364,14 @@ body {
 
 /* Header action buttons: Drive folder, links, choir schedule and help, grouped at the top right */
 .header-actions { display: flex; gap: var(--spacing-sm); }
-.btn-schedule, .btn-links, .btn-menu, .btn-drive, .btn-help, .btn-pdf {
+.btn-pitchpipe, .btn-schedule, .btn-links, .btn-menu, .btn-drive, .btn-help, .btn-pdf {
   background: var(--surface-2); color: var(--text-2);
   border: 1px solid var(--border-strong); border-radius: 9px;
   width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; font-size: 18px;
 }
 
 .btn-help { font-weight: 700; }
-.btn-schedule:hover:not(:disabled), .btn-links:hover:not(:disabled), .btn-menu:hover:not(:disabled), .btn-drive:hover, .btn-help:hover, .btn-pdf:hover { background: var(--surface-3); color: var(--text); }
+.btn-pitchpipe:hover:not(:disabled), .btn-schedule:hover:not(:disabled), .btn-links:hover:not(:disabled), .btn-menu:hover:not(:disabled), .btn-drive:hover, .btn-help:hover, .btn-pdf:hover { background: var(--surface-3); color: var(--text); }
 .btn-drive { text-decoration: none; }
 /* No folder loaded yet: the link has no href, so it shows but does nothing. */
 .btn-drive:not([href]) { opacity: .5; pointer-events: none; }
@@ -386,7 +386,7 @@ body {
 /* Narrow phones: slightly smaller buttons leave the song title room to breathe on the mixer. */
 @media (max-width: 400px) {
   .header-actions { gap: 6px; }
-  .btn-schedule, .btn-links, .btn-menu, .btn-drive, .btn-help, .btn-pdf { width: 36px; min-width: 36px; height: 36px; min-height: 36px; font-size: 16px; }
+  .btn-pitchpipe, .btn-schedule, .btn-links, .btn-menu, .btn-drive, .btn-help, .btn-pdf { width: 36px; min-width: 36px; height: 36px; min-height: 36px; font-size: 16px; }
   .header { padding-right: 212px; }
   .header:has(.btn-pdf:not(.hidden)) { padding-right: 254px; }
   .header h1 { font-size: 20px; min-height: 38px; } /* atc-tty9.3: a one-line title still clears the 36 px buttons, so the subtitle never overlaps them */
@@ -1461,6 +1461,11 @@ li > .schedule-cal-wrap { margin-left: 8px; }
 .hidden { display: none !important; }
 .text-center { text-align: center; }
 .text-muted { color: var(--text-3); }
+
+/* PITCH PIPE (atc-9vp3.5): bottom sheet, the mix stays visible and playing above it */
+.pitchpipe-sheet { align-items: flex-end; }
+.pitchpipe-sheet .picker-overlay { background: transparent; }
+.pitchpipe-dialog { width: 100%; max-width: 640px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 </style>
 </head>
 <body>
@@ -1583,6 +1588,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <a class="btn btn-drive" data-testid="drive-btn-playback" target="_blank" rel="noopener" aria-label="Open this folder in Google Drive" title="Open this folder in Google Drive">📂</a>
           <button class="btn btn-pdf hidden" data-testid="pdf-btn-playback" aria-label="Open the folder PDF" title="Open the folder PDF">📄</button>
           <button class="btn btn-links" data-testid="links-btn-playback" aria-label="Links to learn by" title="Links to learn by">🔗</button>
+          <button class="btn btn-pitchpipe" data-testid="pitchpipe-btn" aria-label="Pitch Pipe" title="Pitch Pipe">&#9835;</button>
           <button class="btn btn-schedule" data-testid="schedule-btn-playback" aria-label="Choir schedule" title="Choir schedule">📅</button>
           <button class="btn btn-menu" data-testid="menu-btn-playback" aria-label="Settings" title="Settings">&#9881;</button>
           <button class="btn btn-help" data-testid="help-btn-playback" aria-label="How to use Practice Mix" title="How to use Practice Mix">?</button>
@@ -2326,10 +2332,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.7.6";
+var STATIC_BUILD_VERSION_ = "1.8.7.7";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-24T00:08:47.895Z";
+var STATIC_BUILD_DATE_ = "2026-11-24T21:30:34.622Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -5401,6 +5407,8 @@ const AudioEngine = (() => {
       try { const ps = audioContext && audioContext.playbackStats; if (ps && typeof ps.underrunEvents === 'number') { o.ur = ps.underrunEvents; o.urMs = typeof ps.underrunDuration === 'number' ? ps.underrunDuration * 1000 : null; } } catch (e) { /* unsupported */ }
       return o;
     },
+    /** Read-only: the shared AudioContext (null before init). The Pitch Pipe tone engine plays on it (atc-9vp3.5). */
+    getContext: () => audioContext,
     getUnstretchedTrackIds,
     ensureStretched,
     getStretchedChannels,
@@ -6047,6 +6055,666 @@ function healthTrackId_(files) {
 if (typeof module !== 'undefined') {
   module.exports = { parseTrackLabels, healthTrackId_ };
 }
+</script>
+<script>
+/**
+ * pmixNotation - Pitch Pipe notation module (ADR-0025, docs/design/notation-module.md).
+ * Self-contained: reads no page globals, exports one object (module.exports for Node tests).
+ * Pure layer (atc-9vp3.1): pitch parse, MIDI, frequency, spelling, clefs, staff positions, ledgers,
+ * part ranges. Renderer (atc-9vp3.2): notationLayout (geometry), notationSvg (markup), and the thin
+ * DOM view createNotesView. Knows notes and geometry, never audio. Tone engine (atc-9vp3.3):
+ * createToneEngine on an injected AudioContext. Phase 1 source and controller (atc-9vp3.4, .5):
+ * notationPanel* state step and createNotesPanel. Every function is total: bad
+ * input returns null, '' or an empty list, never throws.
+ */
+var pmixNotation = (function () {
+  'use strict';
+
+  var LETTERS = 'CDEFGAB';
+  var PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  var NATURAL_PCS = { 0: 'C', 2: 'D', 4: 'E', 5: 'F', 7: 'G', 9: 'A', 11: 'B' };
+  var SHARP_PCS = { 1: 'C', 3: 'D', 6: 'F', 8: 'G', 10: 'A' };
+  var FLAT_PCS = { 1: 'D', 3: 'E', 6: 'G', 8: 'A', 10: 'B' };
+  var ALTER_MARK = { '-2': 'bb', '-1': 'b', '0': '', '1': '#', '2': 'x' };
+  var ALTER_WORD = { '-2': ' double flat', '-1': ' flat', '0': '', '1': ' sharp', '2': ' double sharp' };
+  var ACC_NAME = { '-2': 'doubleflat', '-1': 'flat', '1': 'sharp', '2': 'doublesharp' };
+
+  function isInt(n) { return typeof n === 'number' && isFinite(n) && Math.floor(n) === n; }
+
+  /** Parses scientific pitch ('C#4', 'Bb3', 'Cx4', 'Cbb4', 'An4'); null when malformed. */
+  function notationParse(pitch) {
+    if (typeof pitch !== 'string') return null;
+    var m = /^([A-G])(#|x|bb|b|n)?(-?\d{1,2})$/.exec(pitch);
+    if (!m) return null;
+    var alter = { '#': 1, x: 2, b: -1, bb: -2, n: 0 }[m[2] || 'n'];
+    var octave = parseInt(m[3], 10);
+    return { letter: m[1], alter: alter, octave: octave, midi: notationMidi(m[1], alter, octave) };
+  }
+
+  /** MIDI number: C4 = 60, A4 = 69. */
+  function notationMidi(letter, alter, octave) {
+    if (typeof letter !== 'string' || !PC.hasOwnProperty(letter) || !isInt(alter) || !isInt(octave)) return null;
+    return 12 * (octave + 1) + PC[letter] + alter;
+  }
+
+  /** Frequency in Hz, equal temperament; a4 defaults to 440 when missing or not a number. */
+  function notationFreq(midi, a4) {
+    if (typeof midi !== 'number' || !isFinite(midi)) return null;
+    var ref = typeof a4 === 'number' && isFinite(a4) && a4 > 0 ? a4 : 440;
+    return ref * Math.pow(2, (midi - 69) / 12);
+  }
+
+  /** Spelling {letter, alter, octave} of a MIDI number; prefer 'flat' or (default) 'sharp'. */
+  function notationName(midi, prefer) {
+    if (!isInt(midi)) return null;
+    var pc = ((midi % 12) + 12) % 12;
+    var octave = Math.floor(midi / 12) - 1;
+    if (NATURAL_PCS[pc]) return { letter: NATURAL_PCS[pc], alter: 0, octave: octave };
+    if (prefer === 'flat') return { letter: FLAT_PCS[pc], alter: -1, octave: octave };
+    return { letter: SHARP_PCS[pc], alter: 1, octave: octave };
+  }
+
+  /** Pitch string from a spelling object: {B, -1, 3} -> 'Bb3'. */
+  function notationPitch(sp) {
+    if (!sp || typeof sp !== 'object' || !isInt(sp.alter) || !isInt(sp.octave)) return null;
+    if (typeof sp.letter !== 'string' || !PC.hasOwnProperty(sp.letter) || !ALTER_MARK.hasOwnProperty(String(sp.alter))) return null;
+    return sp.letter + ALTER_MARK[String(sp.alter)] + sp.octave;
+  }
+
+  /** Spoken name for aria labels: 'B flat 3', 'C sharp 4', 'middle C'. */
+  function notationSpoken(pitch) {
+    var p = notationParse(pitch);
+    if (!p) return null;
+    if (p.letter === 'C' && p.alter === 0 && p.octave === 4) return 'middle C';
+    return p.letter + ALTER_WORD[String(p.alter)] + ' ' + p.octave;
+  }
+
+  /** Diatonic step: octave * 7 + letter index (C = 0 .. B = 6). */
+  function notationStep(letter, octave) {
+    var i = typeof letter === 'string' && letter.length === 1 ? LETTERS.indexOf(letter) : -1;
+    if (i < 0 || !isInt(octave)) return null;
+    return octave * 7 + i;
+  }
+
+  // topStep: sounding diatonic step of the top line. treble F5 = 38, treble8 F4 = 31, bass A3 = 26.
+  // grand is one continuous scale from the treble top line; the bass top line (A3) sits at position 12.
+  var NOTATION_CLEFS = {
+    treble: { topStep: 38, lines: [0, 2, 4, 6, 8] },
+    treble8: { topStep: 31, lines: [0, 2, 4, 6, 8] },
+    bass: { topStep: 26, lines: [0, 2, 4, 6, 8] },
+    grand: { topStep: 38, lines: [0, 2, 4, 6, 8, 12, 14, 16, 18, 20] },
+  };
+
+  function clefOf(clef) { return typeof clef === 'string' && NOTATION_CLEFS.hasOwnProperty(clef) ? NOTATION_CLEFS[clef] : null; }
+
+  /** Half-spaces below the top line (0 top line, 8 bottom line; negative above). */
+  function notationStaffPos(step, clef) {
+    var c = clefOf(clef);
+    if (!c || !isInt(step)) return null;
+    return c.topStep - step;
+  }
+
+  /** Ledger line positions needed by a note at pos (even positions beyond the staff, nearest first). */
+  function notationLedgers(pos, clef) {
+    var c = clefOf(clef);
+    var out = [];
+    if (!c || !isInt(pos)) return out;
+    var p;
+    if (clef === 'grand') {
+      if (pos === 10) return [10];
+      var lowEdge = 20;
+      if (pos < 0) for (p = -2; p >= pos; p -= 2) out.push(p);
+      else if (pos > lowEdge) for (p = lowEdge + 2; p <= pos; p += 2) out.push(p);
+      return out;
+    }
+    if (pos < 0) for (p = -2; p >= pos; p -= 2) out.push(p);
+    else if (pos > 8) for (p = 10; p <= pos; p += 2) out.push(p);
+    return out;
+  }
+
+  var NOTATION_RANGES = { S: ['C4', 'A5'], A: ['F3', 'D5'], T: ['C3', 'G4'], B: ['E2', 'D4'] };
+
+  /** Clef for a part: S, A treble; T treble8; B bass; anything else grand. */
+  function notationPartClef(part) {
+    if (part === 'S' || part === 'A') return 'treble';
+    if (part === 'T') return 'treble8';
+    if (part === 'B') return 'bass';
+    return 'grand';
+  }
+
+  /** The natural notes of a part's range, low to high, as Note[] ({id, pitch}); [] for no part. */
+  function notationNotesFor(part) {
+    var r = typeof part === 'string' && NOTATION_RANGES.hasOwnProperty(part) ? NOTATION_RANGES[part] : null;
+    if (!r) return [];
+    var lo = notationParse(r[0]);
+    var hi = notationParse(r[1]);
+    var out = [];
+    for (var m = lo.midi; m <= hi.midi; m++) {
+      var sp = notationName(m);
+      if (sp.alter === 0) { var pitch = notationPitch(sp); out.push({ id: pitch, pitch: pitch }); }
+    }
+    return out;
+  }
+
+  /** Applies 'flat', 'sharp' or 'natural' (a semitone shift; anything else leaves the note) to a pitch string. */
+  function notationApplyModifier(pitch, mod) {
+    var p = notationParse(pitch);
+    if (!p) return null;
+    if (mod === 'sharp') return notationPitch(notationName(p.midi + 1, 'sharp'));
+    if (mod === 'flat') return notationPitch(notationName(p.midi - 1, 'flat'));
+    return notationPitch({ letter: p.letter, alter: mod === 'natural' ? 0 : p.alter, octave: p.octave });
+  }
+
+  // ---- Renderer (atc-9vp3.2) ----
+
+  // Glyph paths in staff-space units: origin at the glyph's reference point, y down, one unit = one
+  // staff space. Stroked, not filled. Written for this module (ASCII path data, no music characters).
+  var NOTATION_GLYPHS = {
+    treble: 'M1.5 5.6 C1.5 6.6 0.2 6.7 0.1 5.8 M1.5 5.6 L1.9 -1.2 C2.0 -2.2 1.2 -2.6 0.8 -1.8 C0.3 -0.8 1.0 0.6 2.3 1.6 C3.6 2.6 3.6 4.4 2.0 4.5 C0.6 4.6 0.0 3.2 0.9 2.5 C1.6 2.0 2.5 2.6 2.4 3.3',
+    bass: 'M0.1 1 C0.1 -0.6 2.8 -0.4 3 1.6 C3.1 3 2 4.2 0.1 5 M-0.2 1 A0.3 0.3 0 1 0 0.4 1 A0.3 0.3 0 1 0 -0.2 1 M3.7 0.5 A0.2 0.2 0 1 0 4.1 0.5 A0.2 0.2 0 1 0 3.7 0.5 M3.7 1.6 A0.2 0.2 0 1 0 4.1 1.6 A0.2 0.2 0 1 0 3.7 1.6',
+    sharp: 'M0.4 -1.3 V1.5 M1.0 -1.5 V1.3 M-0.1 0.1 L1.5 -0.4 M-0.1 0.9 L1.5 0.4',
+    flat: 'M0 -1.8 V0.9 C1.4 0.3 1.5 -0.9 0 -0.3',
+    natural: 'M0 -1.3 V0.9 M1 -0.9 V1.3 M0 -0.3 L1 -0.5 M0 0.9 L1 0.7',
+    doublesharp: 'M-0.5 -0.5 L0.5 0.5 M0.5 -0.5 L-0.5 0.5',
+    doubleflat: 'M0 -1.8 V0.9 C1.4 0.3 1.5 -0.9 0 -0.3 M1.2 -1.8 V0.9 C2.6 0.3 2.7 -0.9 1.2 -0.3',
+  };
+
+  /**
+   * Geometry for a staff of notes. Units are px at staff space opts.space (default 10). One column per
+   * valid note: {id, pitch, midi, x, w, cx, y, pos, ledgers, accidental, role, hit}. The notes scroll
+   * in their own SVG (x from 0, width notesWidth); the clef sits in a separate pinned SVG (clefW wide).
+   * Position 0 of the staff is y = top; ledger positions and note positions map by y = top + pos*space/2.
+   */
+  function notationLayout(notes, clef, opts) {
+    var c = clefOf(clef);
+    if (!c) return null;
+    var o = opts && typeof opts === 'object' ? opts : {};
+    var space = typeof o.space === 'number' && o.space > 0 ? o.space : 10;
+    var colW = Math.max(44, typeof o.colW === 'number' && isFinite(o.colW) ? o.colW : 44);
+    var pad = 5 * space;
+    var bottomPos = clef === 'grand' ? 20 : 8;
+    var top = pad;
+    var height = pad + (bottomPos / 2) * space + pad;
+    var list = Array.isArray(notes) ? notes : [];
+    var cols = [];
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i];
+      var p = n && typeof n === 'object' ? notationParse(n.pitch) : null;
+      if (!p) continue;
+      var pos = notationStaffPos(notationStep(p.letter, p.octave), clef);
+      var x = cols.length * colW;
+      cols.push({
+        id: String(n.id !== undefined && n.id !== null ? n.id : n.pitch),
+        pitch: n.pitch,
+        midi: p.midi,
+        x: x,
+        w: colW,
+        cx: x + colW / 2,
+        y: top + (pos * space) / 2,
+        pos: pos,
+        ledgers: notationLedgers(pos, clef),
+        accidental: ACC_NAME[String(p.alter)] || null,
+        role: n.role || null,
+        hit: { x: x, y: 0, w: colW, h: height },
+      });
+    }
+    var clefs = clef === 'grand' ? [{ kind: 'treble', top: top }, { kind: 'bass', top: top + 6 * space }]
+      : [{ kind: clef === 'bass' ? 'bass' : 'treble', top: top }];
+    return {
+      clef: clef,
+      space: space,
+      top: top,
+      height: height,
+      clefW: 5 * space,
+      notesWidth: cols.length * colW,
+      lines: c.lines.map(function (pp) { return top + (pp * space) / 2; }),
+      clefs: clefs,
+      columns: cols,
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  var INK = 'var(--nt-ink, var(--text))';
+  var BG = 'var(--nt-bg, var(--bg))';
+  var ON = 'var(--nt-on, var(--nt-ink, var(--text)))';
+  var START = 'var(--nt-start, var(--nt-ink, var(--text)))';
+
+  function linesMarkup(geo, w) {
+    return geo.lines.map(function (y) {
+      return '<line class="nt-line" x1="0" x2="' + w + '" y1="' + y + '" y2="' + y + '" stroke="' + INK + '" stroke-width="1"/>';
+    }).join('');
+  }
+
+  function glyph(name, x, y, s, extra) {
+    return '<path class="nt-glyph" d="' + NOTATION_GLYPHS[name] + '" transform="translate(' + x + ' ' + y + ') scale(' + s + ')" fill="none" stroke="' + INK + '" stroke-width="0.18" stroke-linecap="round" stroke-linejoin="round"' + (extra || '') + '/>';
+  }
+
+  /**
+   * SVG markup string: a flex row of a pinned clef SVG and a sideways-scrolling notes SVG.
+   * opts.on = id of the sounding note (class nt-on). Colours only from --nt-ink, --nt-bg, --nt-on,
+   * --nt-start. A re-skin replaces this function and CSS only.
+   */
+  function notationSvg(geo, opts) {
+    if (!geo || !Array.isArray(geo.columns)) return '';
+    var o = opts && typeof opts === 'object' ? opts : {};
+    var s = geo.space;
+    var clefSvg = '<svg class="nt-clef" xmlns="http://www.w3.org/2000/svg" width="' + geo.clefW + '" height="' + geo.height + '" viewBox="0 0 ' + geo.clefW + ' ' + geo.height + '" aria-hidden="true" style="flex:none;background:' + BG + '">' +
+      linesMarkup(geo, geo.clefW) +
+      geo.clefs.map(function (c) { return glyph(c.kind, s * (c.kind === 'treble' ? 1.2 : 1), c.top + (c.kind === 'treble' ? 0 : 0), s); }).join('') +
+      '</svg>';
+    var notes = geo.columns.map(function (c) {
+      var on = o.on !== undefined && o.on !== null && String(o.on) === c.id;
+      var cls = 'nt-note' + (on ? ' nt-on' : '') + (c.role === 'start' ? ' nt-start' : '');
+      var stroke = on ? ON : (c.role === 'start' ? START : INK);
+      var ledgers = c.ledgers.map(function (pp) {
+        var ly = geo.top + (pp * s) / 2;
+        return '<line class="nt-ledger" x1="' + (c.cx - 1.1 * s) + '" x2="' + (c.cx + 1.1 * s) + '" y1="' + ly + '" y2="' + ly + '" stroke="' + INK + '" stroke-width="1"/>';
+      }).join('');
+      var acc = c.accidental ? glyph(c.accidental, c.cx - 1.9 * s, c.y, s, ' class="nt-acc"') : '';
+      var spoken = notationSpoken(c.pitch);
+      return '<g class="' + cls + '" role="button" tabindex="0" data-note-id="' + esc(c.id) + '" data-midi="' + c.midi + '" aria-label="' + esc(spoken) + '">' +
+        '<rect class="nt-hit" x="' + c.hit.x + '" y="' + c.hit.y + '" width="' + c.hit.w + '" height="' + c.hit.h + '" fill="' + BG + '" fill-opacity="0"/>' +
+        ledgers + acc +
+        '<ellipse class="nt-head" cx="' + c.cx + '" cy="' + c.y + '" rx="' + 0.65 * s + '" ry="' + 0.5 * s + '" fill="' + stroke + '" stroke="' + stroke + '"' + (on ? ' stroke-width="3"' : '') + '/>' +
+        '</g>';
+    }).join('');
+    var notesSvg = '<svg class="nt-notes" xmlns="http://www.w3.org/2000/svg" width="' + geo.notesWidth + '" height="' + geo.height + '" viewBox="0 0 ' + geo.notesWidth + ' ' + geo.height + '" style="display:block;touch-action:pan-x">' +
+      linesMarkup(geo, geo.notesWidth) + notes + '</svg>';
+    return '<div class="nt-staff" style="display:flex;align-items:stretch;color:' + INK + '">' + clefSvg +
+      '<div class="nt-scroll" style="flex:1 1 auto;min-width:0;overflow-x:auto;overflow-y:hidden">' + notesSvg + '</div></div>';
+  }
+
+  /**
+   * View factory: renders into container, reports presses as note ids (opts.onPress / opts.onRelease on
+   * pointerdown / pointerup or pointercancel), keeps the clef pinned while the notes scroll (markup
+   * structure), and removes every listener on destroy. Returns null without a container.
+   */
+  function createNotesView(container, opts) {
+    if (!container || typeof container.addEventListener !== 'function') return null;
+    var o = opts && typeof opts === 'object' ? opts : {};
+    var state = { notes: Array.isArray(o.notes) ? o.notes : [], clef: o.clef || 'treble', on: null, down: null, dead: false };
+    var layoutOpts = { colW: o.colW, space: o.space };
+
+    function render() {
+      if (state.dead) return;
+      var sc = typeof container.querySelector === 'function' ? container.querySelector('.nt-scroll') : null;
+      var left = sc ? sc.scrollLeft : 0;
+      container.innerHTML = notationSvg(notationLayout(state.notes, state.clef, layoutOpts), { on: state.on });
+      sc = typeof container.querySelector === 'function' ? container.querySelector('.nt-scroll') : null;
+      if (sc && left) sc.scrollLeft = left; // a redraw must not jump a wide range back to the start
+    }
+    function idOf(ev) {
+      var t = ev && ev.target;
+      var el = t && typeof t.closest === 'function' ? t.closest('.nt-note') : null;
+      return el ? el.getAttribute('data-note-id') : null;
+    }
+    function onDown(ev) {
+      var id = idOf(ev);
+      if (id === null) return;
+      state.down = id;
+      if (typeof o.onPress === 'function') o.onPress(id);
+    }
+    function onUp() {
+      if (state.down === null) return;
+      var id = state.down;
+      state.down = null;
+      if (typeof o.onRelease === 'function') o.onRelease(id);
+    }
+    container.addEventListener('pointerdown', onDown);
+    container.addEventListener('pointerup', onUp);
+    container.addEventListener('pointercancel', onUp);
+    render();
+    return {
+      setNotes: function (n) { state.notes = Array.isArray(n) ? n : []; render(); },
+      setClef: function (c) { if (clefOf(c)) { state.clef = c; render(); } },
+      setOn: function (id) { state.on = id === undefined ? null : id; render(); },
+      destroy: function () {
+        if (state.dead) return;
+        state.dead = true;
+        container.removeEventListener('pointerdown', onDown);
+        container.removeEventListener('pointerup', onUp);
+        container.removeEventListener('pointercancel', onUp);
+        container.innerHTML = '';
+      },
+    };
+  }
+
+  // ---- Tone engine (atc-9vp3.3): audio only, knows MIDI numbers, never staffs or DOM ----
+
+  var TONE_ATTACK = 0.01;       // s: gain ramp from 0, no click
+  var TONE_RELEASE = 0.12;      // s: release length (setTargetAtTime, three time constants)
+  var TONE_TAP_MIN = 0.3;       // s: a press shorter than this still sounds TONE_TAP_SOUND
+  var TONE_TAP_SOUND = 1.0;     // s
+  var TONE_HOLD_MAX = 4;        // s: a hold stops here
+  var TONE_PIPE_HARMONICS = [0, 1, 0.5, 0.3, 0.15, 0.08]; // index = harmonic number (0 = DC, unused)
+  var TONE_TIMBRES = { pipe: 1, sine: 1, triangle: 1 };
+
+  /**
+   * One-voice tone engine on an injected AudioContext (opts.getContext, called inside the press so the
+   * host may create it there). Output goes OscillatorNode -> envelope gain -> level gain -> ctx.destination,
+   * bypassing the track and master chains. Never closes the context. start(midi) returns a handle or null.
+   */
+  function createToneEngine(opts) {
+    var o = opts && typeof opts === 'object' ? opts : {};
+    var a4 = typeof o.a4 === 'number' && isFinite(o.a4) ? o.a4 : 440;
+    var timbre = TONE_TIMBRES.hasOwnProperty(o.timbre) ? o.timbre : 'pipe';
+    var level = typeof o.gain === 'number' && o.gain > 0 ? o.gain : 0.25;
+    var voice = null;
+    var dead = false;
+
+    function release(v, at) {
+      if (!v || v.done) return;
+      v.done = true;
+      try {
+        var g = v.env.gain;
+        if (typeof g.cancelAndHoldAtTime === 'function') g.cancelAndHoldAtTime(at);
+        else { g.cancelScheduledValues(at); g.setValueAtTime(typeof g.value === 'number' ? g.value : 1, at); }
+        g.setTargetAtTime(0, at, TONE_RELEASE / 3);
+        v.osc.stop(at + TONE_RELEASE + 0.1);
+      } catch (e) { /* node already stopped */ }
+      if (voice === v) voice = null;
+    }
+    function nowOf(ctx) { return typeof ctx.currentTime === 'number' ? ctx.currentTime : 0; }
+
+    return {
+      start: function (midi) {
+        if (dead || !isInt(midi)) return null;
+        var ctx;
+        try { ctx = typeof o.getContext === 'function' ? o.getContext() : null; } catch (e) { return null; }
+        if (!ctx || typeof ctx.createOscillator !== 'function') return null;
+        try {
+          if (voice) release(voice, nowOf(ctx));
+          if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+            var r = ctx.resume(); // not awaited (atc-tty9.16): a suspended context sounds as soon as it resumes
+            if (r && typeof r.catch === 'function') r.catch(function () {});
+          }
+          var t = nowOf(ctx);
+          var osc = ctx.createOscillator();
+          var env = ctx.createGain();
+          var lvl = ctx.createGain();
+          if (timbre === 'pipe' && typeof ctx.createPeriodicWave === 'function' && typeof osc.setPeriodicWave === 'function') {
+            var im = new Float32Array(TONE_PIPE_HARMONICS);
+            osc.setPeriodicWave(ctx.createPeriodicWave(new Float32Array(im.length), im));
+          } else osc.type = timbre === 'triangle' ? 'triangle' : 'sine';
+          osc.frequency.value = notationFreq(midi, a4);
+          env.gain.setValueAtTime(0, t);
+          env.gain.linearRampToValueAtTime(1, t + TONE_ATTACK);
+          env.gain.setTargetAtTime(0, t + TONE_HOLD_MAX, TONE_RELEASE / 3); // the hold cap
+          lvl.gain.value = level;
+          osc.connect(env);
+          env.connect(lvl);
+          lvl.connect(ctx.destination);
+          osc.onended = function () { try { osc.disconnect(); env.disconnect(); lvl.disconnect(); } catch (e) { /* gone */ } };
+          osc.start(t);
+          osc.stop(t + TONE_HOLD_MAX + TONE_RELEASE + 0.1);
+          voice = { midi: midi, osc: osc, env: env, ctx: ctx, t0: t, done: false };
+          return voice;
+        } catch (e) { return null; }
+      },
+      /** Release on pointer up: a tap under 300 ms still sounds 1.0 s. */
+      stop: function (h) {
+        if (!h || h.done) return;
+        var now = nowOf(h.ctx);
+        release(h, now - h.t0 < TONE_TAP_MIN ? h.t0 + TONE_TAP_SOUND : now);
+      },
+      stopAll: function () { if (voice) release(voice, nowOf(voice.ctx)); },
+      setA4: function (hz) { if (typeof hz === 'number' && isFinite(hz) && hz >= 415 && hz <= 466) a4 = hz; },
+      setTimbre: function (t) { if (TONE_TIMBRES.hasOwnProperty(t)) timbre = t; },
+      dispose: function () { if (voice) release(voice, nowOf(voice.ctx)); dead = true; },
+    };
+  }
+
+  // ---- Phase 1 note source and controller state (atc-9vp3.4) ----
+
+  var PART_NAMES = { S: 'Soprano', A: 'Alto', T: 'Tenor', B: 'Bass' };
+  var MODS = ['flat', 'natural', 'sharp'];
+  var MOD_LABEL = { flat: 'Flat', natural: 'Natural', sharp: 'Sharp' };
+
+  function validPart(p) { return typeof p === 'string' && NOTATION_RANGES.hasOwnProperty(p) ? p : null; }
+  function stateFor(part, notes, modifier, presses, a4) {
+    var list = Array.isArray(notes) ? notes : notationNotesFor(part);
+    return {
+      part: part,
+      notes: list,
+      clef: part ? notationPartClef(part) : 'treble',
+      showStaff: list.length > 0,
+      modifier: modifier,
+      presses: presses,
+      a4: a4,
+      customNotes: Array.isArray(notes),
+    };
+  }
+
+  /** Initial controller state: {part, notes, clef, showStaff, modifier, presses, a4}. part null shows the chips only. */
+  function notationPanelState(options) {
+    var o = options && typeof options === 'object' ? options : {};
+    return stateFor(validPart(o.part), Array.isArray(o.notes) ? o.notes : null, 'natural', 0, typeof o.a4 === 'number' ? o.a4 : 440);
+  }
+
+  /** A part chip change: the part's range in its clef (a custom notes list is kept). */
+  function notationPanelSetPart(s, part) {
+    if (!s || typeof s !== 'object') return null;
+    var p = validPart(part);
+    return stateFor(p, s.customNotes ? s.notes : null, s.modifier, s.presses, s.a4);
+  }
+
+  /** A modifier chip change; anything but flat, natural or sharp gives natural. */
+  function notationPanelSetModifier(s, mod) {
+    if (!s || typeof s !== 'object') return null;
+    var next = stateFor(s.part, s.customNotes ? s.notes : null, MODS.indexOf(mod) >= 0 ? mod : 'natural', s.presses, s.a4);
+    return next;
+  }
+
+  /**
+   * A press on note id (its pitch): applies the one-shot modifier, then returns the modifier to natural.
+   * Result {state, pitch, midi, freq, spoken, readout} or null for an unknown note.
+   */
+  function notationPanelPress(s, id, a4) {
+    if (!s || !Array.isArray(s.notes)) return null;
+    var hit = null;
+    for (var i = 0; i < s.notes.length; i++) if (s.notes[i] && String(s.notes[i].id) === String(id)) hit = s.notes[i];
+    if (!hit) return null;
+    var pitch = notationApplyModifier(hit.pitch, s.modifier);
+    var p = notationParse(pitch);
+    if (!p) return null;
+    var hz = typeof a4 === 'number' && isFinite(a4) ? a4 : s.a4;
+    var freq = notationFreq(p.midi, hz);
+    var next = stateFor(s.part, s.customNotes ? s.notes : null, 'natural', s.presses + 1, s.a4);
+    return { state: next, pitch: pitch, midi: p.midi, freq: freq, spoken: notationSpoken(pitch), readout: pitch + '  ' + freq.toFixed(1) + ' Hz' };
+  }
+
+  function chip(attr, val, label, on, extra) {
+    return '<button type="button" role="radio" class="nt-chip' + (on ? ' nt-chip-on' : '') + '" ' + attr + '="' + val + '" aria-checked="' + (on ? 'true' : 'false') + '"' +
+      (extra || '') + ' style="min-width:44px;min-height:44px;padding:0 12px;border:1px solid currentColor;border-radius:8px;background:' + (on ? 'var(--surface-3, #ddd)' : 'transparent') + ';color:inherit;font:inherit;' + (on ? 'font-weight:700;' : '') + '">' + label + '</button>';
+  }
+
+  /** The S A T B and flat / natural / sharp radiogroups for a controller state. */
+  function notationPanelChips(s) {
+    var st = s && typeof s === 'object' ? s : notationPanelState({});
+    var parts = ['S', 'A', 'T', 'B'].map(function (p) { return chip('data-part', p, p, st.part === p, ' aria-label="' + PART_NAMES[p] + '"'); }).join('');
+    var mods = MODS.map(function (m) { return chip('data-mod', m, MOD_LABEL[m], st.modifier === m); }).join('');
+    return '<div class="nt-parts" role="radiogroup" aria-label="Part" style="display:flex;gap:8px;margin-bottom:8px">' + parts + '</div>' +
+      '<div class="nt-mods" role="radiogroup" aria-label="Next note" style="display:flex;gap:8px;margin-bottom:8px">' + mods + '</div>';
+  }
+
+  /**
+   * Controller: chips, staff view, tone engine and readout inside container. options: getContext (required),
+   * part, notes, a4, timbre. Returns null without a DOM container or getContext.
+   * API: setPart, setNotes, setA4, setTimbre, on('notePress'|'noteRelease', fn) -> off, stats, stop, destroy.
+   */
+  function createNotesPanel(container, options) {
+    var o = options && typeof options === 'object' ? options : {};
+    if (!container || typeof container.querySelector !== 'function' || typeof o.getContext !== 'function') return null;
+    var st = notationPanelState(o);
+    var handlers = { notePress: [], noteRelease: [] };
+    var tone = createToneEngine({ getContext: o.getContext, a4: st.a4, timbre: o.timbre });
+    var voice = null;
+    var dead = false;
+    container.innerHTML = '<div class="nt-panel"><div class="nt-controls"></div><div class="nt-view"></div>' +
+      '<div class="nt-readout" data-testid="notes-readout" aria-live="polite" style="min-height:1.5em;margin-top:8px"></div></div>';
+    var controls = container.querySelector('.nt-controls');
+    var viewEl = container.querySelector('.nt-view');
+    var readout = container.querySelector('.nt-readout');
+    var view = createNotesView(viewEl, {
+      notes: st.notes, clef: st.clef, onPress: press, onRelease: release,
+    });
+
+    function emit(kind, data) { handlers[kind].slice().forEach(function (f) { try { f(data); } catch (e) { /* a listener must not break the panel */ } }); }
+    function draw() {
+      controls.innerHTML = notationPanelChips(st);
+      viewEl.style.display = st.showStaff ? '' : 'none';
+      if (view) { view.setNotes(st.notes); view.setClef(st.clef); }
+    }
+    function press(id) {
+      var r = notationPanelPress(st, id, st.a4);
+      if (!r) return;
+      st = r.state;
+      voice = tone.start(r.midi);
+      readout.textContent = r.readout;
+      readout.setAttribute('aria-label', r.spoken + ', ' + r.freq.toFixed(1) + ' hertz');
+      controls.innerHTML = notationPanelChips(st);
+      if (view) view.setOn(id);
+      emit('notePress', { id: id, midi: r.midi, pitch: r.pitch, name: r.pitch, spoken: r.spoken, freq: r.freq });
+    }
+    function release(id) {
+      tone.stop(voice);
+      voice = null;
+      if (view) view.setOn(null);
+      emit('noteRelease', { id: id });
+    }
+    function onClick(ev) {
+      var t = ev && ev.target;
+      var el = t && typeof t.closest === 'function' ? t.closest('[data-part],[data-mod]') : null;
+      if (!el) return;
+      if (el.getAttribute('data-part')) { st = notationPanelSetPart(st, el.getAttribute('data-part')); tone.stopAll(); }
+      else st = notationPanelSetModifier(st, el.getAttribute('data-mod'));
+      draw();
+    }
+    container.addEventListener('click', onClick);
+    draw();
+
+    return {
+      setPart: function (p) { if (dead) return; st = notationPanelSetPart(st, p); draw(); },
+      setNotes: function (n) { if (dead) return; st = stateFor(st.part, Array.isArray(n) ? n : null, st.modifier, st.presses, st.a4); draw(); },
+      setA4: function (hz) { st.a4 = typeof hz === 'number' && hz >= 415 && hz <= 466 ? hz : st.a4; tone.setA4(st.a4); },
+      setTimbre: function (t) { tone.setTimbre(t); },
+      on: function (kind, fn) {
+        if (!handlers.hasOwnProperty(kind) || typeof fn !== 'function') return function () {};
+        handlers[kind].push(fn);
+        return function () { handlers[kind] = handlers[kind].filter(function (f) { return f !== fn; }); };
+      },
+      stats: function () { return { part: st.part, presses: st.presses }; },
+      stop: function () { tone.stopAll(); voice = null; if (view) view.setOn(null); },
+      destroy: function () {
+        if (dead) return;
+        dead = true;
+        tone.dispose();
+        container.removeEventListener('click', onClick);
+        if (view) view.destroy();
+        handlers = { notePress: [], noteRelease: [] };
+        container.innerHTML = '';
+      },
+    };
+  }
+
+  /** Whether the playback page shows the Pitch Pipe button: the playback page, not in Layout or Sync. */
+  function notationEntryShown(s) {
+    if (!s || typeof s !== 'object') return false;
+    return s.page === 'play' && s.scoreMode !== 'layout' && s.scoreMode !== 'sync';
+  }
+
+  return {
+    notationParse: notationParse,
+    notationMidi: notationMidi,
+    notationFreq: notationFreq,
+    notationName: notationName,
+    notationPitch: notationPitch,
+    notationSpoken: notationSpoken,
+    notationStep: notationStep,
+    NOTATION_CLEFS: NOTATION_CLEFS,
+    notationStaffPos: notationStaffPos,
+    notationLedgers: notationLedgers,
+    NOTATION_RANGES: NOTATION_RANGES,
+    notationPartClef: notationPartClef,
+    notationNotesFor: notationNotesFor,
+    notationApplyModifier: notationApplyModifier,
+    NOTATION_GLYPHS: NOTATION_GLYPHS,
+    notationLayout: notationLayout,
+    notationSvg: notationSvg,
+    createNotesView: createNotesView,
+    createToneEngine: createToneEngine,
+    notationPanelState: notationPanelState,
+    notationPanelSetPart: notationPanelSetPart,
+    notationPanelSetModifier: notationPanelSetModifier,
+    notationPanelPress: notationPanelPress,
+    notationPanelChips: notationPanelChips,
+    createNotesPanel: createNotesPanel,
+    notationEntryShown: notationEntryShown,
+  };
+})();
+
+if (typeof module !== 'undefined') module.exports = pmixNotation;
+</script>
+<script>
+/**
+ * Pitch Pipe host (atc-9vp3.5, ADR-0025, docs/design/notation-module.md section 7): the playback page's
+ * header button, the #notes-sheet bottom sheet, the tone context and the one notesPanel activity record.
+ * Glue only: staff, tones and state live in notation.js (pmixNotation).
+ */
+function initPitchPipe_() {
+  var btn = document.querySelector('[data-testid="pitchpipe-btn"]');
+  var sheet = document.getElementById('notes-sheet');
+  var body = document.getElementById('notes-body');
+  if (!btn || !sheet || !body || typeof pmixNotation === 'undefined') return;
+  var panel = null, openedAt = 0, presses = 0, part = null;
+
+  function scoreMode() { try { return typeof window.pmixScoreMode_ === 'function' ? window.pmixScoreMode_() : 'play'; } catch (e) { return 'play'; } }
+  function focusPart() {
+    try {
+      var info = window.pmixScoreTracks_ ? window.pmixScoreTracks_() : null, id = window.pmixFocusTrackId_ ? window.pmixFocusTrackId_() : '';
+      var t = info && info.tracks ? info.tracks.filter(function (x) { return x.id === id; })[0] : null;
+      return t ? scorePartOf(t.name) : null;
+    } catch (e) { return null; }
+  }
+  function applyEntry() {
+    var shown = pmixNotation.notationEntryShown({ page: 'play', scoreMode: scoreMode() }); // the button lives in the playback header
+    btn.classList.toggle('hidden', !shown);
+    if (!shown) close();
+  }
+  function open() {
+    if (panel) return;
+    part = focusPart();
+    presses = 0;
+    openedAt = Date.now();
+    panel = pmixNotation.createNotesPanel(body, {
+      part: part,
+      getContext: function () { AudioEngine.init(); return AudioEngine.getContext(); }, // inside the press: creates and resumes the context
+    });
+    if (!panel) return;
+    panel.on('notePress', function () { presses++; });
+    sheet.classList.remove('hidden');
+    document.getElementById('notes-close-btn').focus();
+  }
+  function close() {
+    if (!panel) return;
+    var stats = panel.stats();
+    panel.destroy();
+    panel = null;
+    sheet.classList.add('hidden');
+    try { logActivity_('notesPanel', { part: stats.part || '', presses: presses, openMs: Date.now() - openedAt }); } catch (e) { /* logging never blocks */ }
+    if (!btn.classList.contains('hidden') && typeof btn.focus === 'function') btn.focus();
+  }
+  btn.addEventListener('click', open);
+  document.getElementById('notes-close-btn').addEventListener('click', close);
+  document.getElementById('notes-overlay').addEventListener('click', close);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && panel) { e.stopImmediatePropagation(); close(); } }, true);
+  document.addEventListener('pmix-score-mode', applyEntry);
+  applyEntry();
+}
+document.addEventListener('DOMContentLoaded', initPitchPipe_);
 </script>
 <script>
 /**
@@ -8118,6 +8786,18 @@ const UI = (() => {
       </details>
       <div id="schedule-list" data-testid="schedule-list" class="schedule-body"></div>
       <div id="schedule-source" class="schedule-source" hidden></div>
+    </div>
+  </div>
+
+  <!-- Pitch Pipe (atc-9vp3.5): bottom sheet over the playback page; the mix keeps playing -->
+  <div id="notes-sheet" data-testid="notes-sheet" class="folder-picker pitchpipe-sheet hidden" role="dialog" aria-modal="false" aria-labelledby="notes-title">
+    <div class="picker-overlay" id="notes-overlay"></div>
+    <div class="picker-dialog pitchpipe-dialog">
+      <div class="picker-header">
+        <h3 id="notes-title">Pitch Pipe</h3>
+        <button id="notes-close-btn" data-testid="notes-close-btn" class="btn btn-close" aria-label="Close">&#10005;</button>
+      </div>
+      <div id="notes-body" data-testid="notes-body" class="picker-body"></div>
     </div>
   </div>
 
@@ -12750,6 +13430,7 @@ function initScorePanel_() {
     S.pages.forEach(release); // free the canvases; the parsed document stays for a quick reopen
     publish();
     notifyAddress();
+    document.dispatchEvent(new Event('pmix-score-mode')); // atc-9vp3.5: the Pitch Pipe button follows the mode
     if (S.opener && typeof S.opener.focus === 'function') S.opener.focus();
   }
   /** The folder changed: forget the document if its PDFs are not the ones now listed. */
@@ -14394,8 +15075,10 @@ function initScorePanel_() {
     if (playMode() && !S.followOn) resumeFollow(); // leaving Edit while playing is play mode: Follow is always on
     else syncUi();
     if (isOpen()) { if (S.resizeTimer) { clearTimeout(S.resizeTimer); S.resizeTimer = 0; } onResize(); } // the transport shows or hides with the mode: refit now, not 120 ms later under the user's first touch (BX3b/BX6/BX8)
+    document.dispatchEvent(new Event('pmix-score-mode')); // atc-9vp3.5: the Pitch Pipe button follows the mode
   }
   window.pmixSetScoreMode_ = setMode;
+  window.pmixScoreMode_ = function () { return S.edit ? S.sub : 'play'; }; // atc-9vp3.5: read by the Pitch Pipe entry (notationEntryShown)
   $('score-edit-done').addEventListener('click', function () { setMode('play'); });
   $('score-sub-layout').addEventListener('click', function () { setMode('layout'); });
   $('score-sub-sync').addEventListener('click', function () { setMode('sync'); });
