@@ -759,7 +759,10 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
   border-radius: 10px; font-size: 15px; font-weight: 700; font-family: inherit;
 }
 
-.btn-pitchpipe { align-self: flex-start; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; font-size: 20px; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 10px; } /* atc-9vp3.15: lower left of the transport card */
+.speed-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pitchpipe-slot { flex: 0 0 44px; width: 44px; height: 44px; } /* atc-9vp3.16: two equal slots keep the speed controls centred whether or not the button shows */
+.speed-row .speed-controls { flex: 0 1 auto; min-width: 0; }
+.btn-pitchpipe { display: block; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; font-size: 20px; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 10px; } /* atc-9vp3.16: far left of the speed row */
 .btn-pitchpipe:hover:not(:disabled) { background: var(--surface-3); color: var(--text); border-color: var(--text-3); }
 
 .skip-fine { display: inline-block; padding: 0 6px; font-size: 14px; } /* atc-tty9.39: fine skips show only while the score is in Edit */
@@ -1061,7 +1064,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 }
 
 /* Level & Pan buttons — use segmented style */
-.btn-level, .btn-pan {
+.btn-level, .btn-pan, .nt-chip {
   min-width: 32px; height: 28px; padding: 0 6px;
   background: transparent; color: var(--text-3);
   border: none; border-radius: 6px;
@@ -1071,7 +1074,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
   display: inline-flex; align-items: center; justify-content: center;
 }
 
-.btn-level:hover, .btn-pan:hover { color: var(--text); background: var(--surface-3); }
+.btn-level:hover, .btn-pan:hover, .nt-chip:hover { color: var(--text); background: var(--surface-3); }
 
 /* Active states */
 .btn-level.active-mute {
@@ -1094,7 +1097,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
   box-shadow: 0 0 0 1px var(--green), 0 2px 6px oklch(0.72 0.16 155 / .3);
 }
 
-.btn-pan.active {
+.btn-pan.active, .nt-chip-on { /* atc-9vp3.16: the Pitch Pipe chips share the selected pan-button style */
   background: oklch(0.72 0.14 240 / .15); color: var(--blue);
   box-shadow: 0 0 0 1px var(--blue), 0 2px 6px oklch(0.72 0.14 240 / .3);
 }
@@ -1471,6 +1474,12 @@ li > .schedule-cal-wrap { margin-left: 8px; }
 .pitchpipe-dialog { width: 100%; max-width: 640px; max-height: 92vh; max-height: 92dvh; overflow-x: hidden; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .pitchpipe-dialog .picker-header { position: sticky; top: 0; background: var(--surface-1); z-index: 2; } /* atc-9vp3.13: the tall staff scrolls, Close stays */
 .pitchpipe-dialog .nt-view { overflow-x: hidden; }
+
+/* Pitch Pipe chips (atc-9vp3.16): the app's segmented-control / pan-button look, 44 px targets; staff colours are the app's tokens */
+.pitchpipe-dialog { --nt-ink: var(--text); --nt-bg: var(--surface-1); --nt-on: var(--blue); --nt-start: var(--text-2); }
+.nt-chip { height: auto; min-height: 44px; font-size: 15px; }
+.nt-parts.segmented-control, .nt-mods.segmented-control { justify-self: start; gap: 2px; }
+.nt-chip-glyph path { fill: currentColor; }
 </style>
 </head>
 <body>
@@ -1738,7 +1747,9 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="skip-fwd-btn" data-testid="transport-skip-forward" class="btn btn-transport" title="Skip forward 5s">+5s</button>
         </div>
 
-        <!-- Speed Controls -->
+        <!-- Speed row (atc-9vp3.16): the Pitch Pipe entry at the far left, the speed controls centred between two equal 44 px slots, so hiding the button never shifts them -->
+        <div class="speed-row">
+        <span class="pitchpipe-slot"><button class="btn btn-pitchpipe" data-testid="pitchpipe-btn" aria-label="Pitch Pipe" title="Pitch Pipe">&#9835;</button></span>
         <div class="speed-controls">
           <button id="speed-slow-btn" data-testid="speed-slow" class="btn btn-speed" title="Slow down 10%">−</button>
           <span id="speed-display" data-testid="speed-display" class="speed-display">1.0×</span>
@@ -1750,6 +1761,8 @@ li > .schedule-cal-wrap { margin-left: 8px; }
             Loop
           </label>
           <button id="score-sync-follow" data-testid="score-sync-follow" class="btn score-sync-follow" aria-pressed="false" title="Follow the cursor" hidden>Follow</button>
+        </div>
+        <span class="pitchpipe-slot" aria-hidden="true"></span>
         </div>
 
         <!-- Time and Seek Controls -->
@@ -1784,8 +1797,6 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           </div>
           <span id="total-time" class="time-display">0:00</span>
         </div>
-        <!-- Pitch Pipe entry (atc-9vp3.15): lower left of the transport card; shown per notationEntryShown -->
-        <button class="btn btn-pitchpipe" data-testid="pitchpipe-btn" aria-label="Pitch Pipe" title="Pitch Pipe">&#9835;</button>
 
 
       </div>
@@ -2338,10 +2349,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.7.10";
+var STATIC_BUILD_VERSION_ = "1.8.7.11";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-24T22:56:51.907Z";
+var STATIC_BUILD_DATE_ = "2026-11-24T23:33:23.015Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -6567,12 +6578,12 @@ var pmixNotation = (function () {
   // Glyph chips (atc-9vp3.14): one viewBox for all three so the glyphs share a baseline (origin on the note line).
   var MOD_VIEW = { flat: '-0.05 -1.8 1 3.25', natural: '-0.15 -1.8 1 3.25', sharp: '-0.05 -1.8 1.1 3.25' };
   function modGlyph(m, on) {
-    return '<svg class="nt-chip-glyph" aria-hidden="true" focusable="false" viewBox="' + MOD_VIEW[m] + '" width="14" height="32" style="display:block;margin:auto"><path d="' + NOTATION_GLYPHS[m] + '" fill="' + (on ? BG : INK) + '"/></svg>';
+    return '<svg class="nt-chip-glyph" aria-hidden="true" focusable="false" viewBox="' + MOD_VIEW[m] + '" width="14" height="32" style="display:block;margin:auto"><path d="' + NOTATION_GLYPHS[m] + '" fill="currentColor"/></svg>';
   }
 
   function chip(attr, val, label, on, extra) {
     return '<button type="button" role="radio" class="nt-chip' + (on ? ' nt-chip-on' : '') + '" ' + attr + '="' + val + '" aria-checked="' + (on ? 'true' : 'false') + '"' +
-      (extra || '') + ' style="min-width:44px;min-height:44px;padding:0 12px;border:2px solid ' + INK + ';border-radius:8px;background:' + (on ? INK : 'transparent') + ';color:' + (on ? BG : INK) + ';font:inherit;' + (on ? 'font-weight:700;' : '') + '">' + label + '</button>';
+      (extra || '') + ' style="min-width:44px;min-height:44px;padding:0 12px">' + label + '</button>'; // colours, ring and radius come from the app CSS (.nt-chip, .nt-chip-on = the pan-button styles)
   }
 
   /** The S A T B and flat / natural / sharp radiogroups for a controller state. */
@@ -6580,8 +6591,8 @@ var pmixNotation = (function () {
     var st = s && typeof s === 'object' ? s : notationPanelState({});
     var parts = ['S', 'A', 'T', 'B'].map(function (p) { return chip('data-part', p, p, st.part === p, ' aria-label="' + PART_NAMES[p] + '"'); }).join('');
     var mods = MODS.map(function (m) { return chip('data-mod', m, modGlyph(m, st.modifier === m), st.modifier === m, ' aria-label="' + MOD_LABEL[m] + '"'); }).join('');
-    return '<div class="nt-parts" role="radiogroup" aria-label="Part" style="display:flex;gap:8px;margin-bottom:8px;grid-column:1/-1;grid-row:1">' + parts + '</div>' +
-      '<div class="nt-mods" role="radiogroup" aria-label="Next note" style="display:flex;flex-direction:column;gap:8px;align-self:start;grid-column:1;grid-row:2">' + mods + '</div>';
+    return '<div class="nt-parts segmented-control" role="radiogroup" aria-label="Part" style="display:flex;margin-bottom:8px;grid-column:1/-1;grid-row:1">' + parts + '</div>' +
+      '<div class="nt-mods segmented-control" role="radiogroup" aria-label="Next note" style="display:flex;flex-direction:column;align-self:start;grid-column:1;grid-row:2">' + mods + '</div>';
   }
 
   /**
