@@ -2334,10 +2334,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.7.8";
+var STATIC_BUILD_VERSION_ = "1.8.7.9";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-24T21:55:54.456Z";
+var STATIC_BUILD_DATE_ = "2026-11-24T22:05:16.167Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -6087,7 +6087,7 @@ var pmixNotation = (function () {
   var FLAT_PCS = { 1: 'D', 3: 'E', 6: 'G', 8: 'A', 10: 'B' };
   var ALTER_MARK = { '-2': 'bb', '-1': 'b', '0': '', '1': '#', '2': 'x' };
   var ALTER_WORD = { '-2': ' double flat', '-1': ' flat', '0': '', '1': ' sharp', '2': ' double sharp' };
-  var ACC_NAME = { '-2': 'doubleflat', '-1': 'flat', '1': 'sharp', '2': 'doublesharp' };
+  var ACC_NAME = { '-1': 'flat', '1': 'sharp' }; // no double accidentals in the UI (atc-9vp3.14)
 
   function isInt(n) { return typeof n === 'number' && isFinite(n) && Math.floor(n) === n; }
 
@@ -6221,7 +6221,7 @@ var pmixNotation = (function () {
   // the F line, accidentals: the note's line), y down, one unit = one staff space. FILLED shapes (no stroke).
   // Derived from Bravura v1.482 (SMuFL; Bravura unit = 1/1000 em, staff space = 250 units, x/250, y/-250,
   // 3 decimals): gClef U+E050 (treble), fClef U+E062 (bass), accidentalSharp U+E262, accidentalFlat U+E260,
-  // accidentalNatural U+E261, accidentalDoubleSharp U+E263, accidentalDoubleFlat U+E264. See the licence
+  // accidentalNatural U+E261, See the licence
   // notice in the file header. Only these seven outlines are embedded, never the font.
   var NOTATION_GLYPHS = {
     treble: 'M1.504 -1.66C1.496 -1.708 1.504 -1.712 1.528 -1.736C1.592 -1.796 1.676 -1.88 1.752 -1.964C2.088 -2.332 2.288 -2.808 2.288 -3.26C2.288 -3.608 2.192 -3.952 2.028 -4.192C1.968 -4.28 1.864 -4.392 1.82 -4.392C1.764 -4.392 1.64 -4.288 1.56 -4.2C1.264 -3.872 1.168 -3.372 1.168 -2.956C1.168 -2.724 1.196 -2.464 1.224 -2.3C1.232 -2.252 1.236 -2.244 1.188 -2.204C0.932 -1.992 0.656 -1.748 0.448 -1.492C0.172 -1.148 0 -0.776 0 -0.348C0 0.348 0.476 1.008 1.456 1.008C1.548 1.008 1.652 1 1.732 0.984C1.776 0.976 1.784 0.972 1.792 1.02C1.84 1.288 1.9 1.636 1.9 1.824C1.9 2.416 1.5 2.488 1.264 2.488C1.048 2.488 0.944 2.424 0.944 2.372C0.944 2.344 0.98 2.332 1.072 2.304C1.196 2.268 1.34 2.16 1.34 1.928C1.34 1.708 1.2 1.52 0.956 1.52C0.688 1.52 0.528 1.732 0.528 1.98C0.528 2.24 0.684 2.632 1.288 2.632C1.556 2.632 2.076 2.512 2.076 1.832C2.076 1.604 2.004 1.224 1.96 0.976C1.952 0.928 1.956 0.932 2.012 0.908C2.416 0.748 2.684 0.408 2.684 -0.044C2.684 -0.556 2.308 -1.008 1.72 -1.008C1.616 -1.008 1.616 -1.008 1.604 -1.08ZM1.88 -3.772C2.012 -3.772 2.12 -3.664 2.12 -3.444C2.12 -3.168 1.988 -2.912 1.676 -2.6C1.612 -2.536 1.516 -2.444 1.424 -2.364C1.396 -2.34 1.38 -2.344 1.372 -2.396C1.356 -2.5 1.348 -2.636 1.348 -2.764C1.348 -3.388 1.636 -3.772 1.88 -3.772ZM1.444 -1.048C1.456 -0.972 1.456 -0.976 1.384 -0.952C1.032 -0.832 0.804 -0.516 0.804 -0.176C0.804 0.184 0.992 0.44 1.264 0.532C1.296 0.544 1.344 0.556 1.372 0.556C1.404 0.556 1.42 0.536 1.42 0.512C1.42 0.484 1.388 0.472 1.36 0.46C1.192 0.388 1.072 0.216 1.072 0.032C1.072 -0.196 1.228 -0.368 1.472 -0.436C1.536 -0.452 1.544 -0.448 1.552 -0.404L1.752 0.788C1.76 0.832 1.756 0.832 1.696 0.844C1.632 0.856 1.552 0.864 1.472 0.864C0.772 0.864 0.32 0.476 0.32 -0.08C0.32 -0.316 0.36 -0.632 0.692 -1.008C0.932 -1.276 1.116 -1.424 1.304 -1.576C1.344 -1.608 1.352 -1.604 1.36 -1.56ZM1.72 -0.412C1.712 -0.46 1.716 -0.472 1.764 -0.468C2.088 -0.44 2.356 -0.168 2.356 0.184C2.356 0.436 2.204 0.64 1.98 0.752C1.932 0.776 1.924 0.776 1.916 0.728Z',
@@ -6229,11 +6229,9 @@ var pmixNotation = (function () {
     sharp: 'M0.948 -0.472C0.976 -0.484 0.996 -0.516 0.996 -0.54V-0.824C0.996 -0.844 0.984 -0.856 0.968 -0.856C0.96 -0.856 0.956 -0.856 0.948 -0.852C0.948 -0.852 0.868 -0.82 0.848 -0.816C0.82 -0.816 0.792 -0.836 0.792 -0.868V-1.356C0.792 -1.38 0.768 -1.4 0.736 -1.4C0.696 -1.4 0.672 -1.38 0.672 -1.356V-0.836C0.668 -0.796 0.656 -0.744 0.62 -0.72C0.572 -0.692 0.436 -0.636 0.368 -0.62C0.332 -0.62 0.32 -0.668 0.32 -0.7V-1.18C0.32 -1.204 0.292 -1.224 0.264 -1.224C0.224 -1.224 0.2 -1.204 0.2 -1.18V-0.64C0.2 -0.584 0.176 -0.544 0.152 -0.532C0.128 -0.52 0.048 -0.488 0.048 -0.488C0.02 -0.48 0 -0.448 0 -0.424V-0.14C0 -0.116 0.012 -0.104 0.032 -0.104C0.036 -0.104 0.044 -0.108 0.048 -0.108C0.048 -0.108 0.108 -0.132 0.136 -0.148C0.14 -0.148 0.144 -0.152 0.148 -0.152C0.176 -0.152 0.2 -0.112 0.2 -0.08V0.316C0.2 0.36 0.18 0.396 0.156 0.408C0.132 0.416 0.048 0.452 0.048 0.452C0.02 0.46 0 0.492 0 0.516V0.8C0 0.824 0.012 0.836 0.032 0.836C0.036 0.836 0.044 0.832 0.048 0.832C0.048 0.832 0.104 0.808 0.14 0.796C0.144 0.792 0.148 0.792 0.152 0.792C0.18 0.792 0.2 0.836 0.2 0.856V1.348C0.2 1.372 0.224 1.392 0.252 1.392C0.292 1.392 0.32 1.372 0.32 1.348V0.792C0.32 0.74 0.34 0.712 0.36 0.704L0.604 0.604C0.608 0.604 0.616 0.6 0.62 0.6C0.652 0.6 0.672 0.648 0.672 0.672V1.172C0.672 1.196 0.696 1.216 0.724 1.216C0.768 1.216 0.792 1.196 0.792 1.172V0.604C0.792 0.572 0.808 0.524 0.836 0.512C0.864 0.5 0.948 0.468 0.948 0.468C0.976 0.456 0.996 0.424 0.996 0.4V0.116C0.996 0.096 0.984 0.084 0.968 0.084C0.96 0.084 0.956 0.084 0.948 0.088L0.844 0.128C0.82 0.128 0.792 0.104 0.792 0.056V-0.316C0.792 -0.344 0.812 -0.42 0.844 -0.432ZM0.672 0.18C0.648 0.26 0.46 0.34 0.368 0.34C0.344 0.34 0.324 0.332 0.32 0.32C0.312 0.304 0.308 0.216 0.308 0.12C0.308 -0.004 0.312 -0.144 0.32 -0.176C0.328 -0.244 0.512 -0.328 0.612 -0.328C0.64 -0.328 0.664 -0.32 0.672 -0.304C0.68 -0.284 0.688 -0.184 0.688 -0.076C0.688 0.032 0.68 0.144 0.672 0.18Z',
     flat: 'M0.048 0.68C0.06 0.696 0.072 0.7 0.084 0.7C0.096 0.7 0.108 0.692 0.108 0.692C0.228 0.624 0.324 0.516 0.424 0.448C0.78 0.2 0.904 -0.044 0.904 -0.228C0.904 -0.456 0.728 -0.6 0.544 -0.612C0.516 -0.612 0.488 -0.608 0.46 -0.6C0.416 -0.588 0.368 -0.572 0.324 -0.544C0.3 -0.524 0.256 -0.488 0.236 -0.488C0.228 -0.488 0.224 -0.488 0.216 -0.492C0.188 -0.504 0.172 -0.532 0.172 -0.56C0.176 -0.648 0.2 -1.608 0.2 -1.688C0.2 -1.732 0.164 -1.756 0.124 -1.756C0.068 -1.756 0.004 -1.716 0 -1.644C0 -1.644 0.016 0.64 0.048 0.68ZM0.188 0.324C0.188 0.324 0.176 0.084 0.176 -0.076C0.176 -0.14 0.18 -0.188 0.184 -0.204C0.2 -0.252 0.304 -0.34 0.36 -0.372C0.396 -0.392 0.432 -0.4 0.464 -0.4C0.504 -0.4 0.54 -0.384 0.564 -0.356C0.604 -0.312 0.628 -0.244 0.628 -0.168C0.628 -0.096 0.608 -0.012 0.56 0.072C0.508 0.168 0.392 0.296 0.272 0.372C0.256 0.38 0.244 0.384 0.232 0.384C0.196 0.384 0.188 0.344 0.188 0.324Z',
     natural: 'M0.564 -0.724C0.556 -0.724 0.552 -0.72 0.548 -0.72C0.548 -0.72 0.292 -0.628 0.188 -0.628C0.164 -0.628 0.148 -0.632 0.148 -0.648V-1.316C0.148 -1.344 0.124 -1.364 0.1 -1.364H0.048C0.02 -1.364 0 -1.344 0 -1.316V0.744C0 0.768 0.012 0.78 0.032 0.78C0.036 0.78 0.044 0.776 0.048 0.776C0.048 0.776 0.056 0.776 0.06 0.772C0.116 0.748 0.34 0.652 0.456 0.652C0.496 0.652 0.524 0.664 0.524 0.696V1.292C0.524 1.32 0.544 1.34 0.572 1.34H0.624C0.648 1.34 0.672 1.32 0.672 1.292V-0.716C0.672 -0.736 0.656 -0.748 0.64 -0.748C0.636 -0.748 0.628 -0.748 0.624 -0.744ZM0.148 -0.156C0.148 -0.212 0.392 -0.316 0.488 -0.316C0.512 -0.316 0.524 -0.312 0.524 -0.296V0.116C0.524 0.188 0.296 0.28 0.196 0.28C0.168 0.28 0.148 0.272 0.148 0.256Z',
-    doublesharp: 'M0.76 0.128C0.716 0.104 0.572 0.024 0.572 -0.004C0.572 -0.06 0.704 -0.12 0.76 -0.14C0.776 -0.14 0.792 -0.136 0.808 -0.136C0.872 -0.136 0.932 -0.152 0.96 -0.176C0.98 -0.196 0.988 -0.256 0.988 -0.32C0.988 -0.388 0.976 -0.46 0.96 -0.48C0.944 -0.5 0.88 -0.508 0.812 -0.508C0.74 -0.508 0.668 -0.5 0.648 -0.48C0.632 -0.468 0.628 -0.396 0.628 -0.324C0.608 -0.28 0.544 -0.136 0.496 -0.136C0.44 -0.136 0.376 -0.268 0.36 -0.324C0.36 -0.392 0.348 -0.464 0.328 -0.48C0.312 -0.5 0.248 -0.508 0.184 -0.508C0.116 -0.508 0.044 -0.5 0.02 -0.48C0.008 -0.472 0 -0.404 0 -0.332C0 -0.26 0.008 -0.188 0.02 -0.176C0.048 -0.152 0.12 -0.136 0.188 -0.136C0.204 -0.136 0.216 -0.14 0.228 -0.14C0.272 -0.116 0.416 -0.036 0.416 -0.008C0.416 0.044 0.288 0.108 0.232 0.128H0.192C0.12 0.128 0.044 0.136 0.02 0.156C0.008 0.168 0 0.236 0 0.308C0 0.38 0.008 0.452 0.02 0.46C0.048 0.484 0.112 0.5 0.18 0.5C0.24 0.5 0.304 0.488 0.328 0.46C0.352 0.44 0.36 0.372 0.36 0.308C0.36 0.304 0.364 0.296 0.368 0.292C0.392 0.236 0.44 0.124 0.492 0.124C0.544 0.124 0.612 0.252 0.628 0.308C0.628 0.38 0.632 0.448 0.648 0.46C0.676 0.484 0.74 0.5 0.808 0.5C0.872 0.5 0.932 0.488 0.96 0.46C0.98 0.44 0.988 0.38 0.988 0.316C0.988 0.248 0.976 0.176 0.96 0.156C0.94 0.136 0.868 0.128 0.8 0.128Z',
-    doubleflat: 'M1.256 -0.604C1.236 -0.604 1.22 -0.604 1.2 -0.6C1.152 -0.588 1.108 -0.564 1.068 -0.54C1.04 -0.524 1.008 -0.488 0.972 -0.488C0.964 -0.488 0.956 -0.488 0.952 -0.492C0.924 -0.5 0.912 -0.528 0.912 -0.56C0.912 -0.644 0.936 -1.608 0.936 -1.684C0.936 -1.728 0.9 -1.748 0.86 -1.748C0.808 -1.748 0.744 -1.712 0.736 -1.644C0.736 -1.644 0.74 -1.096 0.748 -0.54C0.688 -0.58 0.62 -0.604 0.544 -0.604H0.52C0.5 -0.604 0.48 -0.604 0.464 -0.6C0.416 -0.588 0.372 -0.564 0.332 -0.54C0.3 -0.524 0.272 -0.488 0.236 -0.488C0.228 -0.488 0.224 -0.488 0.216 -0.492C0.188 -0.5 0.172 -0.528 0.172 -0.56C0.172 -0.644 0.2 -1.608 0.2 -1.684C0.2 -1.728 0.164 -1.748 0.124 -1.748C0.068 -1.748 0.004 -1.712 0 -1.644C0 -1.644 0.02 0.644 0.048 0.68C0.06 0.696 0.072 0.7 0.084 0.7C0.096 0.7 0.108 0.692 0.108 0.692C0.232 0.628 0.332 0.516 0.424 0.448C0.572 0.344 0.684 0.236 0.76 0.14C0.768 0.44 0.776 0.668 0.788 0.68C0.8 0.696 0.812 0.7 0.82 0.7C0.832 0.7 0.844 0.692 0.844 0.692C0.968 0.628 1.064 0.516 1.156 0.452C1.516 0.2 1.644 -0.044 1.644 -0.228C1.644 -0.452 1.468 -0.6 1.28 -0.604ZM0.564 0.072C0.512 0.168 0.396 0.292 0.268 0.372C0.256 0.38 0.24 0.384 0.232 0.384C0.2 0.384 0.188 0.344 0.188 0.32C0.188 0.32 0.176 0.084 0.176 -0.072C0.176 -0.136 0.18 -0.184 0.184 -0.2C0.2 -0.252 0.308 -0.34 0.364 -0.372C0.4 -0.392 0.436 -0.4 0.468 -0.4C0.508 -0.4 0.54 -0.388 0.564 -0.36C0.604 -0.312 0.628 -0.244 0.628 -0.164C0.628 -0.092 0.608 -0.008 0.564 0.072ZM1.296 0.072C1.248 0.168 1.132 0.292 1.004 0.372C0.988 0.38 0.976 0.384 0.968 0.384C0.936 0.384 0.924 0.344 0.924 0.32C0.924 0.32 0.912 0.044 0.912 -0.108C0.912 -0.152 0.912 -0.188 0.916 -0.2C0.932 -0.252 1.04 -0.34 1.1 -0.372C1.136 -0.392 1.172 -0.4 1.204 -0.4C1.244 -0.4 1.276 -0.388 1.3 -0.36C1.336 -0.312 1.36 -0.244 1.36 -0.164C1.36 -0.092 1.34 -0.012 1.296 0.072Z',
   };
   // Glyph advance widths in staff spaces (Bravura bounding boxes), used to place an accidental left of its head.
-  var ACC_WIDTH = { sharp: 1, flat: 0.8, natural: 0.6, doublesharp: 1, doubleflat: 1.5 };
+  var ACC_WIDTH = { sharp: 1, flat: 0.8, natural: 0.6 };
   var LABEL_FS = 0.7;   // note-name label font size, in staff spaces
   var LABEL_ACC = 0.32; // label accidental glyph scale, in staff spaces
 
@@ -6562,6 +6560,12 @@ var pmixNotation = (function () {
     return { state: next, pitch: pitch, midi: p.midi, freq: freq, spoken: notationSpoken(pitch), readout: pitch + '  ' + freq.toFixed(1) + ' Hz' };
   }
 
+  // Glyph chips (atc-9vp3.14): one viewBox for all three so the glyphs share a baseline (origin on the note line).
+  var MOD_VIEW = { flat: '-0.05 -1.8 1 3.25', natural: '-0.15 -1.8 1 3.25', sharp: '-0.05 -1.8 1.1 3.25' };
+  function modGlyph(m) {
+    return '<svg class="nt-chip-glyph" aria-hidden="true" focusable="false" viewBox="' + MOD_VIEW[m] + '" width="14" height="32" style="display:block;margin:auto"><path d="' + NOTATION_GLYPHS[m] + '" fill="var(--nt-ink, var(--text))"/></svg>';
+  }
+
   function chip(attr, val, label, on, extra) {
     return '<button type="button" role="radio" class="nt-chip' + (on ? ' nt-chip-on' : '') + '" ' + attr + '="' + val + '" aria-checked="' + (on ? 'true' : 'false') + '"' +
       (extra || '') + ' style="min-width:44px;min-height:44px;padding:0 12px;border:1px solid currentColor;border-radius:8px;background:' + (on ? 'var(--surface-3, #ddd)' : 'transparent') + ';color:inherit;font:inherit;' + (on ? 'font-weight:700;' : '') + '">' + label + '</button>';
@@ -6571,9 +6575,9 @@ var pmixNotation = (function () {
   function notationPanelChips(s) {
     var st = s && typeof s === 'object' ? s : notationPanelState({});
     var parts = ['S', 'A', 'T', 'B'].map(function (p) { return chip('data-part', p, p, st.part === p, ' aria-label="' + PART_NAMES[p] + '"'); }).join('');
-    var mods = MODS.map(function (m) { return chip('data-mod', m, MOD_LABEL[m], st.modifier === m); }).join('');
-    return '<div class="nt-parts" role="radiogroup" aria-label="Part" style="display:flex;gap:8px;margin-bottom:8px">' + parts + '</div>' +
-      '<div class="nt-mods" role="radiogroup" aria-label="Next note" style="display:flex;gap:8px;margin-bottom:8px">' + mods + '</div>';
+    var mods = MODS.map(function (m) { return chip('data-mod', m, modGlyph(m), st.modifier === m, ' aria-label="' + MOD_LABEL[m] + '"'); }).join('');
+    return '<div class="nt-parts" role="radiogroup" aria-label="Part" style="display:flex;gap:8px;margin-bottom:8px;grid-column:1/-1;grid-row:1">' + parts + '</div>' +
+      '<div class="nt-mods" role="radiogroup" aria-label="Next note" style="display:flex;flex-direction:column;gap:8px;align-self:start;grid-column:1;grid-row:2">' + mods + '</div>';
   }
 
   /**
@@ -6589,8 +6593,8 @@ var pmixNotation = (function () {
     var tone = createToneEngine({ getContext: o.getContext, a4: st.a4, timbre: o.timbre });
     var voice = null;
     var dead = false;
-    container.innerHTML = '<div class="nt-panel"><div class="nt-controls"></div><div class="nt-view"></div>' +
-      '<div class="nt-readout" data-testid="notes-readout" aria-live="polite" style="min-height:1.5em;margin-top:8px"></div></div>';
+    container.innerHTML = '<div class="nt-panel" style="display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:8px"><div class="nt-controls" style="display:contents"></div><div class="nt-view" style="grid-column:2;grid-row:2;min-width:0"></div>' +
+      '<div class="nt-readout" data-testid="notes-readout" aria-live="polite" style="grid-column:1/-1;min-height:1.5em;margin-top:8px"></div></div>';
     var controls = container.querySelector('.nt-controls');
     var viewEl = container.querySelector('.nt-view');
     var readout = container.querySelector('.nt-readout');
