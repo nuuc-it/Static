@@ -242,6 +242,7 @@
   .row.reference{opacity:.6;color:var(--muted)}
   .row.reference .ref-home{margin-left:6px;font-size:12px}
   .rowmeta .from a{color:inherit}
+  .rowmeta .fwdbadge{font-size:11.5px;color:var(--muted)}
   .refblock{margin-top:10px}
   .refhead{font-size:12.5px;color:var(--muted);margin:6px 0}
 
@@ -596,7 +597,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.29.2";
+var STATIC_BUILD_VERSION_ = "0.1.29.4";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -2316,6 +2317,18 @@ function fromHtml_(from){
     title="${escape('Imported from ' + (from.ain || '') + ' in ' + name)}">${escape(name)} ${escape(from.ain || '')}</a></span>`;
 }
 
+// NUUTS-Track ADR-0013: a forwarded action's target ('Forwarded to: <doc name> ACT-k'), linked like the From
+// link, with the target's current status ('now <status>'), 'target removed', or nothing when unknown.
+function forwardedToHtml_(ft){
+  if (!ft || !ft.docId) return '';
+  const name = ft.docName || ft.docId;
+  const badge = ft.target === 'present' ? ` <span class="fwdbadge">now ${escape(ft.status || '')}</span>`
+    : ft.target === 'removed' ? ' <span class="fwdbadge">target removed</span>' : '';
+  return `<span class="from fwd">Forwarded to: <a class="from-link" href="${escape(refHomeHref_(ft.docId))}"
+    data-home-doc="${escape(ft.docId)}" data-home-name="${escape(ft.docName || '')}"
+    title="${escape('Forwarded to ' + (ft.ain || '') + ' in ' + name)}">${escape(name)} ${escape(ft.ain || '')}</a>${badge}</span>`;
+}
+
 function isOpenRow_(r){ return !r.status_resolved; }
 function rowTier_(r){ const t = r.team_id; return state.teamId === ALL_TEAMS_ID && !state.docId ? (state.teamTiers[t] || (t ? 'NONE' : 'VIEW')) : state.tier; } // NT-tuqn: a no-team row is at least viewable
 function daysSince_(iso){ const t = iso ? Date.parse(iso) : NaN; return isNaN(t) ? null : Math.max(0, Math.floor((Date.now() - t) / 86400000)); }
@@ -2342,7 +2355,9 @@ function assigneesHtml_(r){
 }
 // NT-2wr2.26: extra fields as 'Name:' (bold) + value lines, document order; value soft returns are line breaks.
 function fieldsHtml_(r){
-  const f = Array.isArray(r.custom_fields) ? r.custom_fields : [];
+  // D4 (ADR-0013): the From / Forwarded To field line is hidden when the rowmeta link already renders it.
+  const f = (Array.isArray(r.custom_fields) ? r.custom_fields : []).filter(x =>
+    !((x.name === 'From' && r.from) || (x.name === 'Forwarded To' && r.forwarded_to)));
   return f.length ? '<div class="xfields">' + f.map(x =>
     `<div class="xfield"><b>${escape(x.name)}:</b> ${escape(softToLines(x.text))}</div>`).join('') + '</div>' : '';
 }
@@ -2362,7 +2377,7 @@ function rowHtml(r, tier, o){
           ${o && o.showDoc ? `<span class="rowdoc"><a href="${escape(r.doc_url)}" target="_blank" rel="noopener">${escape(r.doc_name || '(untitled document)')}</a></span>` : ''}
           <span>updated ${shortDate(r.modified_date)}</span>${age !== null ? `<span>open ${age} ${age === 1 ? 'day' : 'days'}</span>` : ''}
           ${r.removed ? '<span class="removedbadge" title="This action is no longer in its document">Removed from document</span>' : ''}
-          ${fromHtml_(r.from)}
+          ${fromHtml_(r.from)}${forwardedToHtml_(r.forwarded_to)}
         </div>
       </div>
       <div class="controls">
@@ -2377,6 +2392,12 @@ function rowHtml(r, tier, o){
 // NT-qxh: soft returns (\v, U+2028) and any CR/LF display as line breaks in the textarea;
 // the server stores every line break as \v.
 function softToLines(t){ return String(t || '').replace(/\r\n|[\r\v\u2028\u2029]/g, '\n'); }
+// NT-5a91: the edit box = action text, then each extra field as a 'Name: value' line (value line breaks
+// continue below it). The server re-parses the whole box with the document grammar; nothing is parsed here.
+function boxText_(r){
+  const f = Array.isArray(r.custom_fields) ? r.custom_fields : [];
+  return [softToLines(r.action_text)].concat(f.map(x => x.name + ': ' + softToLines(x.text))).join('\n');
+}
 function linesToSoft(t){ return String(t || '').replace(/\r\n|[\r\n\u2028\u2029]/g, '\v'); }
 // ---- action panel (NT-2wr2.3; replaces the inline edit form, gts-79dw.4.21) -----------------------------------------
 // Status first (one tap per status), then the text, then Save. Edit access saves through team_edit_action; an
@@ -2422,8 +2443,8 @@ function renderActionPanel_(){
       <div class="apstatus" role="group" aria-labelledby="apStatusLabel">${opts.map(o =>
         `<button type="button" class="pill" data-apstatus="${escape(o)}" title="Set status to ${escape(o)}" aria-pressed="${o === state.panelStatus}"${canStatus ? '' : ' disabled'}>${escape(o)}</button>`).join('')}</div>
       <label class="aplabel" for="apText">Action</label>
-      <textarea class="sel aptext" id="apText" rows="3"${canEdit ? '' : ' readonly'}>${escape(softToLines(r.action_text))}</textarea>
-      ${fieldsHtml_(r)}
+      <textarea class="sel aptext" id="apText" rows="5"${canEdit ? '' : ' readonly'} aria-describedby="apHelp" placeholder="Action text&#10;Target: 12 Dec&#10;Progress: started">${escape(boxText_(r))}</textarea>
+      ${canEdit ? '<div class="sub" id="apHelp">First line is the action. Add extra fields on their own lines as <b>Name: value</b> (for example <b>Target: 12 Dec</b>); remove a line to delete that field.</div>' : fieldsHtml_(r)}
       ${canEdit || canStatus
         ? `<button class="btn primary apsave" id="apSave" type="button" title="Save changes to this item"${state.panelBusy ? ' disabled' : ''}>Save</button>`
         : '<div class="sub">You can view this item. Only its assignee or someone who can edit the document can change it.</div>'}
@@ -2457,7 +2478,7 @@ function onPanelSave_(){
   let req;
   if (canEdit) {
     const fields = {
-      action_text: linesToSoft($('apText').value),
+      action_text: linesToSoft($('apText').value), parse_fields: true, // NT-5a91: server splits action text and Name: value fields
       assignee_name: $('apAssigneeName').value, assignee_email: $('apAssigneeEmail').value
     };
     if (statusChanged) fields.status = newStatus;
