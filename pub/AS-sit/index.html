@@ -597,7 +597,7 @@
 // from src/Version.js's BUILD_INFO immediately before publish. Left null here
 // in the unbuilt source; a raw `static-portal/src/index.html` (opened
 // directly, not via dist/) has no backend to call and no version to show.
-var STATIC_BUILD_VERSION_ = "0.1.29.7";
+var STATIC_BUILD_VERSION_ = "0.1.29.8";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbz8nzjLoXeQ5se40W-FCIwrKDdOOeJhWYLDZVH0RQEZJOxNTeNYSLFsTfFFMO5LLnb9/exec";
 var STATIC_ENV_LABEL_ = "SIT";
 var STATIC_ASSERTION_AUD_ = "nuuts-shell-test";
@@ -959,7 +959,7 @@ function postJson(url, payload, opts){
   // surfaces in the WebApp's logs (webapp.version.mismatch) instead of only in a support
   // call. NUUC_DISPATCH_URL is a different project's backend and is not stamped.
   const body = (url === GACTIONSHEET_URL)
-    ? Object.assign({ clientVersion: STATIC_BUILD_VERSION_ }, payload)
+    ? Object.assign({ clientVersion: STATIC_BUILD_VERSION_, initiatedAt: Date.now() }, payload) // NT-00sc: epoch ms; server logs the client-to-server gap as queueDelayMs
     : payload;
   const bg = !!(opts && opts.background);
   const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
