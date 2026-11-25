@@ -517,6 +517,16 @@ body {
 .menu-row .score-react { font-size: 14px; }
 .menu-row .score-react input[type="range"] { width: 140px; }
 .menu-drive { color: var(--blue); text-decoration: none; background: var(--surface-2); border: 1px solid var(--border-strong); }  /* default link blue is unreadable on the dark panel */
+.menu-row[hidden] { display: none; }
+.health-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px var(--spacing); border-bottom: 1px solid var(--border); font-size: 14px; }
+.health-row { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.health-row .health-name { font-weight: 600; }
+.health-row .health-meta { color: var(--text-3); font-size: 12px; }
+.health-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; margin-right: 4px; border: 1px solid currentColor; }
+.health-chip.ok { color: var(--green); }
+.health-chip.stale, .health-chip.untimed, .health-chip.order, .health-chip.test { color: var(--amber); }
+.health-chip.none, .health-chip.bad { color: var(--red); }
+.health-chip.wait { color: var(--text-3); }
 .menu-section { margin: 8px 0 0; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .menu-check { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 0; }
 .menu-reason { margin: 0; font-size: 12px; color: var(--text-2); }
@@ -748,6 +758,12 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
   border: 1px solid var(--border-strong);
   border-radius: 10px; font-size: 15px; font-weight: 700; font-family: inherit;
 }
+
+.speed-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pitchpipe-slot { flex: 0 0 44px; width: 44px; height: 44px; } /* atc-9vp3.16: two equal slots keep the speed controls centred whether or not the button shows */
+.speed-row .speed-controls { flex: 0 1 auto; min-width: 0; }
+.btn-pitchpipe { display: block; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; font-size: 20px; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 10px; } /* atc-9vp3.16: far left of the speed row */
+.btn-pitchpipe:hover:not(:disabled) { background: var(--surface-3); color: var(--text); border-color: var(--text-3); }
 
 .skip-fine { display: inline-block; padding: 0 6px; font-size: 14px; } /* atc-tty9.39: fine skips show only while the score is in Edit */
 
@@ -1048,7 +1064,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 }
 
 /* Level & Pan buttons — use segmented style */
-.btn-level, .btn-pan {
+.btn-level, .btn-pan, .nt-chip {
   min-width: 32px; height: 28px; padding: 0 6px;
   background: transparent; color: var(--text-3);
   border: none; border-radius: 6px;
@@ -1058,7 +1074,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
   display: inline-flex; align-items: center; justify-content: center;
 }
 
-.btn-level:hover, .btn-pan:hover { color: var(--text); background: var(--surface-3); }
+.btn-level:hover, .btn-pan:hover, .nt-chip:hover { color: var(--text); background: var(--surface-3); }
 
 /* Active states */
 .btn-level.active-mute {
@@ -1081,7 +1097,7 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
   box-shadow: 0 0 0 1px var(--green), 0 2px 6px oklch(0.72 0.16 155 / .3);
 }
 
-.btn-pan.active {
+.btn-pan.active, .nt-chip-on { /* atc-9vp3.16: the Pitch Pipe chips share the selected pan-button style */
   background: oklch(0.72 0.14 240 / .15); color: var(--blue);
   box-shadow: 0 0 0 1px var(--blue), 0 2px 6px oklch(0.72 0.14 240 / .3);
 }
@@ -1451,6 +1467,19 @@ li > .schedule-cal-wrap { margin-left: 8px; }
 .hidden { display: none !important; }
 .text-center { text-align: center; }
 .text-muted { color: var(--text-3); }
+
+/* PITCH PIPE (atc-9vp3.5): bottom sheet, the mix stays visible and playing above it */
+.pitchpipe-sheet { align-items: flex-end; }
+.pitchpipe-sheet .picker-overlay { background: transparent; }
+.pitchpipe-dialog { width: 100%; max-width: 640px; max-height: 92vh; max-height: 92dvh; overflow-x: hidden; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.pitchpipe-dialog .picker-header { position: sticky; top: 0; background: var(--surface-1); z-index: 2; } /* atc-9vp3.13: the tall staff scrolls, Close stays */
+.pitchpipe-dialog .nt-view { overflow-x: hidden; }
+
+/* Pitch Pipe chips (atc-9vp3.16): the app's segmented-control / pan-button look, 44 px targets; staff colours are the app's tokens */
+.pitchpipe-dialog { --nt-ink: var(--text); --nt-bg: var(--surface-1); --nt-on: var(--blue); --nt-start: var(--text-2); }
+.nt-chip { height: auto; min-height: 44px; font-size: 15px; }
+.nt-parts.segmented-control, .nt-mods.segmented-control { justify-self: start; gap: 2px; }
+.nt-chip-glyph path { fill: currentColor; }
 </style>
 </head>
 <body>
@@ -1718,7 +1747,9 @@ li > .schedule-cal-wrap { margin-left: 8px; }
           <button id="skip-fwd-btn" data-testid="transport-skip-forward" class="btn btn-transport" title="Skip forward 5s">+5s</button>
         </div>
 
-        <!-- Speed Controls -->
+        <!-- Speed row (atc-9vp3.16): the Pitch Pipe entry at the far left, the speed controls centred between two equal 44 px slots, so hiding the button never shifts them -->
+        <div class="speed-row">
+        <span class="pitchpipe-slot"><button class="btn btn-pitchpipe" data-testid="pitchpipe-btn" aria-label="Pitch Pipe" title="Pitch Pipe">&#9835;</button></span>
         <div class="speed-controls">
           <button id="speed-slow-btn" data-testid="speed-slow" class="btn btn-speed" title="Slow down 10%">−</button>
           <span id="speed-display" data-testid="speed-display" class="speed-display">1.0×</span>
@@ -1730,6 +1761,8 @@ li > .schedule-cal-wrap { margin-left: 8px; }
             Loop
           </label>
           <button id="score-sync-follow" data-testid="score-sync-follow" class="btn score-sync-follow" aria-pressed="false" title="Follow the cursor" hidden>Follow</button>
+        </div>
+        <span class="pitchpipe-slot" aria-hidden="true"></span>
         </div>
 
         <!-- Time and Seek Controls -->
@@ -2316,10 +2349,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.7";
+var STATIC_BUILD_VERSION_ = "1.8.8";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-11-23T17:56:41.002Z";
+var STATIC_BUILD_DATE_ = "2026-11-25T10:52:34.694Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbz-YsKzVeoehCr05zF4kF_wbKuTAhMm1RU1KSXK-W6UOKt9zg1zVTUi_TKKYnpkhSR-/exec";
@@ -5391,6 +5424,8 @@ const AudioEngine = (() => {
       try { const ps = audioContext && audioContext.playbackStats; if (ps && typeof ps.underrunEvents === 'number') { o.ur = ps.underrunEvents; o.urMs = typeof ps.underrunDuration === 'number' ? ps.underrunDuration * 1000 : null; } } catch (e) { /* unsupported */ }
       return o;
     },
+    /** Read-only: the shared AudioContext (null before init). The Pitch Pipe tone engine plays on it (atc-9vp3.5). */
+    getContext: () => audioContext,
     getUnstretchedTrackIds,
     ensureStretched,
     getStretchedChannels,
@@ -6017,9 +6052,724 @@ function parseTrackLabels(files) {
 }
 
 // Node.js compatibility — not executed in GAS (no `module` global there)
-if (typeof module !== 'undefined') {
-  module.exports = { parseTrackLabels };
+/**
+ * atc-v91o.1: the track the Score health link opens: the first of Mix, Bass, Soprano, Tenor, Alto among the folder's tracks, matched on the
+ * selection page's labels (parseTrackLabels, lower-cased substring as getVoiceColor does); none of them: the first track; no tracks: null.
+ * files: [{id, name}]. Returns a file id or null.
+ */
+var HEALTH_TRACK_ORDER_ = ['mix', 'bass', 'soprano', 'tenor', 'alto'];
+function healthTrackId_(files) {
+  if (!files || !files.length) return null;
+  var labels = parseTrackLabels(files).labels;
+  for (var i = 0; i < HEALTH_TRACK_ORDER_.length; i++) {
+    for (var j = 0; j < files.length; j++) {
+      if (String(labels.get(files[j].id) || '').toLowerCase().indexOf(HEALTH_TRACK_ORDER_[i]) !== -1) return files[j].id;
+    }
+  }
+  return files[0].id;
 }
+
+if (typeof module !== 'undefined') {
+  module.exports = { parseTrackLabels, healthTrackId_ };
+}
+</script>
+<script>
+/**
+ * pmixNotation - Pitch Pipe notation module (ADR-0025, docs/design/notation-module.md).
+ * Self-contained: reads no page globals, exports one object (module.exports for Node tests).
+ * Pure layer (atc-9vp3.1): pitch parse, MIDI, frequency, spelling, clefs, staff positions, ledgers,
+ * part ranges. Renderer (atc-9vp3.2): notationLayout (geometry), notationSvg (markup), and the thin
+ * DOM view createNotesView. Knows notes and geometry, never audio. Tone engine (atc-9vp3.3):
+ * createToneEngine on an injected AudioContext. Phase 1 source and controller (atc-9vp3.4, .5):
+ * notationPanel* state step and createNotesPanel. Every function is total: bad
+ * input returns null, '' or an empty list, never throws.
+ *
+ * Third-party notice: the clef and accidental outlines in NOTATION_GLYPHS are derived from the Bravura
+ * music font v1.482 (SMuFL glyphs gClef, fClef, accidentalSharp, accidentalFlat, accidentalNatural,
+ * accidentalDoubleSharp, accidentalDoubleFlat), https://github.com/steinbergmedia/bravura.
+ * Copyright (c) 2026, Steinberg Media Technologies GmbH (http://www.steinberg.net/), with Reserved Font
+ * Name "Bravura" (the font's own name table; FONTLOG.txt says 2015). Licensed under the SIL Open Font
+ * License, Version 1.1 (https://openfontlicense.org). The outlines are individual path data, not the font;
+ * the OFL text travels with them via this notice and docs/design/notation-module.md section 12.
+ */
+var pmixNotation = (function () {
+  'use strict';
+
+  var LETTERS = 'CDEFGAB';
+  var PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  var NATURAL_PCS = { 0: 'C', 2: 'D', 4: 'E', 5: 'F', 7: 'G', 9: 'A', 11: 'B' };
+  var SHARP_PCS = { 1: 'C', 3: 'D', 6: 'F', 8: 'G', 10: 'A' };
+  var FLAT_PCS = { 1: 'D', 3: 'E', 6: 'G', 8: 'A', 10: 'B' };
+  var ALTER_MARK = { '-2': 'bb', '-1': 'b', '0': '', '1': '#', '2': 'x' };
+  var ALTER_WORD = { '-2': ' double flat', '-1': ' flat', '0': '', '1': ' sharp', '2': ' double sharp' };
+  var ACC_NAME = { '-1': 'flat', '1': 'sharp' }; // no double accidentals in the UI (atc-9vp3.14)
+
+  function isInt(n) { return typeof n === 'number' && isFinite(n) && Math.floor(n) === n; }
+
+  /** Parses scientific pitch ('C#4', 'Bb3', 'Cx4', 'Cbb4', 'An4'); null when malformed. */
+  function notationParse(pitch) {
+    if (typeof pitch !== 'string') return null;
+    var m = /^([A-G])(#|x|bb|b|n)?(-?\d{1,2})$/.exec(pitch);
+    if (!m) return null;
+    var alter = { '#': 1, x: 2, b: -1, bb: -2, n: 0 }[m[2] || 'n'];
+    var octave = parseInt(m[3], 10);
+    return { letter: m[1], alter: alter, octave: octave, midi: notationMidi(m[1], alter, octave) };
+  }
+
+  /** MIDI number: C4 = 60, A4 = 69. */
+  function notationMidi(letter, alter, octave) {
+    if (typeof letter !== 'string' || !PC.hasOwnProperty(letter) || !isInt(alter) || !isInt(octave)) return null;
+    return 12 * (octave + 1) + PC[letter] + alter;
+  }
+
+  /** Frequency in Hz, equal temperament; a4 defaults to 440 when missing or not a number. */
+  function notationFreq(midi, a4) {
+    if (typeof midi !== 'number' || !isFinite(midi)) return null;
+    var ref = typeof a4 === 'number' && isFinite(a4) && a4 > 0 ? a4 : 440;
+    return ref * Math.pow(2, (midi - 69) / 12);
+  }
+
+  /** Spelling {letter, alter, octave} of a MIDI number; prefer 'flat' or (default) 'sharp'. */
+  function notationName(midi, prefer) {
+    if (!isInt(midi)) return null;
+    var pc = ((midi % 12) + 12) % 12;
+    var octave = Math.floor(midi / 12) - 1;
+    if (NATURAL_PCS[pc]) return { letter: NATURAL_PCS[pc], alter: 0, octave: octave };
+    if (prefer === 'flat') return { letter: FLAT_PCS[pc], alter: -1, octave: octave };
+    return { letter: SHARP_PCS[pc], alter: 1, octave: octave };
+  }
+
+  /** Pitch string from a spelling object: {B, -1, 3} -> 'Bb3'. */
+  function notationPitch(sp) {
+    if (!sp || typeof sp !== 'object' || !isInt(sp.alter) || !isInt(sp.octave)) return null;
+    if (typeof sp.letter !== 'string' || !PC.hasOwnProperty(sp.letter) || !ALTER_MARK.hasOwnProperty(String(sp.alter))) return null;
+    return sp.letter + ALTER_MARK[String(sp.alter)] + sp.octave;
+  }
+
+  /** Spoken name for aria labels: 'B flat 3', 'C sharp 4', 'middle C'. */
+  function notationSpoken(pitch) {
+    var p = notationParse(pitch);
+    if (!p) return null;
+    if (p.letter === 'C' && p.alter === 0 && p.octave === 4) return 'middle C';
+    return p.letter + ALTER_WORD[String(p.alter)] + ' ' + p.octave;
+  }
+
+  /** Diatonic step: octave * 7 + letter index (C = 0 .. B = 6). */
+  function notationStep(letter, octave) {
+    var i = typeof letter === 'string' && letter.length === 1 ? LETTERS.indexOf(letter) : -1;
+    if (i < 0 || !isInt(octave)) return null;
+    return octave * 7 + i;
+  }
+
+  // topStep: sounding diatonic step of the top line. treble F5 = 38, treble8 F4 = 31, bass A3 = 26.
+  // grand is one continuous scale from the treble top line; the bass top line (A3) sits at position 12.
+  var NOTATION_CLEFS = {
+    treble: { topStep: 38, lines: [0, 2, 4, 6, 8] },
+    treble8: { topStep: 31, lines: [0, 2, 4, 6, 8] },
+    bass: { topStep: 26, lines: [0, 2, 4, 6, 8] },
+    grand: { topStep: 38, lines: [0, 2, 4, 6, 8, 12, 14, 16, 18, 20] },
+  };
+
+  function clefOf(clef) { return typeof clef === 'string' && NOTATION_CLEFS.hasOwnProperty(clef) ? NOTATION_CLEFS[clef] : null; }
+
+  /** Half-spaces below the top line (0 top line, 8 bottom line; negative above). */
+  function notationStaffPos(step, clef) {
+    var c = clefOf(clef);
+    if (!c || !isInt(step)) return null;
+    return c.topStep - step;
+  }
+
+  /** Ledger line positions needed by a note at pos (even positions beyond the staff, nearest first). */
+  function notationLedgers(pos, clef) {
+    var c = clefOf(clef);
+    var out = [];
+    if (!c || !isInt(pos)) return out;
+    var p;
+    if (clef === 'grand') {
+      if (pos === 10) return [10];
+      var lowEdge = 20;
+      if (pos < 0) for (p = -2; p >= pos; p -= 2) out.push(p);
+      else if (pos > lowEdge) for (p = lowEdge + 2; p <= pos; p += 2) out.push(p);
+      return out;
+    }
+    if (pos < 0) for (p = -2; p >= pos; p -= 2) out.push(p);
+    else if (pos > 8) for (p = 10; p <= pos; p += 2) out.push(p);
+    return out;
+  }
+
+  var NOTATION_RANGES = { S: ['C4', 'A5'], A: ['F3', 'D5'], T: ['C3', 'G4'], B: ['E2', 'D4'] };
+
+  /** Clef for a part: S, A treble; T treble8; B bass; anything else grand. */
+  function notationPartClef(part) {
+    if (part === 'S' || part === 'A') return 'treble';
+    if (part === 'T') return 'treble8';
+    if (part === 'B') return 'bass';
+    return 'grand';
+  }
+
+  /** The natural notes of a part's range, low to high, as Note[] ({id, pitch}); [] for no part. */
+  function notationNotesFor(part) {
+    var r = typeof part === 'string' && NOTATION_RANGES.hasOwnProperty(part) ? NOTATION_RANGES[part] : null;
+    if (!r) return [];
+    var lo = notationParse(r[0]);
+    var hi = notationParse(r[1]);
+    var out = [];
+    for (var m = lo.midi; m <= hi.midi; m++) {
+      var sp = notationName(m);
+      if (sp.alter === 0) { var pitch = notationPitch(sp); out.push({ id: pitch, pitch: pitch }); }
+    }
+    return out;
+  }
+
+  /** Applies 'flat', 'sharp' or 'natural' (a semitone shift; anything else leaves the note) to a pitch string. */
+  function notationApplyModifier(pitch, mod) {
+    var p = notationParse(pitch);
+    if (!p) return null;
+    if (mod === 'sharp') return notationPitch(notationName(p.midi + 1, 'sharp'));
+    if (mod === 'flat') return notationPitch(notationName(p.midi - 1, 'flat'));
+    return notationPitch({ letter: p.letter, alter: mod === 'natural' ? 0 : p.alter, octave: p.octave });
+  }
+
+  // ---- Renderer (atc-9vp3.2) ----
+
+  // Glyph outlines in staff-space units: origin on the glyph's reference line (treble: the G line, bass:
+  // the F line, accidentals: the note's line), y down, one unit = one staff space. FILLED shapes (no stroke).
+  // Derived from Bravura v1.482 (SMuFL; Bravura unit = 1/1000 em, staff space = 250 units, x/250, y/-250,
+  // 3 decimals): gClef U+E050 (treble), fClef U+E062 (bass), accidentalSharp U+E262, accidentalFlat U+E260,
+  // accidentalNatural U+E261, See the licence
+  // notice in the file header. Only these seven outlines are embedded, never the font.
+  var NOTATION_GLYPHS = {
+    treble: 'M1.504 -1.66C1.496 -1.708 1.504 -1.712 1.528 -1.736C1.592 -1.796 1.676 -1.88 1.752 -1.964C2.088 -2.332 2.288 -2.808 2.288 -3.26C2.288 -3.608 2.192 -3.952 2.028 -4.192C1.968 -4.28 1.864 -4.392 1.82 -4.392C1.764 -4.392 1.64 -4.288 1.56 -4.2C1.264 -3.872 1.168 -3.372 1.168 -2.956C1.168 -2.724 1.196 -2.464 1.224 -2.3C1.232 -2.252 1.236 -2.244 1.188 -2.204C0.932 -1.992 0.656 -1.748 0.448 -1.492C0.172 -1.148 0 -0.776 0 -0.348C0 0.348 0.476 1.008 1.456 1.008C1.548 1.008 1.652 1 1.732 0.984C1.776 0.976 1.784 0.972 1.792 1.02C1.84 1.288 1.9 1.636 1.9 1.824C1.9 2.416 1.5 2.488 1.264 2.488C1.048 2.488 0.944 2.424 0.944 2.372C0.944 2.344 0.98 2.332 1.072 2.304C1.196 2.268 1.34 2.16 1.34 1.928C1.34 1.708 1.2 1.52 0.956 1.52C0.688 1.52 0.528 1.732 0.528 1.98C0.528 2.24 0.684 2.632 1.288 2.632C1.556 2.632 2.076 2.512 2.076 1.832C2.076 1.604 2.004 1.224 1.96 0.976C1.952 0.928 1.956 0.932 2.012 0.908C2.416 0.748 2.684 0.408 2.684 -0.044C2.684 -0.556 2.308 -1.008 1.72 -1.008C1.616 -1.008 1.616 -1.008 1.604 -1.08ZM1.88 -3.772C2.012 -3.772 2.12 -3.664 2.12 -3.444C2.12 -3.168 1.988 -2.912 1.676 -2.6C1.612 -2.536 1.516 -2.444 1.424 -2.364C1.396 -2.34 1.38 -2.344 1.372 -2.396C1.356 -2.5 1.348 -2.636 1.348 -2.764C1.348 -3.388 1.636 -3.772 1.88 -3.772ZM1.444 -1.048C1.456 -0.972 1.456 -0.976 1.384 -0.952C1.032 -0.832 0.804 -0.516 0.804 -0.176C0.804 0.184 0.992 0.44 1.264 0.532C1.296 0.544 1.344 0.556 1.372 0.556C1.404 0.556 1.42 0.536 1.42 0.512C1.42 0.484 1.388 0.472 1.36 0.46C1.192 0.388 1.072 0.216 1.072 0.032C1.072 -0.196 1.228 -0.368 1.472 -0.436C1.536 -0.452 1.544 -0.448 1.552 -0.404L1.752 0.788C1.76 0.832 1.756 0.832 1.696 0.844C1.632 0.856 1.552 0.864 1.472 0.864C0.772 0.864 0.32 0.476 0.32 -0.08C0.32 -0.316 0.36 -0.632 0.692 -1.008C0.932 -1.276 1.116 -1.424 1.304 -1.576C1.344 -1.608 1.352 -1.604 1.36 -1.56ZM1.72 -0.412C1.712 -0.46 1.716 -0.472 1.764 -0.468C2.088 -0.44 2.356 -0.168 2.356 0.184C2.356 0.436 2.204 0.64 1.98 0.752C1.932 0.776 1.924 0.776 1.916 0.728Z',
+    bass: 'M1.008 -1.048C0.312 -1.048 0 -0.54 0 -0.156C0 0.164 0.168 0.44 0.492 0.44C0.744 0.44 0.916 0.264 0.916 0.016C0.916 -0.24 0.728 -0.4 0.532 -0.4C0.424 -0.4 0.384 -0.372 0.332 -0.372C0.28 -0.372 0.268 -0.404 0.268 -0.444C0.268 -0.604 0.508 -0.896 0.916 -0.896C1.34 -0.896 1.524 -0.48 1.524 0.148C1.524 0.56 1.436 1.04 1.188 1.424C0.948 1.796 0.536 2.136 0.04 2.42C0.004 2.44 -0.02 2.46 -0.02 2.492C-0.02 2.516 -0.004 2.54 0.032 2.54C0.052 2.54 0.076 2.532 0.1 2.52C0.632 2.26 1.144 1.956 1.568 1.5C1.916 1.124 2.124 0.636 2.124 0.112C2.124 -0.584 1.7 -1.048 1.008 -1.048ZM2.516 -0.72C2.392 -0.72 2.296 -0.624 2.296 -0.5C2.296 -0.376 2.392 -0.28 2.516 -0.28C2.64 -0.28 2.736 -0.376 2.736 -0.5C2.736 -0.624 2.64 -0.72 2.516 -0.72ZM2.52 0.284C2.396 0.284 2.304 0.376 2.304 0.5C2.304 0.624 2.396 0.716 2.52 0.716C2.644 0.716 2.736 0.624 2.736 0.5C2.736 0.376 2.644 0.284 2.52 0.284Z',
+    sharp: 'M0.948 -0.472C0.976 -0.484 0.996 -0.516 0.996 -0.54V-0.824C0.996 -0.844 0.984 -0.856 0.968 -0.856C0.96 -0.856 0.956 -0.856 0.948 -0.852C0.948 -0.852 0.868 -0.82 0.848 -0.816C0.82 -0.816 0.792 -0.836 0.792 -0.868V-1.356C0.792 -1.38 0.768 -1.4 0.736 -1.4C0.696 -1.4 0.672 -1.38 0.672 -1.356V-0.836C0.668 -0.796 0.656 -0.744 0.62 -0.72C0.572 -0.692 0.436 -0.636 0.368 -0.62C0.332 -0.62 0.32 -0.668 0.32 -0.7V-1.18C0.32 -1.204 0.292 -1.224 0.264 -1.224C0.224 -1.224 0.2 -1.204 0.2 -1.18V-0.64C0.2 -0.584 0.176 -0.544 0.152 -0.532C0.128 -0.52 0.048 -0.488 0.048 -0.488C0.02 -0.48 0 -0.448 0 -0.424V-0.14C0 -0.116 0.012 -0.104 0.032 -0.104C0.036 -0.104 0.044 -0.108 0.048 -0.108C0.048 -0.108 0.108 -0.132 0.136 -0.148C0.14 -0.148 0.144 -0.152 0.148 -0.152C0.176 -0.152 0.2 -0.112 0.2 -0.08V0.316C0.2 0.36 0.18 0.396 0.156 0.408C0.132 0.416 0.048 0.452 0.048 0.452C0.02 0.46 0 0.492 0 0.516V0.8C0 0.824 0.012 0.836 0.032 0.836C0.036 0.836 0.044 0.832 0.048 0.832C0.048 0.832 0.104 0.808 0.14 0.796C0.144 0.792 0.148 0.792 0.152 0.792C0.18 0.792 0.2 0.836 0.2 0.856V1.348C0.2 1.372 0.224 1.392 0.252 1.392C0.292 1.392 0.32 1.372 0.32 1.348V0.792C0.32 0.74 0.34 0.712 0.36 0.704L0.604 0.604C0.608 0.604 0.616 0.6 0.62 0.6C0.652 0.6 0.672 0.648 0.672 0.672V1.172C0.672 1.196 0.696 1.216 0.724 1.216C0.768 1.216 0.792 1.196 0.792 1.172V0.604C0.792 0.572 0.808 0.524 0.836 0.512C0.864 0.5 0.948 0.468 0.948 0.468C0.976 0.456 0.996 0.424 0.996 0.4V0.116C0.996 0.096 0.984 0.084 0.968 0.084C0.96 0.084 0.956 0.084 0.948 0.088L0.844 0.128C0.82 0.128 0.792 0.104 0.792 0.056V-0.316C0.792 -0.344 0.812 -0.42 0.844 -0.432ZM0.672 0.18C0.648 0.26 0.46 0.34 0.368 0.34C0.344 0.34 0.324 0.332 0.32 0.32C0.312 0.304 0.308 0.216 0.308 0.12C0.308 -0.004 0.312 -0.144 0.32 -0.176C0.328 -0.244 0.512 -0.328 0.612 -0.328C0.64 -0.328 0.664 -0.32 0.672 -0.304C0.68 -0.284 0.688 -0.184 0.688 -0.076C0.688 0.032 0.68 0.144 0.672 0.18Z',
+    flat: 'M0.048 0.68C0.06 0.696 0.072 0.7 0.084 0.7C0.096 0.7 0.108 0.692 0.108 0.692C0.228 0.624 0.324 0.516 0.424 0.448C0.78 0.2 0.904 -0.044 0.904 -0.228C0.904 -0.456 0.728 -0.6 0.544 -0.612C0.516 -0.612 0.488 -0.608 0.46 -0.6C0.416 -0.588 0.368 -0.572 0.324 -0.544C0.3 -0.524 0.256 -0.488 0.236 -0.488C0.228 -0.488 0.224 -0.488 0.216 -0.492C0.188 -0.504 0.172 -0.532 0.172 -0.56C0.176 -0.648 0.2 -1.608 0.2 -1.688C0.2 -1.732 0.164 -1.756 0.124 -1.756C0.068 -1.756 0.004 -1.716 0 -1.644C0 -1.644 0.016 0.64 0.048 0.68ZM0.188 0.324C0.188 0.324 0.176 0.084 0.176 -0.076C0.176 -0.14 0.18 -0.188 0.184 -0.204C0.2 -0.252 0.304 -0.34 0.36 -0.372C0.396 -0.392 0.432 -0.4 0.464 -0.4C0.504 -0.4 0.54 -0.384 0.564 -0.356C0.604 -0.312 0.628 -0.244 0.628 -0.168C0.628 -0.096 0.608 -0.012 0.56 0.072C0.508 0.168 0.392 0.296 0.272 0.372C0.256 0.38 0.244 0.384 0.232 0.384C0.196 0.384 0.188 0.344 0.188 0.324Z',
+    natural: 'M0.564 -0.724C0.556 -0.724 0.552 -0.72 0.548 -0.72C0.548 -0.72 0.292 -0.628 0.188 -0.628C0.164 -0.628 0.148 -0.632 0.148 -0.648V-1.316C0.148 -1.344 0.124 -1.364 0.1 -1.364H0.048C0.02 -1.364 0 -1.344 0 -1.316V0.744C0 0.768 0.012 0.78 0.032 0.78C0.036 0.78 0.044 0.776 0.048 0.776C0.048 0.776 0.056 0.776 0.06 0.772C0.116 0.748 0.34 0.652 0.456 0.652C0.496 0.652 0.524 0.664 0.524 0.696V1.292C0.524 1.32 0.544 1.34 0.572 1.34H0.624C0.648 1.34 0.672 1.32 0.672 1.292V-0.716C0.672 -0.736 0.656 -0.748 0.64 -0.748C0.636 -0.748 0.628 -0.748 0.624 -0.744ZM0.148 -0.156C0.148 -0.212 0.392 -0.316 0.488 -0.316C0.512 -0.316 0.524 -0.312 0.524 -0.296V0.116C0.524 0.188 0.296 0.28 0.196 0.28C0.168 0.28 0.148 0.272 0.148 0.256Z',
+  };
+  // Glyph advance widths in staff spaces (Bravura bounding boxes), used to place an accidental left of its head.
+  var ACC_WIDTH = { sharp: 1, flat: 0.8, natural: 0.6 };
+  var LABEL_FS = 0.7;   // note-name label font size, in staff spaces
+  var LABEL_ACC = 0.32; // label accidental glyph scale, in staff spaces
+
+  /**
+   * Geometry for a tall, narrow staff (atc-9vp3.13). Units are px at staff space opts.space (default 40,
+   * 4x the first cut). One column per valid note, low to high, alternating between a left and a right
+   * column (side 'L' / 'R') so notes a second apart never overlap; every note sits at its true pitch height
+   * (y = top + pos*space/2), with its name label outward of its head. Everything is one SVG of
+   * geo.width x geo.height: the clef at the left, staff lines across, no sideways scrolling.
+   * opts.width raises the width above the natural one. Column: {id, pitch, midi, side, x, w, cx, y, pos,
+   * ledgers, accidental, role, hit:{x,y,w,h}, label:{text, accidental, x, w}}.
+   */
+  function notationLayout(notes, clef, opts) {
+    var c = clefOf(clef);
+    if (!c) return null;
+    var o = opts && typeof opts === 'object' ? opts : {};
+    var space = typeof o.space === 'number' && o.space > 0 ? o.space : 40;
+    var list = Array.isArray(notes) ? notes : [];
+    var items = [];
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i];
+      var p = n && typeof n === 'object' ? notationParse(n.pitch) : null;
+      if (!p) continue;
+      items.push({ n: n, p: p, pos: notationStaffPos(notationStep(p.letter, p.octave), clef) });
+    }
+    var bottomPos = clef === 'grand' ? 20 : 8;
+    var minPos = 0, maxPos = bottomPos;
+    items.forEach(function (it) { minPos = Math.min(minPos, it.pos); maxPos = Math.max(maxPos, it.pos); });
+    var top = (-minPos / 2 + 1) * space;
+    var height = top + (maxPos / 2 + 1) * space;
+    var clefW = 2.8 * space;
+    var letterW = 0.62 * LABEL_FS * space;
+    var labelW = letterW;
+    items.forEach(function (it) {
+      var acc = ACC_NAME[String(it.p.alter)];
+      if (acc) labelW = Math.max(labelW, letterW + (0.15 + ACC_WIDTH[acc] * LABEL_ACC) * space);
+    });
+    var half = 0.95 * space;                       // head plus ledger half width
+    var cxL = clefW + 0.3 * space + labelW + 0.2 * space + half;
+    var cxR = cxL + 1.4 * space;                   // heads 1.4 spaces apart: wider than a head, so a second apart never overlaps
+    var width = Math.max(cxR + half + 0.2 * space + labelW + 0.3 * space, typeof o.width === 'number' && isFinite(o.width) ? o.width : 0);
+    var mid = (cxL + cxR) / 2;
+    var cols = [];
+    items.forEach(function (it, k) {
+      var n = it.n, left = k % 2 === 0;
+      var acc = ACC_NAME[String(it.p.alter)] || null;
+      var lw = letterW + (acc ? (0.15 + ACC_WIDTH[acc] * LABEL_ACC) * space : 0);
+      var cx = left ? cxL : cxR, y = top + (it.pos * space) / 2;
+      var x = left ? clefW : mid, w = left ? mid - clefW : width - mid;
+      cols.push({
+        id: String(n.id !== undefined && n.id !== null ? n.id : n.pitch),
+        pitch: n.pitch,
+        midi: it.p.midi,
+        side: left ? 'L' : 'R',
+        x: x,
+        w: w,
+        cx: cx,
+        y: y,
+        pos: it.pos,
+        ledgers: notationLedgers(it.pos, clef),
+        accidental: acc,
+        role: n.role || null,
+        hit: { x: x, y: y - space / 2, w: w, h: space },
+        label: { text: it.p.letter, accidental: acc, x: left ? cx - half - 0.2 * space - lw : cx + half + 0.2 * space, w: lw },
+      });
+    });
+    // y = the line the clef glyph's origin sits on: treble G line (position 6), bass F line (position 2)
+    var clefs = clef === 'grand' ? [{ kind: 'treble', top: top, y: top + 3 * space }, { kind: 'bass', top: top + 6 * space, y: top + 7 * space }]
+      : clef === 'bass' ? [{ kind: 'bass', top: top, y: top + space }] : [{ kind: 'treble', top: top, y: top + 3 * space }];
+    return {
+      clef: clef,
+      space: space,
+      top: top,
+      width: width,
+      height: height,
+      clefW: clefW,
+      lines: c.lines.map(function (pp) { return top + (pp * space) / 2; }),
+      clefs: clefs,
+      columns: cols,
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  var INK = 'var(--nt-ink, var(--text))';
+  var BG = 'var(--nt-bg, var(--bg))';
+  var ON = 'var(--nt-on, var(--nt-ink, var(--text)))';
+  var START = 'var(--nt-start, var(--nt-ink, var(--text)))';
+
+  function linesMarkup(geo, w) {
+    return geo.lines.map(function (y) {
+      return '<line class="nt-line" x1="0" x2="' + w + '" y1="' + y + '" y2="' + y + '" stroke="' + INK + '" stroke-width="1"/>';
+    }).join('');
+  }
+
+  function glyph(name, x, y, s, extra) {
+    return '<path class="nt-glyph" d="' + NOTATION_GLYPHS[name] + '" transform="translate(' + x + ' ' + y + ') scale(' + s + ')" fill="' + INK + '"' + (extra || '') + '/>';
+  }
+
+  /**
+   * SVG markup string: one tall narrow SVG (clef, staff lines, ledger lines, heads, name labels), scaled
+   * to the container width with its aspect ratio, so the sheet scrolls vertically only.
+   * opts.on = id of the sounding note (class nt-on). Colours only from --nt-ink, --nt-bg, --nt-on,
+   * --nt-start. A re-skin replaces this function and CSS only.
+   */
+  function notationSvg(geo, opts) {
+    if (!geo || !Array.isArray(geo.columns)) return '';
+    var o = opts && typeof opts === 'object' ? opts : {};
+    var s = geo.space;
+    var clefs = '<g class="nt-clef" aria-hidden="true">' + geo.clefs.map(function (c) { return glyph(c.kind, 0.4 * s, c.y, s); }).join('') + '</g>';
+    var notes = geo.columns.map(function (c) {
+      var on = o.on !== undefined && o.on !== null && String(o.on) === c.id;
+      var cls = 'nt-note' + (on ? ' nt-on' : '') + (c.role === 'start' ? ' nt-start' : '');
+      var stroke = on ? ON : (c.role === 'start' ? START : INK);
+      var ledgers = c.ledgers.map(function (pp) {
+        var ly = geo.top + (pp * s) / 2;
+        return '<line class="nt-ledger" x1="' + (c.cx - 0.95 * s) + '" x2="' + (c.cx + 0.95 * s) + '" y1="' + ly + '" y2="' + ly + '" stroke="' + INK + '" stroke-width="1"/>';
+      }).join('');
+      var lb = c.label;
+      var label = '<text class="nt-label" aria-hidden="true" x="' + lb.x + '" y="' + c.y + '" dominant-baseline="central" font-size="' + LABEL_FS * s + '" font-weight="700" font-family="system-ui, sans-serif" fill="' + stroke + '">' + esc(lb.text) + '</text>' +
+        (lb.accidental ? glyph(lb.accidental, lb.x + 0.62 * LABEL_FS * s + 0.15 * s, c.y + 0.1 * s, LABEL_ACC * s, ' data-acc="1" fill-rule="nonzero"').replace('fill="' + INK + '"', 'fill="' + stroke + '"') : '');
+      var spoken = notationSpoken(c.pitch);
+      return '<g class="' + cls + '" role="button" tabindex="0" data-note-id="' + esc(c.id) + '" data-midi="' + c.midi + '" aria-label="' + esc(spoken) + '">' +
+        '<rect class="nt-hit" x="' + c.hit.x + '" y="' + c.hit.y + '" width="' + c.hit.w + '" height="' + c.hit.h + '" fill="' + BG + '" fill-opacity="0"/>' +
+        ledgers + label +
+        '<ellipse class="nt-head" cx="' + c.cx + '" cy="' + c.y + '" rx="' + 0.65 * s + '" ry="' + 0.5 * s + '" fill="' + stroke + '" stroke="' + stroke + '"' + (on ? ' stroke-width="3"' : '') + '/>' +
+        '</g>';
+    }).join('');
+    return '<div class="nt-staff" style="color:' + INK + '"><svg class="nt-notes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + geo.width + ' ' + geo.height + '" style="display:block;width:100%;max-width:' + geo.width + 'px;height:auto;margin:0 auto;touch-action:pan-y;background:' + BG + '">' +
+      linesMarkup(geo, geo.width) + clefs + notes + '</svg></div>';
+  }
+
+  /**
+   * View factory: renders into container, reports presses as note ids (opts.onPress / opts.onRelease on
+   * pointerdown / pointerup or pointercancel), draws one tall narrow staff (no sideways scroll), and removes every listener on destroy. Returns null without a container.
+   */
+  function createNotesView(container, opts) {
+    if (!container || typeof container.addEventListener !== 'function') return null;
+    var o = opts && typeof opts === 'object' ? opts : {};
+    var state = { notes: Array.isArray(o.notes) ? o.notes : [], clef: o.clef || 'treble', on: null, down: null, dead: false };
+    var layoutOpts = { width: o.width, space: o.space };
+
+    function render() {
+      if (state.dead) return;
+      container.innerHTML = notationSvg(notationLayout(state.notes, state.clef, layoutOpts), { on: state.on });
+    }
+    function idOf(ev) {
+      var t = ev && ev.target;
+      var el = t && typeof t.closest === 'function' ? t.closest('.nt-note') : null;
+      return el ? el.getAttribute('data-note-id') : null;
+    }
+    function onDown(ev) {
+      var id = idOf(ev);
+      if (id === null) return;
+      state.down = id;
+      if (typeof o.onPress === 'function') o.onPress(id);
+    }
+    function onUp() {
+      if (state.down === null) return;
+      var id = state.down;
+      state.down = null;
+      if (typeof o.onRelease === 'function') o.onRelease(id);
+    }
+    container.addEventListener('pointerdown', onDown);
+    container.addEventListener('pointerup', onUp);
+    container.addEventListener('pointercancel', onUp);
+    render();
+    return {
+      setNotes: function (n) { state.notes = Array.isArray(n) ? n : []; render(); },
+      setClef: function (c) { if (clefOf(c)) { state.clef = c; render(); } },
+      setOn: function (id) { state.on = id === undefined ? null : id; render(); },
+      destroy: function () {
+        if (state.dead) return;
+        state.dead = true;
+        container.removeEventListener('pointerdown', onDown);
+        container.removeEventListener('pointerup', onUp);
+        container.removeEventListener('pointercancel', onUp);
+        container.innerHTML = '';
+      },
+    };
+  }
+
+  // ---- Tone engine (atc-9vp3.3): audio only, knows MIDI numbers, never staffs or DOM ----
+
+  var TONE_ATTACK = 0.01;       // s: gain ramp from 0, no click
+  var TONE_RELEASE = 0.12;      // s: release length (setTargetAtTime, three time constants)
+  var TONE_TAP_MIN = 0.3;       // s: a press shorter than this still sounds TONE_TAP_SOUND
+  var TONE_TAP_SOUND = 1.0;     // s
+  var TONE_HOLD_MAX = 4;        // s: a hold stops here
+  var TONE_PIPE_HARMONICS = [0, 1, 0.5, 0.3, 0.15, 0.08]; // index = harmonic number (0 = DC, unused)
+  var TONE_TIMBRES = { pipe: 1, sine: 1, triangle: 1 };
+
+  /**
+   * One-voice tone engine on an injected AudioContext (opts.getContext, called inside the press so the
+   * host may create it there). Output goes OscillatorNode -> envelope gain -> level gain -> ctx.destination,
+   * bypassing the track and master chains. Never closes the context. start(midi) returns a handle or null.
+   */
+  function createToneEngine(opts) {
+    var o = opts && typeof opts === 'object' ? opts : {};
+    var a4 = typeof o.a4 === 'number' && isFinite(o.a4) ? o.a4 : 440;
+    var timbre = TONE_TIMBRES.hasOwnProperty(o.timbre) ? o.timbre : 'pipe';
+    var level = typeof o.gain === 'number' && o.gain > 0 ? o.gain : 0.25;
+    var voice = null;
+    var dead = false;
+
+    function release(v, at) {
+      if (!v || v.done) return;
+      v.done = true;
+      try {
+        var g = v.env.gain;
+        if (typeof g.cancelAndHoldAtTime === 'function') g.cancelAndHoldAtTime(at);
+        else { g.cancelScheduledValues(at); g.setValueAtTime(typeof g.value === 'number' ? g.value : 1, at); }
+        g.setTargetAtTime(0, at, TONE_RELEASE / 3);
+        v.osc.stop(at + TONE_RELEASE + 0.1);
+      } catch (e) { /* node already stopped */ }
+      if (voice === v) voice = null;
+    }
+    function nowOf(ctx) { return typeof ctx.currentTime === 'number' ? ctx.currentTime : 0; }
+
+    return {
+      start: function (midi) {
+        if (dead || !isInt(midi)) return null;
+        var ctx;
+        try { ctx = typeof o.getContext === 'function' ? o.getContext() : null; } catch (e) { return null; }
+        if (!ctx || typeof ctx.createOscillator !== 'function') return null;
+        try {
+          if (voice) release(voice, nowOf(ctx));
+          if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+            var r = ctx.resume(); // not awaited (atc-tty9.16): a suspended context sounds as soon as it resumes
+            if (r && typeof r.catch === 'function') r.catch(function () {});
+          }
+          var t = nowOf(ctx);
+          var osc = ctx.createOscillator();
+          var env = ctx.createGain();
+          var lvl = ctx.createGain();
+          if (timbre === 'pipe' && typeof ctx.createPeriodicWave === 'function' && typeof osc.setPeriodicWave === 'function') {
+            var im = new Float32Array(TONE_PIPE_HARMONICS);
+            osc.setPeriodicWave(ctx.createPeriodicWave(new Float32Array(im.length), im));
+          } else osc.type = timbre === 'triangle' ? 'triangle' : 'sine';
+          osc.frequency.value = notationFreq(midi, a4);
+          env.gain.setValueAtTime(0, t);
+          env.gain.linearRampToValueAtTime(1, t + TONE_ATTACK);
+          env.gain.setTargetAtTime(0, t + TONE_HOLD_MAX, TONE_RELEASE / 3); // the hold cap
+          lvl.gain.value = level;
+          osc.connect(env);
+          env.connect(lvl);
+          lvl.connect(ctx.destination);
+          osc.onended = function () { try { osc.disconnect(); env.disconnect(); lvl.disconnect(); } catch (e) { /* gone */ } };
+          osc.start(t);
+          osc.stop(t + TONE_HOLD_MAX + TONE_RELEASE + 0.1);
+          voice = { midi: midi, osc: osc, env: env, ctx: ctx, t0: t, done: false };
+          return voice;
+        } catch (e) { return null; }
+      },
+      /** Release on pointer up: a tap under 300 ms still sounds 1.0 s. */
+      stop: function (h) {
+        if (!h || h.done) return;
+        var now = nowOf(h.ctx);
+        release(h, now - h.t0 < TONE_TAP_MIN ? h.t0 + TONE_TAP_SOUND : now);
+      },
+      stopAll: function () { if (voice) release(voice, nowOf(voice.ctx)); },
+      setA4: function (hz) { if (typeof hz === 'number' && isFinite(hz) && hz >= 415 && hz <= 466) a4 = hz; },
+      setTimbre: function (t) { if (TONE_TIMBRES.hasOwnProperty(t)) timbre = t; },
+      dispose: function () { if (voice) release(voice, nowOf(voice.ctx)); dead = true; },
+    };
+  }
+
+  // ---- Phase 1 note source and controller state (atc-9vp3.4) ----
+
+  var PART_NAMES = { S: 'Soprano', A: 'Alto', T: 'Tenor', B: 'Bass' };
+  var MODS = ['flat', 'natural', 'sharp'];
+  var MOD_LABEL = { flat: 'Flat', natural: 'Natural', sharp: 'Sharp' };
+
+  function validPart(p) { return typeof p === 'string' && NOTATION_RANGES.hasOwnProperty(p) ? p : null; }
+  function stateFor(part, notes, modifier, presses, a4) {
+    var list = Array.isArray(notes) ? notes : notationNotesFor(part);
+    return {
+      part: part,
+      notes: list,
+      clef: part ? notationPartClef(part) : 'treble',
+      showStaff: list.length > 0,
+      modifier: modifier,
+      presses: presses,
+      a4: a4,
+      customNotes: Array.isArray(notes),
+    };
+  }
+
+  /** Initial controller state: {part, notes, clef, showStaff, modifier, presses, a4}. part null shows the chips only. */
+  function notationPanelState(options) {
+    var o = options && typeof options === 'object' ? options : {};
+    return stateFor(validPart(o.part), Array.isArray(o.notes) ? o.notes : null, 'natural', 0, typeof o.a4 === 'number' ? o.a4 : 440);
+  }
+
+  /** A part chip change: the part's range in its clef (a custom notes list is kept). */
+  function notationPanelSetPart(s, part) {
+    if (!s || typeof s !== 'object') return null;
+    var p = validPart(part);
+    return stateFor(p, s.customNotes ? s.notes : null, s.modifier, s.presses, s.a4);
+  }
+
+  /** A modifier chip change; anything but flat, natural or sharp gives natural. */
+  function notationPanelSetModifier(s, mod) {
+    if (!s || typeof s !== 'object') return null;
+    var next = stateFor(s.part, s.customNotes ? s.notes : null, MODS.indexOf(mod) >= 0 ? mod : 'natural', s.presses, s.a4);
+    return next;
+  }
+
+  /**
+   * A press on note id (its pitch): applies the one-shot modifier, then returns the modifier to natural.
+   * Result {state, pitch, midi, freq, spoken, readout} or null for an unknown note.
+   */
+  function notationPanelPress(s, id, a4) {
+    if (!s || !Array.isArray(s.notes)) return null;
+    var hit = null;
+    for (var i = 0; i < s.notes.length; i++) if (s.notes[i] && String(s.notes[i].id) === String(id)) hit = s.notes[i];
+    if (!hit) return null;
+    var pitch = notationApplyModifier(hit.pitch, s.modifier);
+    var p = notationParse(pitch);
+    if (!p) return null;
+    var hz = typeof a4 === 'number' && isFinite(a4) ? a4 : s.a4;
+    var freq = notationFreq(p.midi, hz);
+    var next = stateFor(s.part, s.customNotes ? s.notes : null, 'natural', s.presses + 1, s.a4);
+    return { state: next, pitch: pitch, midi: p.midi, freq: freq, spoken: notationSpoken(pitch), readout: pitch + '  ' + freq.toFixed(1) + ' Hz' };
+  }
+
+  // Glyph chips (atc-9vp3.14): one viewBox for all three so the glyphs share a baseline (origin on the note line).
+  var MOD_VIEW = { flat: '-0.05 -1.8 1 3.25', natural: '-0.15 -1.8 1 3.25', sharp: '-0.05 -1.8 1.1 3.25' };
+  function modGlyph(m, on) {
+    return '<svg class="nt-chip-glyph" aria-hidden="true" focusable="false" viewBox="' + MOD_VIEW[m] + '" width="14" height="32" style="display:block;margin:auto"><path d="' + NOTATION_GLYPHS[m] + '" fill="currentColor"/></svg>';
+  }
+
+  function chip(attr, val, label, on, extra) {
+    return '<button type="button" role="radio" class="nt-chip' + (on ? ' nt-chip-on' : '') + '" ' + attr + '="' + val + '" aria-checked="' + (on ? 'true' : 'false') + '"' +
+      (extra || '') + ' style="min-width:44px;min-height:44px;padding:0 12px">' + label + '</button>'; // colours, ring and radius come from the app CSS (.nt-chip, .nt-chip-on = the pan-button styles)
+  }
+
+  /** The S A T B and flat / natural / sharp radiogroups for a controller state. */
+  function notationPanelChips(s) {
+    var st = s && typeof s === 'object' ? s : notationPanelState({});
+    var parts = ['S', 'A', 'T', 'B'].map(function (p) { return chip('data-part', p, p, st.part === p, ' aria-label="' + PART_NAMES[p] + '"'); }).join('');
+    var mods = MODS.map(function (m) { return chip('data-mod', m, modGlyph(m, st.modifier === m), st.modifier === m, ' aria-label="' + MOD_LABEL[m] + '"'); }).join('');
+    return '<div class="nt-parts segmented-control" role="radiogroup" aria-label="Part" style="display:flex;margin-bottom:8px;grid-column:1/-1;grid-row:1">' + parts + '</div>' +
+      '<div class="nt-mods segmented-control" role="radiogroup" aria-label="Next note" style="display:flex;flex-direction:column;align-self:start;grid-column:1;grid-row:2">' + mods + '</div>';
+  }
+
+  /**
+   * Controller: chips, staff view, tone engine and readout inside container. options: getContext (required),
+   * part, notes, a4, timbre. Returns null without a DOM container or getContext.
+   * API: setPart, setNotes, setA4, setTimbre, on('notePress'|'noteRelease', fn) -> off, stats, stop, destroy.
+   */
+  function createNotesPanel(container, options) {
+    var o = options && typeof options === 'object' ? options : {};
+    if (!container || typeof container.querySelector !== 'function' || typeof o.getContext !== 'function') return null;
+    var st = notationPanelState(o);
+    var handlers = { notePress: [], noteRelease: [] };
+    var tone = createToneEngine({ getContext: o.getContext, a4: st.a4, timbre: o.timbre });
+    var voice = null;
+    var dead = false;
+    container.innerHTML = '<div class="nt-panel" style="display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:8px"><div class="nt-controls" style="display:contents"></div><div class="nt-view" style="grid-column:2;grid-row:2;min-width:0"></div>' +
+      '<div class="nt-readout" data-testid="notes-readout" aria-live="polite" style="grid-column:1/-1;min-height:1.5em;margin-top:8px"></div></div>';
+    var controls = container.querySelector('.nt-controls');
+    var viewEl = container.querySelector('.nt-view');
+    var readout = container.querySelector('.nt-readout');
+    var view = createNotesView(viewEl, {
+      notes: st.notes, clef: st.clef, onPress: press, onRelease: release,
+    });
+
+    function emit(kind, data) { handlers[kind].slice().forEach(function (f) { try { f(data); } catch (e) { /* a listener must not break the panel */ } }); }
+    function draw() {
+      controls.innerHTML = notationPanelChips(st);
+      viewEl.style.display = st.showStaff ? '' : 'none';
+      if (view) { view.setNotes(st.notes); view.setClef(st.clef); }
+    }
+    function press(id) {
+      var r = notationPanelPress(st, id, st.a4);
+      if (!r) return;
+      st = r.state;
+      voice = tone.start(r.midi);
+      readout.textContent = r.readout;
+      readout.setAttribute('aria-label', r.spoken + ', ' + r.freq.toFixed(1) + ' hertz');
+      controls.innerHTML = notationPanelChips(st);
+      if (view) view.setOn(id);
+      emit('notePress', { id: id, midi: r.midi, pitch: r.pitch, name: r.pitch, spoken: r.spoken, freq: r.freq });
+    }
+    function release(id) {
+      tone.stop(voice);
+      voice = null;
+      if (view) view.setOn(null);
+      emit('noteRelease', { id: id });
+    }
+    function onClick(ev) {
+      var t = ev && ev.target;
+      var el = t && typeof t.closest === 'function' ? t.closest('[data-part],[data-mod]') : null;
+      if (!el) return;
+      if (el.getAttribute('data-part')) { st = notationPanelSetPart(st, el.getAttribute('data-part')); tone.stopAll(); }
+      else st = notationPanelSetModifier(st, el.getAttribute('data-mod'));
+      draw();
+    }
+    container.addEventListener('click', onClick);
+    draw();
+
+    return {
+      setPart: function (p) { if (dead) return; st = notationPanelSetPart(st, p); draw(); },
+      setNotes: function (n) { if (dead) return; st = stateFor(st.part, Array.isArray(n) ? n : null, st.modifier, st.presses, st.a4); draw(); },
+      setA4: function (hz) { st.a4 = typeof hz === 'number' && hz >= 415 && hz <= 466 ? hz : st.a4; tone.setA4(st.a4); },
+      setTimbre: function (t) { tone.setTimbre(t); },
+      on: function (kind, fn) {
+        if (!handlers.hasOwnProperty(kind) || typeof fn !== 'function') return function () {};
+        handlers[kind].push(fn);
+        return function () { handlers[kind] = handlers[kind].filter(function (f) { return f !== fn; }); };
+      },
+      stats: function () { return { part: st.part, presses: st.presses }; },
+      stop: function () { tone.stopAll(); voice = null; if (view) view.setOn(null); },
+      destroy: function () {
+        if (dead) return;
+        dead = true;
+        tone.dispose();
+        container.removeEventListener('click', onClick);
+        if (view) view.destroy();
+        handlers = { notePress: [], noteRelease: [] };
+        container.innerHTML = '';
+      },
+    };
+  }
+
+  /** Whether the playback page shows the Pitch Pipe button: the playback page, not in Layout or Sync. */
+  function notationEntryShown(s) {
+    if (!s || typeof s !== 'object') return false;
+    return s.page === 'play' && s.scoreMode !== 'layout' && s.scoreMode !== 'sync';
+  }
+
+  return {
+    notationParse: notationParse,
+    notationMidi: notationMidi,
+    notationFreq: notationFreq,
+    notationName: notationName,
+    notationPitch: notationPitch,
+    notationSpoken: notationSpoken,
+    notationStep: notationStep,
+    NOTATION_CLEFS: NOTATION_CLEFS,
+    notationStaffPos: notationStaffPos,
+    notationLedgers: notationLedgers,
+    NOTATION_RANGES: NOTATION_RANGES,
+    notationPartClef: notationPartClef,
+    notationNotesFor: notationNotesFor,
+    notationApplyModifier: notationApplyModifier,
+    NOTATION_GLYPHS: NOTATION_GLYPHS,
+    notationLayout: notationLayout,
+    notationSvg: notationSvg,
+    createNotesView: createNotesView,
+    createToneEngine: createToneEngine,
+    notationPanelState: notationPanelState,
+    notationPanelSetPart: notationPanelSetPart,
+    notationPanelSetModifier: notationPanelSetModifier,
+    notationPanelPress: notationPanelPress,
+    notationPanelChips: notationPanelChips,
+    createNotesPanel: createNotesPanel,
+    notationEntryShown: notationEntryShown,
+  };
+})();
+
+if (typeof module !== 'undefined') module.exports = pmixNotation;
+</script>
+<script>
+/**
+ * Pitch Pipe host (atc-9vp3.5, ADR-0025, docs/design/notation-module.md section 7): the playback page's
+ * transport-area button, the #notes-sheet bottom sheet, the tone context and the one notesPanel activity record.
+ * Glue only: staff, tones and state live in notation.js (pmixNotation).
+ */
+function initPitchPipe_() {
+  var btn = document.querySelector('[data-testid="pitchpipe-btn"]');
+  var sheet = document.getElementById('notes-sheet');
+  var body = document.getElementById('notes-body');
+  if (!btn || !sheet || !body || typeof pmixNotation === 'undefined') return;
+  var panel = null, openedAt = 0, presses = 0, part = null;
+
+  function scoreMode() { try { return typeof window.pmixScoreMode_ === 'function' ? window.pmixScoreMode_() : 'play'; } catch (e) { return 'play'; } }
+  function focusPart() {
+    try {
+      var info = window.pmixScoreTracks_ ? window.pmixScoreTracks_() : null, id = window.pmixFocusTrackId_ ? window.pmixFocusTrackId_() : '';
+      var t = info && info.tracks ? info.tracks.filter(function (x) { return x.id === id; })[0] : null;
+      return t ? scorePartOf(t.name) : null;
+    } catch (e) { return null; }
+  }
+  function applyEntry() {
+    var shown = pmixNotation.notationEntryShown({ page: 'play', scoreMode: scoreMode() }); // the button lives in the transport card
+    btn.classList.toggle('hidden', !shown);
+    if (!shown) close();
+  }
+  function open() {
+    if (panel) return;
+    part = focusPart();
+    presses = 0;
+    openedAt = Date.now();
+    panel = pmixNotation.createNotesPanel(body, {
+      part: part,
+      getContext: function () { AudioEngine.init(); return AudioEngine.getContext(); }, // inside the press: creates and resumes the context
+    });
+    if (!panel) return;
+    panel.on('notePress', function () { presses++; });
+    sheet.classList.remove('hidden');
+    document.getElementById('notes-close-btn').focus();
+  }
+  function close() {
+    if (!panel) return;
+    var stats = panel.stats();
+    panel.destroy();
+    panel = null;
+    sheet.classList.add('hidden');
+    try { logActivity_('notesPanel', { part: stats.part || '', presses: presses, openMs: Date.now() - openedAt }); } catch (e) { /* logging never blocks */ }
+    if (!btn.classList.contains('hidden') && typeof btn.focus === 'function') btn.focus();
+  }
+  btn.addEventListener('click', open);
+  document.getElementById('notes-close-btn').addEventListener('click', close);
+  document.getElementById('notes-overlay').addEventListener('click', close);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && panel) { e.stopImmediatePropagation(); close(); } }, true);
+  document.addEventListener('pmix-score-mode', applyEntry);
+  applyEntry();
+}
+document.addEventListener('DOMContentLoaded', initPitchPipe_);
 </script>
 <script>
 /**
@@ -8094,6 +8844,18 @@ const UI = (() => {
     </div>
   </div>
 
+  <!-- Pitch Pipe (atc-9vp3.5): bottom sheet over the playback page; the mix keeps playing -->
+  <div id="notes-sheet" data-testid="notes-sheet" class="folder-picker pitchpipe-sheet hidden" role="dialog" aria-modal="false" aria-labelledby="notes-title">
+    <div class="picker-overlay" id="notes-overlay"></div>
+    <div class="picker-dialog pitchpipe-dialog">
+      <div class="picker-header">
+        <h3 id="notes-title">Pitch Pipe</h3>
+        <button id="notes-close-btn" data-testid="notes-close-btn" class="btn btn-close" aria-label="Close">&#10005;</button>
+      </div>
+      <div id="notes-body" data-testid="notes-body" class="picker-body"></div>
+    </div>
+  </div>
+
   <div id="menu-modal" data-testid="menu-modal" class="folder-picker hidden" role="dialog" aria-modal="true" aria-labelledby="menu-title">
     <div class="picker-overlay" id="menu-overlay"></div>
     <div class="picker-dialog schedule-dialog">
@@ -8113,6 +8875,10 @@ const UI = (() => {
           <label class="menu-check" title="Play and Sync: the score scrolls sideways only, the next line sliding in from the right"><input type="checkbox" id="score-ribbon-toggle" data-testid="score-ribbon-toggle" checked> Ribbon</label>
         </div>
         <div class="menu-row">
+          <label id="score-ribbon-shiftlbl" class="score-react" title="This song only, saved with the score for everyone: slides the Ribbon sideways under the playhead bar while playing. Playhead widths; positive moves the music left, about 0.5 puts it half a bar left; 0 is off">Ribbon shift
+            <input id="score-ribbon-shift" data-testid="score-ribbon-shift" type="number" min="-2" max="2" step="0.05" value="0"></label>
+        </div>
+        <div class="menu-row">
           <label class="menu-check" title="Page view: crop each page from 0.5 in left of its first mark to 0.5 in right of its first end-of-line mark, so the music is larger"><input type="checkbox" id="score-crop-toggle" data-testid="score-crop-toggle"> Crop width</label>
         </div>
         <div class="menu-row">
@@ -8123,8 +8889,21 @@ const UI = (() => {
         <p class="menu-reason" id="menu-score-reason" data-testid="menu-score-reason" role="status"></p>
         <h4 class="menu-section">Folder</h4>
         <div class="menu-row"><a class="btn menu-drive" data-testid="menu-drive" target="_blank" rel="noopener" title="Open this folder in Google Drive"><span class="menu-icon" data-testid="menu-drive-icon" aria-hidden="true">&#128194;</span> Open Drive folder</a></div>
+        <div class="menu-row" id="menu-health-row" data-testid="menu-health-row" hidden><button type="button" id="menu-health-btn" data-testid="menu-health-btn" class="btn" title="Admin: check every music folder's score against its audio and TEST"><span class="menu-icon" aria-hidden="true">&#129657;</span> Score health</button></div>
         <div class="menu-row"><button type="button" id="menu-copy-link" data-testid="menu-copy-link" class="btn" disabled title="Copies a link to this practice setup"><span class="menu-icon" data-testid="menu-copy-icon" aria-hidden="true">&#128279;</span> Copy Link</button> <span class="menu-reason">Coming soon</span></div>
       </div>
+    </div>
+  </div>
+
+  <div id="health-modal" data-testid="health-modal" class="folder-picker hidden" role="dialog" aria-modal="true" aria-labelledby="health-title">
+    <div class="picker-overlay" id="health-overlay"></div>
+    <div class="picker-dialog schedule-dialog">
+      <div class="picker-header">
+        <h3 id="health-title">Score health</h3>
+        <button id="health-close-btn" data-testid="health-close-btn" class="btn btn-close" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="health-bar"><span id="health-summary" data-testid="health-summary" role="status"></span><button type="button" id="health-rescan" data-testid="health-rescan" class="btn">Rescan</button></div>
+      <div id="health-list" data-testid="health-list" class="schedule-body"></div>
     </div>
   </div>
 
@@ -8858,6 +9637,8 @@ function scoreTrimToBudget(live, visible, budgetPx, incomingPx) {
   return out;
 }
 
+</script>
+<script>
 // ---- Follow + edit pure logic (bd atc-ore.4 AC rev 2, atc-ore.5 AC rev 3). ASCII only. ----
 // A mark is {t (s at 1.0x), page (1-based), x, y (PDF pt from the page top-left)}; the runtime adds an id that is never stored.
 var SCORE_SAME_LINE_PT = 72;
@@ -8875,7 +9656,7 @@ var SCORE_MARK_FIELDS_ = ['t', 'measure', 'note', 'label', 'targetMarkId']; // a
 var SCORE_MARK_ID_RE_ = /^[A-Za-z0-9_-]{1,40}$/;
 var SCORE_MARK_KNOWN_ = ['id', 'kind', 'page', 'x', 'y', 'box', 'partY'].concat(SCORE_MARK_FIELDS_);
 var SCORE_TOP_KNOWN_ = ['version', 'pdfId', 'pdfModified', 'pdfName', 'marks', 'offsets', 'view', 'updatedBy', 'updatedAt', 'revision'];
-var SCORE_VIEW_KNOWN_ = ['offY', 'heightIn'];
+var SCORE_VIEW_KNOWN_ = ['offY', 'heightIn', 'ribbonShift'];
 /** adr/0019 (version 3): keys this page does not manage are carried through unchanged (deep copy): from src onto dst, skipping the known names. */
 function scoreCarryUnknown_(src, dst, known) {
   if (!src || typeof src !== 'object') return dst;
@@ -9201,6 +9982,8 @@ function scoreFollowView(marks, t, geo, cur, opt, offsets, trackId) {
   if (!marks.length || tv.v < 0) return tv;
   return scoreShiftView(tv, scoreOffsetDyAt(offsets, trackId, marks[tv.v].t), marks, geo);
 }
+</script>
+<script>
 // ---- Ribbon follow (branch continuous-scroll): in play mode the score only scrolls horizontally ----
 /** Each derived line becomes a full-width slice of its page (brace, clef and key signature included) and the slices lie
  *  end to end in page, then y, order. The slice's window is the view height with the line's y (plus the focus
@@ -9510,6 +10293,12 @@ function scoreRibbonStripHit(layout, geo, marks, rx, ry, sync) {
   });
   return best;
 }
+/** atc-i0f2 slice 2: the copy of mark on the ribbon that is pass n (the Sync target's entry pass); with no such copy, the one nearest `near` (default the first). */
+function scoreRibbonPosPass(layout, geo, mark, n, near, strip) {
+  var all = scoreRibbonPosAll(layout, geo, mark, strip), i;
+  for (i = 0; i < all.length; i++) if (all[i].n === n) return all[i];
+  return scoreRibbonPos(layout, geo, mark, near, strip);
+}
 /** atc-tty9.9: where a mark sits on the ribbon, {x, y} in view px, or null when it is off its line's slice (past the EOL cut or outside the window).
  *  The slice is the one of the mark's page whose line start is nearest in y. */
 function scoreRibbonPos(layout, geo, mark, near, strip) {
@@ -9660,6 +10449,7 @@ function scoreRibbonPanOf(offY, layout) {
   return lim === null ? p : scoreClamp(p, scoreRibbonPanMin(layout), lim);
 }
 var SCORE_RIBBON_ANCHOR_X = 0.40; // the position bar's centre (atc-tty9.21)
+var SCORE_RIBBON_SYNC_LIMIT_X = 0.50; // atc-i0f2: Sync never scrolls the target mark left of the screen centre
 var SCORE_RIBBON_BAR_X0 = 0.30, SCORE_RIBBON_BAR_X1 = 0.50;
 /** The ribbon position bar's x extent in view px: 30% to 50% of the width, centred on the anchor. */
 function scoreRibbonBar(viewW, cx) {
@@ -9710,23 +10500,19 @@ function scoreRibbonGlide(from, to, p) {
   var q = scoreClamp(p, 0, 1);
   return from + (to - from) * q * q * (3 - 2 * q);
 }
-/** atc-elfg.6: one ribbon frame's decisions, no drawing and no state. inp = { L, geo, marks, t, edit, playing, selId, selAt, prevSx (or null), hold ({sx} or null), scrub (or null), dpr, offY, gen }.
- *  Returns { rx, sx, playheadX, selAt, page, held, strip, bar, bar2, cw, ch, key }; the caller writes selAt and sx back and skips the paint when key (and the marks and layout) are unchanged. */
+/** atc-elfg.6: one ribbon frame's decisions, no drawing and no state. inp = { L, geo, marks, t, edit, playing, selId, prevSx (or null), hold ({sx} or null), scrub (or null), pinRx / limitRx (Sync: the target mark's ribbon x; limitRx also while playing) / limitAx (the limit's screen fraction, default the cursor bar; atc-i0f2: Sync passes 0.5), dpr, offY, gen }.
+ *  Returns { rx, sx, playheadX, page, held, strip, bar, bar2, cw, ch, key }; the caller writes sx back and skips the paint when key (and the marks and layout) are unchanged. */
 function scoreRibbonFrame(inp) {
   var L = inp.L, geo = inp.geo, marks = inp.marks, W = geo.W, dpr = inp.dpr, max = Math.max(0, L.width - W), edit = !!inp.edit, playing = !!inp.playing;
-  var rx = scoreRibbonX(marks, inp.t, L), sx = scoreRibbonScroll(rx, L, W), selAt = inp.selId ? inp.selAt : null;
-  if (edit && !playing) { // atc-tty9.28, atc-s1zu: Edit paused does not follow; the selected mark sits at the now bar, else the view holds (a tap or drag of a mark must not move the view under the finger)
-    var sm = null, i;
-    for (i = 0; i < marks.length; i++) if (marks[i].id === inp.selId) { sm = marks[i]; break; }
-    var sp = sm && scoreRibbonPos(L, geo, sm, (inp.prevSx || 0) + SCORE_RIBBON_ANCHOR_X * W, true); // atc-tty9.35: the copy nearest the now bar
-    if (sp && selAt !== inp.selId) { sx = scoreRibbonScroll(sp.x, L, W); selAt = inp.selId; } // only when the selection changes, so a drag of the mark is not chased
-    else if (inp.prevSx !== null) sx = scoreClamp(inp.prevSx, 0, max);
-  }
-  var hold = (playing || !edit) && inp.hold && typeof inp.hold.sx === 'number' ? inp.hold : null; // atc-hc3l: playing, the user's sideways drag holds the view; else the view follows the cursor
+  var rx = scoreRibbonX(marks, inp.t, L), shiftPx = Number(inp.shiftPx) || 0, rxp = rx + shiftPx; // atc-i0f2 slice 3: rxp is the corrected playhead (atc-7vo2 Ribbon shift, always, paused too); the follow, the pin and the bar all use it
+  var sx = scoreRibbonScroll(rxp, L, W);
+  if (edit && !playing && inp.prevSx !== null) sx = scoreClamp(inp.prevSx, 0, max); // atc-tty9.28, atc-s1zu: Edit paused does not follow; the view holds (a tap or drag of a mark must not move the view under the finger). atc-i0f2 slice 4: the old recentre on a new selection is gone (a Sync target pins the view)
+  var hold = (playing || !edit || (inp.hold && inp.hold.keep)) && inp.hold && typeof inp.hold.sx === 'number' ? inp.hold : null; // atc-hc3l: playing, the user's sideways drag holds the view; else the view follows the cursor
   if (hold) sx = scoreClamp(hold.sx, 0, max);
+  if (!hold && typeof inp.limitRx === 'number') { sx = Math.min(sx, scoreRibbonScroll(inp.limitRx, L, W, inp.limitAx)); } // atc-29mt (owner 2026-11-23): Sync never scrolls past the selected or held target: the follow scroll stops with the mark at the cursor bar (the playhead may go on, its bar keeps its true x); a user hold is the user's
   if (typeof inp.pinRx === 'number') { // atc-rlep.2 J4: Sync pins the view to the target mark: the follow scroll, or further right so the mark is never right of 65 percent; a mark behind the playhead is shown at the anchor
-    var fsx0 = scoreRibbonScroll(rx, L, W);
-    sx = scoreClamp(inp.pinRx < fsx0 + 24 ? scoreRibbonScroll(inp.pinRx, L, W) : scoreRibbonPinScroll(fsx0, inp.pinRx, W), 0, max);
+    var fsx0 = scoreRibbonScroll(rxp, L, W);
+    sx = scoreClamp(scoreRibbonPinScroll(fsx0, inp.pinRx, W), 0, max); // atc-i0f2 slice 2: the playhead past the mark is the centre latch's case (resolve), so no 24 px rule
   }
   if (inp.scrub) sx = scoreClamp(inp.scrub.sx, 0, max); // atc-qb45: paused, the user's sideways scroll sets the view
   sx = scorePxRound(sx, dpr); // atc-tty9.20: whole canvas pixels
@@ -9734,20 +10520,74 @@ function scoreRibbonFrame(inp) {
   if ((edit || hold) && L.segs.length) page = scoreRibbonParkPage(L, sx, W); // atc-tty9.31: park on the page under the now bar
   var strip = true, bar = null, bar2 = null, barX = null;
   if (strip) {
-    barX = inp.scrub && typeof inp.scrub.vs === 'number' ? inp.scrub.vs + SCORE_RIBBON_ANCHOR_X * W - sx : rx - sx, b = scoreRibbonBar(W, barX); // atc-elfg.7: centred on the playhead
+    barX = inp.scrub && typeof inp.scrub.vs === 'number' ? inp.scrub.vs + SCORE_RIBBON_ANCHOR_X * W - sx : rxp - sx, b = scoreRibbonBar(W, barX); // atc-elfg.7: centred on the playhead
     // Edit while playing holds the view: the bar is where the playhead is and the canvas clips it when that is off screen
-    // adr/0018: the bar sits at the bottom of the slice under the playhead (heights differ per line)
-    bar = { x0: b.x0, x1: b.x1, bottom: (L.segs[L.segIdx[Math.max(0, n)]] || L.segs[0]) ? Math.min(geo.H - (inp.rep ? 4 : 0), (L.segs[L.segIdx[Math.max(0, n)]] || L.segs[0]).srcH) : geo.H - (inp.rep ? 4 : 0), // atc-rmug.5: room under the bar for the repeat colour bar
+    // atc-7vo2 (owner 2026-11-24): the lower bar is fixed at the bottom of the ribbon window, not the bottom of the slice under the playhead (heights differ per line)
+    bar = { x0: b.x0, x1: b.x1, bottom: geo.H - (inp.rep ? 4 : 0), // atc-rmug.5: room under the bar for the repeat colour bar
      h: Math.max(3, Math.round(3 * dpr) / dpr) };
     if (scoreRibbonLineY(marks, L, geo, inp.t) !== null) bar2 = SCORE_RIBBON_STRIP_Y; // atc-b3aa
   }
   var cw = Math.round(W * dpr), ch = Math.round(geo.H * dpr);
   return {
-    rx: rx, sx: sx, playheadX: rx - sx, selAt: selAt, page: page, followSx: scoreRibbonScroll(rx, L, W), offCursor: !!hold,
+    rx: rx, sx: sx, shift: scorePxRound(shiftPx, dpr), playheadX: rx - sx, page: page, followSx: scoreRibbonScroll(rxp, L, W), offCursor: !!hold,
     held: sx <= 0 || sx >= max || (edit && !playing) || !!hold || (n >= 0 && !!(L.hold && L.hold[n])),
     strip: strip, bar: bar, bar2: bar2, rep: inp.rep || null, cw: cw, ch: ch, dpr: dpr,
     key: [sx, strip ? Math.round(barX) : '', inp.rep ? inp.rep.n : '', inp.offY, inp.selId, inp.ringId, edit, strip, bar2, page, cw, ch, dpr, inp.gen, inp.part || ''].join('|')
   };
+}
+/** atc-i0f2 slice 1 (docs/design/ribbon-motion.md): the one stored motion record {kind, sx, vs, heldId, pastId}. kind 'auto' follows the playhead; 'held' keeps sx (heldId null: the user's drag hold; heldId set: the Sync centre park for that target; sync: a play-start hold in unpinned Sync); 'scrub' is the paused drag (vs, t; under keeps a hold made before it). pastId: Follow was pressed for that target past the mark. */
+function scoreMotionNew() { return { kind: 'auto', sx: null, vs: null, heldId: null, pastId: null }; }
+/** The record as {hold, park, scrub} (today's three views of it; null when not in that state). */
+function scoreMotionParts(m) {
+  var hold = null, park = null, scrub = null;
+  if (m.kind === 'scrub') { scrub = { vs: m.vs, sx: m.sx, t: m.t }; hold = m.under || null; }
+  else if (m.kind === 'held') { if (m.heldId !== null && m.heldId !== undefined) park = { id: m.heldId, sx: m.sx }; else { hold = { sx: m.sx }; if (m.sync) hold.sync = true; } }
+  return { hold: hold, park: park, scrub: scrub };
+}
+/** The inverse of scoreMotionParts; pastId carried through. */
+function scoreMotionPack(p, pastId) {
+  var m = scoreMotionNew();
+  m.pastId = pastId === undefined ? null : pastId;
+  if (p.scrub) { m.kind = 'scrub'; m.vs = p.scrub.vs; m.sx = p.scrub.sx; m.t = p.scrub.t; m.under = p.hold || null; }
+  else if (p.park) { m.kind = 'held'; m.sx = p.park.sx; m.heldId = p.park.id; }
+  else if (p.hold) { m.kind = 'held'; m.sx = p.hold.sx; if (p.hold.sync) m.sync = true; }
+  return m;
+}
+/** atc-i0f2 slice 1: one frame's position resolution. Runs the motion transitions (Edit play glide, hold glide, Sync pin / centre park / pastId) then the position rules (scoreRibbonFrame), in today's order, with no behaviour change. i = { frame (the scoreRibbonFrame input without hold, scrub, pinRx, limitRx, limitAx), playing, wasPl, syncOn, dragged, pin (the Sync target mark or null), glide ({from, t0} or null), now (ms) }. Returns { motion, glide, view, fbShow (the Follow control shows) }. */
+function scoreRibbonResolveSx(m, i) {
+  var f = i.frame, L = f.L, geo = f.geo, W = geo.W, edit = !!f.edit, pl = !!i.playing, pm = i.pin || null;
+  var p = scoreMotionParts(m), hold = p.hold, park = p.park, scrub = p.scrub, pastId = m.pastId, glide = i.glide || null;
+  var fsx = scoreRibbonScroll(scoreRibbonX(f.marks, f.t, L) + (Number(f.shiftPx) || 0), L, W); // atc-i0f2 slice 3: the corrected playhead, so the limit compares the shifted follow
+  if (!pl && edit) { hold = null; glide = null; } // paused Edit holds by prevSx (atc-hc3l)
+  else if (!pl && !hold) glide = null; // atc-elfg.9: paused outside Edit, a held view stays held
+  if (pl && !i.wasPl && edit && f.prevSx !== null && !hold && !park) { // atc-elfg.9: Edit play from a held view glides to the cursor
+    if (Math.abs(f.prevSx - fsx) > 1) { hold = { sx: f.prevSx }; if (i.syncOn && !pm && i.dragged) hold.sync = true; else glide = { from: f.prevSx, t0: i.now }; }
+  }
+  var pp0 = null, pinRx, limitRx, parkHold = null;
+  if (pm) pp0 = i.pinN > 0 ? scoreRibbonPosPass(L, geo, pm, i.pinN, fsx + SCORE_RIBBON_ANCHOR_X * W, true) : scoreRibbonPos(L, geo, pm, fsx + SCORE_RIBBON_ANCHOR_X * W, true); // atc-i0f2 slice 2: the target's own pass copy, not the one nearest the playhead
+  if (glide && hold) {
+    var gp = (i.now - glide.t0) / 250, gx = fsx;
+    if (pp0 && pastId !== pm.id) gx = Math.min(gx, scoreRibbonScroll(pp0.x, L, W, SCORE_RIBBON_SYNC_LIMIT_X)); // the glide to the playhead stops at the Sync centre limit
+    if (gp >= 1) { hold = null; glide = null; } else hold = { sx: scoreRibbonGlide(glide.from, gx, gp) };
+  }
+  if (pm) { // Sync target: pinned paused (65 percent rule in the frame), follows playing, never past the target (limitRx); the centre park (paused Edit already cleared hold and glide above)
+    if (hold && hold.sync) { hold = null; glide = null; }
+    if (park && park.id !== pm.id) park = null;
+    if (pastId && pastId !== pm.id) pastId = null;
+    if (pp0) { limitRx = pp0.x; if (!pl) pinRx = pp0.x; }
+    var lsx = pp0 ? scoreRibbonScroll(pp0.x, L, W, SCORE_RIBBON_SYNC_LIMIT_X) : 0;
+    if (i.enter && pp0) pastId = fsx > lsx + 0.5 ? pm.id : null; // entering Sync shows the playhead even when it is past the target (owner 2026-11-03)
+    if (pastId === pm.id && fsx <= lsx + 0.5) pastId = null; // the playhead is back before the mark: reaching it again parks again
+    if (park) { parkHold = { sx: park.sx, keep: true }; pinRx = undefined; limitRx = undefined; }
+    else if (pastId === pm.id) limitRx = undefined;
+    else if (limitRx !== undefined && !hold) { // atc-i0f2 slice 2: playing or paused, a seek or the auto-scroll that would pass the centre limit latches Held
+      if (fsx > lsx + 0.5) { park = { id: pm.id, sx: lsx }; parkHold = { sx: lsx, keep: true }; limitRx = undefined; pinRx = undefined; }
+    }
+  } else { park = null; pastId = null; }
+  var inp = {}, k;
+  for (k in f) if (Object.prototype.hasOwnProperty.call(f, k)) inp[k] = f[k];
+  inp.hold = parkHold || hold; inp.scrub = scrub; inp.pinRx = pinRx; inp.limitRx = limitRx; inp.limitAx = SCORE_RIBBON_SYNC_LIMIT_X;
+  return { motion: scoreMotionPack({ hold: hold, park: park, scrub: scrub }, pastId), glide: glide, view: scoreRibbonFrame(inp), fbShow: !!park || (!!hold && !glide) };
 }
 /** atc-elfg.6: what one drawn ribbon frame contains, from the frame view. mp = scoreRibbonMarkPos(...).
  *  blits: slice pieces in css px (source in the uncropped page); marks: those within the cull pad, in screen px with the strip y applied;
@@ -9814,6 +10654,8 @@ function scoreRibbonHit(layout, rx, ry, geo, panY, only, unboxedZero) { // atc-i
   }
   return null;
 }
+</script>
+<script>
 // ---- Performance stats (branch continuous-scroll): per play stretch, fixed-size buffers, one flat scorePerf activity record ----
 var SCORE_PERF_CAP = 4096, SCORE_PERF_MAX_MS = 30000, SCORE_PERF_MIN_MS = 3000;
 function scorePerfBuf(cap) { return { a: new Float32Array(cap), n: 0, max: 0 }; }
@@ -9924,6 +10766,8 @@ function scorePerfOverlayText(st, nowMs, env) {
   t += ' | ' + (env.heapMB !== null && env.heapMB !== undefined ? 'heap ' + Math.round(env.heapMB) + ' MB | ' : '') + 'canvas ' + f(env.canvasMB) + (env.ribbonMB ? '+' + f(env.ribbonMB) : '') + ' MB';
   return t;
 }
+</script>
+<script>
 /** A seek is a jump of the audio clock that the elapsed frame time does not explain. prev/cur = {clock, ts (ms), playing}. */
 function scoreDetectSeek(prev, cur) {
   var delta = cur.clock - prev.clock;
@@ -10173,6 +11017,8 @@ function scoreDefaultMeasure(marks, id) {
   }
   return null;
 }
+</script>
+<script>
 /** atc-rmug.1 (adr/0024, score.md Jumps): a pass-mark name: base for the first visit, base + '.n' from the second ('#7.2', 'm20.2'). */
 function scorePassName(base, n) { return n > 1 ? base + '.' + n : base; }
 var SCORE_PASS_CAP_ = 5000;
@@ -10326,6 +11172,23 @@ function scoreProblemCounts(v) {
   Object.keys(v || {}).forEach(function (id) { var s = v[id]; if (s === 'needs') need++; else if (s === 'order') order++; else if (s === 'jump-broken' || s === 'jump-ignored' || s === 'left') jumps++; });
   return { need: need, order: order, jumps: jumps };
 }
+/** atc-v91o: one scoreHealth record (src/ScoreHealth.js) as the Settings > Score health row shows it. The marks counts are scoreValidate's states
+ *  ('needs' = a mark with no time, 'order' = out of order; endT 0 = track length unknown): no second rule set. -> {ok, untimed, outOfOrder, issues: [{cls, text}]} */
+function scoreHealthView(rec) {
+  var issues = [], untimed = 0, outOfOrder = 0, st = rec.score ? rec.score.status : 'none';
+  if (st === 'none') issues.push({ cls: 'none', text: 'no score' });
+  else if (st === 'bad') issues.push({ cls: 'bad', text: 'score unreadable' });
+  else {
+    var pc = scoreProblemCounts(scoreValidate(rec.marks || [], 0));
+    untimed = pc.need; outOfOrder = pc.order;
+    var n = rec.audioNewer || [];
+    if (n.length) issues.push({ cls: 'stale', text: 'audio newer: ' + n.slice(0, 3).join(', ') + (n.length > 3 ? ' and ' + (n.length - 3) + ' more' : '') });
+    if (untimed) issues.push({ cls: 'untimed', text: untimed + ' untimed' });
+    if (outOfOrder) issues.push({ cls: 'order', text: outOfOrder + ' out of order' });
+    if (rec.testNewer) issues.push({ cls: 'test', text: 'TEST newer' });
+  }
+  return { ok: issues.length === 0, untimed: untimed, outOfOrder: outOfOrder, issues: issues };
+}
 /** atc-rlep.3 J5a (adr/0021, score-editing.md section 5): the state of every mark id: 'ok', 'needs' (a kind 'mark' with no time), 'order' (out of order) or
  *  'past-end' (atc-15bw: the LAST timed mark has t > endT; a warning, not an error: Play treats it as AT the track end; any other mark past the end is 'order').
  *  Reading order (page, line, x). Times of timed kind 'mark' marks must strictly increase: t < 0, t > endT (when endT > 0) and equal times are out of order;
@@ -10392,6 +11255,8 @@ function scorePlayMarks(marks, endT, nums) {
   if (marks) { m.src = marks; m.len = marks.length; m.end = endT; m.out = out; }
   return out;
 }
+</script>
+<script>
 /** atc-rlep.2 J4 / atc-rmug.34: the ids needing attention (a SET: scoreSyncAdvance and scoreSyncTarget read the order from the sequence): the needs-time and out-of-order marks (scoreValidate; reading order) then the untimed repeat signs (atc-rmug.12). endT = the track length, 0 when unknown; states = scoreValidate(marks, endT, nums) when the caller has it. */
 function scoreSyncFlagged(marks, nums, endT, states) {
   nums = nums || scoreMarkNumbers(marks);
@@ -10545,6 +11410,8 @@ function scorePinView(mark, geo) {
   var p = scoreMarkPoint(mark, geo), a = scoreAnchorView(mark, geo);
   return { x: scoreClamp(p.x - 0.65 * geo.W, 0, geo.maxX), y: a.y };
 }
+</script>
+<script>
 /** Reading-order items of the mark list: every mark, note and jump (EOLs excluded). Item = {k, page, y, x, o, slot, ly, left}. Shared by scoreMarkNumbers, scoreMarkListRows, scoreValidate and scorePlayedSequence (atc-rmug.28): the ONE placement rule.
  *  Placement only, never time (adr/0024 D7, owner 2026-11-08): marks keep the exact order scoreVisualRows gives them (lines by page then y, marks by x; the played order and every mark number depend on it).
  *  A jump or note is slotted in afterwards, as one insert into that fixed mark sequence, on ONE line: the line whose stanza box (adr/0018) contains its y (the start nearest in y wins), else the nearest line by y on its page (ties: the upper).
@@ -10829,6 +11696,8 @@ function scoreMarkListRows(marks, t, nums, states, endT, opts) {
     return row;
   });
 }
+</script>
+<script>
 /** atc-rmug.13: the Layout strip's cells over the structural rows (notes skipped): { prev, at, next } around the row with key curKey; at is null when the key is not in the list. A cell = {id, key, name, sub, pass, hop, via}. */
 function scoreLayoutStrip(rows, curKey) {
   var L = (rows || []).filter(function (r) { return !r.note && (!r.jump || r.hop || r.key === curKey); }), at = null; // atc-rmug.23: a jump taken is a step of the walk (one row); a jump never taken is not, unless it is the current one
@@ -11378,6 +12247,8 @@ function scoreBoxHit(box, x, y, tolPt) {
   return x > box.x && x < box.x + box.w && y > box.y && y < box.y + box.h ? 'move' : null;
 }
 
+</script>
+<script>
 // adr/0022 K2: every score device key carries the build target (pmix.<target>.<name>), like scoreEditorKey_. The legacy unprefixed
 // keys (pmix-score-*, written by PROD 1.8.4 and by TEST until K2) are read only by a build that is not TEST (scoreLegacyKeys_).
 // adr/0017: a v1 marks value (pmix-score-marks-v1:, a 1.7.2 page on this origin) is read, migrated and left in place for that page.
@@ -11543,6 +12414,8 @@ function scoreNoticeParts(state, edit, playing, stale, queued, msg) {
 }
 /** adr/0020: 'N difference(s) from the saved score'. */
 function scoreDiffText(n) { return n + (n === 1 ? ' difference' : ' differences') + ' from the saved score'; }
+</script>
+<script>
 /** atc-rlep.1 J1c: the ONE table of score-panel visibility. Element id -> predicate (s, d): s = the raw state object, d = values derived from it.
  *  scoreVisibility(s) returns the ids shown; the panel's single apply step sets `hidden` on every id here and nowhere else (a unit test scans for strays).
  *  s: ready, open, mode ('play'|'layout'|'sync'), editor, signed, readOnly, playing, hasT, ribbon, selected, kind, timed, pop, offsetMode, toast,
@@ -11579,7 +12452,7 @@ var SCORE_UI = {
   'score-keep-mine': function (s) { return !!s.stale; },
   'score-misplaced': function (s) { return !!s.misplaced; },
   // position strip
-  'score-pos': function (s) { return !!s.ready && (s.mode === 'layout' ? !!s.hasMarks && !s.pick : !!s.hasT); }, // Play and Sync: needs timed marks; Layout (atc-rmug.13): the marks strip, no times, needs any mark, hidden while a pick banner is up (380 px rule)
+  'score-pos': function (s) { return !!s.ready && (s.mode === 'layout' ? !!s.hasMarks && !s.pick : s.mode === 'sync' ? !!s.hasT || !!s.hasMarks : !!s.hasT); }, // Play: needs timed marks; Sync (atc-xzzm): any mark, so NOW can list the untimed ones to pick from; Layout (atc-rmug.13): the marks strip, no times, needs any mark, hidden while a pick banner is up (380 px rule)
   // the whole transport card: hidden in Layout (it pauses audio; the page view needs no transport)
   'transport-section': function (s) { return !(s.open && s.mode === 'layout'); },
   // mark editor row
@@ -11626,7 +12499,7 @@ var SCORE_UI = {
   'score-nudge-minus': function (s) { return s.mode === 'sync' && !!s.ready && !!s.nudge; },
   'score-nudge-plus': function (s) { return s.mode === 'sync' && !!s.ready && !!s.nudge; },
   'score-pin': function (s) { return s.mode === 'sync' && !!s.ready && !!s.pinned; },
-  'score-sync-follow': function (s) { return s.mode === 'sync' && !!s.open; },
+  'score-sync-follow': function (s) { return s.mode === 'sync' && !!s.open && !(s.ribbon && s.hasT); }, // atc-i0f2 slice 2: with the ribbon the one Follow control is the ribbon's
   'score-fix-window': function (s) { return s.mode === 'sync' && !!s.ready && !!s.fixWin; },
   'score-fix-est': function (s) { return s.mode === 'sync' && !!s.ready && !!s.fixEst; },
   'score-clear-time': function (s) { return !!s.selected && !!s.timed && s.kind !== 'eol'; },
@@ -11704,6 +12577,8 @@ function scoreUndoPop(stack) {
 }
 function scoreClearPrompt(n) { return 'Clear all ' + n + (n === 1 ? ' mark' : ' marks') + '? You can undo this.'; }
 
+</script>
+<script>
 // ---- Shared score map, client half (bd atc-ore.7) ----
 function scoreSharedKey(folderId, target) { return scoreKey_('score-shared-v1:' + folderId, target); }
 function scoreCount(n) { return n + (n === 1 ? ' mark' : ' marks'); }
@@ -11835,11 +12710,21 @@ function scoreSameOffsets(a, b) { return scoreCanonOffsets(a) === scoreCanonOffs
 /** 'none' | 'saved' | 'unsaved': how the open marks stand against the shared map (AC 13, 14). */
 /** atc-tty9.23 / adr/0018: the view stored with a score: { offY } (the Ribbon height is gone; each line's box defines its crop). */
 /** offPts: the vertical offset in PDF points (device px / render scale), so it means the same on any screen. */
-function scoreViewOf(offPts) { return { offY: Math.round(Number(offPts) || 0) }; }
-function scoreSaveState(marks, shared, pdfId, offsets, use) {
+function scoreViewOf(offPts, shift) {
+  var v = { offY: Math.round(Number(offPts) || 0) };
+  if (Number(shift)) v.ribbonShift = Number(shift); // atc-7vo2: written only when set, so an unshifted score file is unchanged
+  return v;
+}
+/** atc-7vo2 part 1: the per-song ribbon scroll shift stored in the shared map's view.ribbonShift, in playhead widths (the position bar's width, 20 % of the ribbon); absent or not a number = 0; clamped to +-2. Positive moves the ribbon content left under the bar. */
+function scoreShiftOf(map) {
+  var n = map && map.view ? Number(map.view.ribbonShift) : 0;
+  return isFinite(n) ? Math.max(-2, Math.min(2, n)) : 0;
+}
+function scoreSaveState(marks, shared, pdfId, offsets, use, shift) {
   var forThis = !!scoreSavedFor(shared, use, pdfId); // atc-rlep.9: a name-matched map is the baseline too
   if (!marks.length && !(forThis && shared.marks.length)) return 'none';
   if (forThis && offsets !== undefined && !scoreSameOffsets(offsets, shared.offsets)) return 'unsaved'; // atc-ore.8: unsaved offsets
+  if (forThis && shift !== undefined && shift !== scoreShiftOf(shared)) return 'unsaved'; // atc-7vo2: unsaved ribbon shift
   return forThis && scoreSameMarks(marks, shared.marks) ? 'saved' : 'unsaved';
 }
 var SCORE_DIFF_KINDS_ = ['added', 'removed', 'retimed', 'moved', 'relabeled', 'retyped'];
@@ -11891,7 +12776,7 @@ function scoreSavePayload(shared, pdfId, pdfModified, marks, pdfName, offsets, v
   var p = scoreCarryUnknown_(shared, {}, SCORE_TOP_KNOWN_); // adr/0019: unknown top-level keys of the shared map go back unchanged
   p.version = 3; p.pdfId = pdfId; p.pdfModified = pdfModified || 0; p.marks = scorePlainMarks(marks); p.offsets = offsets || (shared && shared.offsets) || {};
   if (typeof pdfName === 'string' && pdfName) p.pdfName = pdfName;
-  if (view) { p.view = { offY: view.offY }; scoreCarryUnknown_(shared && shared.view, p.view, SCORE_VIEW_KNOWN_); } // atc-tty9.23; adr/0019: unknown view keys carried
+  if (view) { p.view = { offY: view.offY }; if (view.ribbonShift !== undefined) p.view.ribbonShift = view.ribbonShift; scoreCarryUnknown_(shared && shared.view, p.view, SCORE_VIEW_KNOWN_); } // atc-tty9.23; adr/0019: unknown view keys carried
   return p;
 }
 function scoreSaveMessage(code, current) {
@@ -12004,6 +12889,8 @@ async function scoreAssetUrl_(url) {
   }
 }
 
+</script>
+<script>
 function initScorePanel_() {
   var $ = function (id) { return document.getElementById(id); };
   var panel = $('score-panel');
@@ -12026,8 +12913,11 @@ function initScorePanel_() {
   /** atc-elfg.6: the ribbon view's state in one record. Reset on a mode switch; the scrub timer of the record it replaces is cleared. */
   function ribbonReset(prev) {
     if (prev) clearTimeout(prev.scrubTimer);
-    return { layout: null, key: '', marks: null, offsets: null, sx: null, top: -1, selAt: null, scrub: null, scrubTimer: 0, drawn: null, hold: null, glide: null, off: false };
+    return { layout: null, key: '', marks: null, offsets: null, sx: null, top: -1, scrubTimer: 0, drawn: null, motion: scoreMotionNew(), glide: null }; // atc-i0f2: motion = the one stored position record (hold, park, scrub, pastId)
   }
+  /** atc-i0f2: the stored motion record as today's {hold, park, scrub}, and its writer (patch keys replace; pastId keeps unless given). */
+  function rvParts() { return scoreMotionParts(S.rv.motion); }
+  function rvSet(patch, pastId) { var p = rvParts(), k; for (k in patch) p[k] = patch[k]; S.rv.motion = scoreMotionPack(p, pastId === undefined ? S.rv.motion.pastId : pastId); }
   var S = {
     lib: null, libPromise: null, wsrc: null, build: '', workerBroken: false, workerNote: '',
     pdf: null, fileKey: '', pages: [], zoom: 1, renderGen: 0, loadGen: 0, pumping: false,
@@ -12047,7 +12937,7 @@ function initScorePanel_() {
    *  drawn, so page-mode panning and Follow resets never change the saved view. */
   function ptScale() { var p = S.pages[0]; return p && p.w > 0 && p.cssW > 0 ? p.cssW / p.w : 1; }
   function viewOffPts() { if (S.ribbonShown) S.viewOff = Math.round(S.offY / ptScale()); return S.viewOff || 0; }
-  function currentView() { return scoreViewOf(viewOffPts()); }
+  function currentView() { return scoreViewOf(viewOffPts(), S.shift); }
   var INTRO_KEY = 'pmix.' + pmixTarget() + '.v1.scoreIntroSeen';
   var toolsEl = $('score-tools'), editorEl = $('score-editor'); // atc-ore.33: toolsEl is the Edit bar; the panel's data-state says whether the tools are ready
   function isReady() { return panel.getAttribute('data-state') === 'ready'; }
@@ -12190,7 +13080,7 @@ function initScorePanel_() {
     var L = S.rv.layout, out = [];
     if (!S.ribbonShown || !L || !L.segs || S.rv.sx === null) return out;
     var W = pageGeo(true).W, a = S.rv.sx, b = S.rv.sx;
-    [S.rv.hold && S.rv.hold.sx, S.rv.scrub && S.rv.scrub.sx].forEach(function (x) { if (x != null) { a = Math.min(a, x); b = Math.max(b, x); } });
+    [rvParts().hold && rvParts().hold.sx, rvParts().scrub && rvParts().scrub.sx].forEach(function (x) { if (x != null) { a = Math.min(a, x); b = Math.max(b, x); } });
     L.segs.forEach(function (sg) {
       var i = sg.page - 1;
       if (sg.ribbonX < b + W && sg.ribbonX + sg.srcW > a && i >= 0 && i < S.pages.length && out.indexOf(i) < 0) out.push(i);
@@ -12339,7 +13229,9 @@ function initScorePanel_() {
     if (S.ribbonShown && isFinite(rk) && rk > 0 && Math.abs(rk - 1) > 1e-6) { // atc-snbh: the ribbon's pan and held view are in render px; scale them with the page so the pt pan and the music at the cursor line stay put
       S.offY *= rk;
       if (S.rv.sx !== null) S.rv.sx *= rk;
-      if (S.rv.hold) S.rv.hold = { sx: S.rv.hold.sx * rk };
+      var rp = rvParts();
+      if (rp.hold) rvSet({ hold: { sx: rp.hold.sx * rk } });
+      if (rp.park) rvSet({ park: { id: rp.park.id, sx: rp.park.sx * rk } });
       if (S.rv.glide) S.rv.glide.from *= rk;
       syncUi();
     }
@@ -12668,6 +13560,7 @@ function initScorePanel_() {
     S.pages.forEach(release); // free the canvases; the parsed document stays for a quick reopen
     publish();
     notifyAddress();
+    document.dispatchEvent(new Event('pmix-score-mode')); // atc-9vp3.5: the Pitch Pipe button follows the mode
     if (S.opener && typeof S.opener.focus === 'function') S.opener.focus();
   }
   /** The folder changed: forget the document if its PDFs are not the ones now listed. */
@@ -12706,7 +13599,7 @@ function initScorePanel_() {
   /** Move the playhead to track time t (kept playing or paused as it was) and snap the view. */
   function jumpTo(t) {
     if (typeof t !== 'number' || !isFinite(t)) return; // atc-rmug.17: never seek to NaN
-    S.hold = false; S.rv.hold = null; S.rv.glide = null; // atc-hc3l: a seek resumes following the cursor
+    S.hold = false; // atc-i0f2 slice 2 (owner 2026-11-24): a seek never ends a held view; only Follow or a new Sync target does
     try { AudioEngine.seek(scoreClockTime(Math.max(0, t), rate())); } catch (e) { /* no audio loaded */ }
     S.snapPending = true; S.easeStart = -1;
   }
@@ -12804,11 +13697,18 @@ function initScorePanel_() {
     if (key !== r.id && !scoreNudgeInfo(S.marks, key)) return null; // an untimed pass entry takes its time from Time only
     return { id: r.id, key: key };
   }
-  function pinMark() { if (!syncOn() || S.unpinned || S.offsetMode) return null; var r = syncTargetNow(); return r && r.id ? markById(r.id) : null; }
-  /** A user pan or scroll of the view unpins it (the pill and Follow button tell how to go back). */
+  function pinMark() { if (!syncOn() || (S.unpinned && !S.ribbonShown) || S.offsetMode) return null; /* atc-i0f2 slice 2: the ribbon has no unpin (a pan holds the view, Follow returns it); the page view keeps it */ var r = syncTargetNow(); return r && r.id ? markById(r.id) : null; }
+  /** atc-i0f2 slice 2: the pass (1, 2, ...) of the Sync target's entry, from its key ('m7.2' is pass 2); 0 when none. */
+  function pinPassN() {
+    var r = syncTargetNow();
+    if (!r || !r.id) return 0;
+    var key = S.selPass && r.sel && S.selPass.id === r.id && !S.selPass.orig ? S.selPass.key : r.key, m = /\.(\d+)$/.exec(String(key || ''));
+    return m ? Number(m[1]) : 1;
+  }
+  /** A user pan or scroll of the page view unpins it (the pill and Follow button tell how to go back); the ribbon holds instead. */
   /** owner 2026-11-03: the page point Sync shows now: the selected mark, else the pinned target, else (ribbon) the point under the now bar; null when Sync shows neither (an unpinned page view just stays). */
   function syncFocusPoint() {
-    var m = selMark() || pinMark();
+    var hv = S.ribbonShown ? rvParts() : null, m = selMark() || (hv && (hv.park || hv.hold) ? null : pinMark()); // atc-i0f2 slice 2: a held (panned) ribbon view is the view Sync shows, as the unpinned one was
     if (m) return { page: m.page, x: m.x, y: m.y, until: 0 };
     if (!S.ribbonShown || !S.rv.layout || S.rv.sx === null) return null;
     var geo = pageGeo(true), p = scoreRibbonPoint(S.rv.layout, geo, S.rv.sx + SCORE_RIBBON_ANCHOR_X * geo.W);
@@ -12826,7 +13726,7 @@ function initScorePanel_() {
   function loadMarks(fileId) {
     S.fileId = fileId;
     notifyAddress();
-    S.rv.key = ''; S.viewOff = 0; S.migH = 0;
+    S.rv.key = ''; S.viewOff = 0; S.migH = 0; S.shift = 0;
     var use = sharedUse();
     if (use.ask && isSignedIn_()) { // AC 11: no PDF here matches the shared map; an editor chooses (no write: opening never saves)
       S.orphan[fileId] = window.confirm(scoreOrphanPrompt(S.shared));
@@ -12858,7 +13758,7 @@ function initScorePanel_() {
     if ((!rc.editedMarks || sharedLocked) && !devNewer && use.applies && sh && sh.marks.length) S.marks = marksFromShared(sh.marks); // a locked map is shown, never edited
     showNote(null);
     S.undo = []; S.selId = null; syncRestart(); S.edit = false; S.sub = 'layout'; S.followOn = true; S.snapPending = true; S.easeStart = -1; S.lastN = null; S.curN = -1; S.offY = 0; S.pan = null;
-    if (use.applies && sh && sh.view) { S.rv.key = ''; S.viewOff = Number(sh.view.offY) || 0; } // atc-tty9.23: the stored vertical offset
+    if (use.applies && sh && sh.view) { S.rv.key = ''; S.viewOff = Number(sh.view.offY) || 0; S.shift = scoreShiftOf(sh); } // atc-tty9.23: the stored vertical offset
     var sl = scoreStaleAtLoad(S.stale, S.folder, S.fileId, rc.edited); // atc-ore.28 AC 1: a stale set by a flush before this load stays only while something is edited
     if (!sl.stale) { S.stale = null; S.saveMsg = sl.nothing ? scoreStaleText({ nothing: true }) : ''; }
     renderMarks(); syncUi();
@@ -13057,6 +13957,7 @@ function initScorePanel_() {
     ['score-reaction', 'score-lead'].forEach(function (i) { $(i).disabled = !ready; });
     $('score-crop-toggle').disabled = !(ready && S.marks.length > 0);
     var rbSet = scoreRibbonSetting({ mode: S.edit ? S.sub : 'play', hasT: hasT });
+    $('score-ribbon-shift').disabled = !ready || S.readOnly; // atc-7vo2: the shared per-song shift is edited here (saved with Save)
     $('score-ribbon-toggle').disabled = rbSet.disabled; // the checkbox keeps the stored choice; Layout just does not use it
     var mode = S.edit ? S.sub : 'play';
     ['play', 'layout', 'sync'].forEach(function (m) { $('score-mode-' + m).checked = m === mode; });
@@ -13198,6 +14099,7 @@ function initScorePanel_() {
     panel.setAttribute('data-offset-y', String(Math.round(S.offY)));
     renderSeekMarks();
     $('score-ribbon-toggle').checked = !!S.ribbon;
+    if (document.activeElement !== $('score-ribbon-shift')) $('score-ribbon-shift').value = String(S.shift || 0);
     $('score-crop-toggle').checked = !!S.crop;
     var playingNow = isPlayingNow();
     $('score-offset-tool').setAttribute('aria-pressed', String(S.offsetMode));
@@ -13326,7 +14228,7 @@ function initScorePanel_() {
   // ---- Save to Drive (bd atc-ore.7 AC 9, 10, 13, 14) ----
   function pdfModifiedOf(id) { for (var i = 0; i < S.pdfs.length; i++) if (S.pdfs[i].id === id) return S.pdfs[i].modified || 0; return 0; }
   function saveStateNow() {
-    var st = scoreSaveState(S.marks, sharedBoxed(), S.fileId, S.offsets, sharedUse());
+    var st = scoreSaveState(S.marks, sharedBoxed(), S.fileId, S.offsets, sharedUse(), S.shift || 0);
     var q = scoreQueueRead_().filter(function (e) { return e.folderId === S.folder; })[0];
     if (scoreQueuedSame(q, S.fileId, S.marks, S.offsets)) return 'queued';
     return st;
@@ -13492,6 +14394,9 @@ function initScorePanel_() {
     if (stale) { layout(); renderMarks(); } else positionMarks(); // atc-elfg.2: the canvases hold the whole page, so a crop change is layout only
   }
   $('score-crop-toggle').addEventListener('change', function () { S.crop = this.checked; store(CROP_KEY, S.crop ? '1' : '0'); applyCrop(); syncUi(); });
+  $('score-ribbon-shift').addEventListener('change', function () { // atc-7vo2: per-song ribbon scroll shift, playhead widths, saved in the shared score's view
+    var v = Number(this.value); S.shift = scoreShiftOf({ view: { ribbonShift: isFinite(v) ? v : 0 } }); this.value = String(S.shift); S.rv.key = ''; syncUi();
+  });
   $('score-ribbon-toggle').addEventListener('change', function () { S.ribbon = this.checked; store(RIBBON_KEY, S.ribbon ? '1' : '0'); syncUi(); });
 
   // Frame loop: audio clock -> target view -> scroll position of the already-drawn pages (AC 10).
@@ -13541,10 +14446,10 @@ function initScorePanel_() {
   function ribbonTimeAtSx(vs, W) { return scoreRibbonTimeAt(S.marks, vs + SCORE_RIBBON_ANCHOR_X * W, S.rv.layout); }
   function ribbonScrubBy(dx) {
     if (!S.ribbonShown || S.edit || isPlayingNow() || !S.rv.layout) return false;
-    var L = S.rv.layout, geo = pageGeo(true), base = S.rv.scrub ? S.rv.scrub.vs : (S.rv.sx || 0);
+    var L = S.rv.layout, geo = pageGeo(true), base = rvParts().scrub ? rvParts().scrub.vs : (S.rv.sx || 0);
     var X = L.markX, off = SCORE_RIBBON_ANCHOR_X * geo.W; // atc-elfg.1: the virtual scroll reaches the first and last mark (the view itself stays inside the ribbon)
     var vs = X && X.length ? scoreClamp(base + dx, X[0] - off, X[X.length - 1] - off) : 0, t = ribbonTimeAtSx(vs, geo.W);
-    S.rv.scrub = { vs: vs, sx: scoreClamp(vs, 0, Math.max(0, L.width - geo.W)), t: t };
+    rvSet({ scrub: { vs: vs, sx: scoreClamp(vs, 0, Math.max(0, L.width - geo.W)), t: t } });
     if (!isFinite(t)) return true; // atc-rmug.17: no time under the line, no clock write
     var c = scoreClockTime(Math.max(0, t), rate()), ct = document.getElementById('current-time'), sb = document.getElementById('seek-bar');
     if (ct) ct.textContent = Math.floor(c / 60) + ':' + ('0' + Math.floor(c % 60)).slice(-2);
@@ -13557,26 +14462,34 @@ function initScorePanel_() {
     if (!S.ribbonShown || !isPlayingNow() || !S.rv.layout) return false;
     var max = Math.max(0, S.rv.layout.width - pageGeo(true).W);
     S.rv.glide = null;
-    S.rv.hold = { sx: scoreClamp((S.rv.hold ? S.rv.hold.sx : (S.rv.sx || 0)) + dx, 0, max) };
+    var hp = rvParts().hold; rvSet({ hold: { sx: scoreClamp((hp ? hp.sx : (S.rv.sx || 0)) + dx, 0, max) } });
     return true;
   }
   /** atc-hc3l: the one held-view pan in Edit and outside it: playing sets the hold (no seek); paused in Edit moves the held view (no seek, atc-s1zu); paused outside Edit is the scrub (ribbonScrubBy). */
   function ribbonPanBy(dx) {
-    userUnpin();
+    var pk = rvParts().park;
+    if (pk && S.rv.layout) { rvSet({ park: { id: pk.id, sx: scoreClamp(pk.sx + dx, 0, Math.max(0, S.rv.layout.width - pageGeo(true).W)) } }); return true; } // atc-i0f2: a drag while parked moves the parked view and it stays parked (only Follow or a new target ends it)
+    if (S.ribbonShown && syncOn() && S.rv.layout) { // atc-i0f2 slice 2: a Sync pan holds the view at the target (Held); only Follow or a new target ends it
+      var pmx = pinMark(), mx = Math.max(0, S.rv.layout.width - pageGeo(true).W);
+      if (pmx) { S.rv.glide = null; rvSet({ hold: null, park: { id: pmx.id, sx: scoreClamp((S.rv.sx || 0) + dx, 0, mx) } }); return true; }
+    }
     if (isPlayingNow()) return ribbonHoldBy(dx);
-    if (S.edit && S.ribbonShown && S.rv.sx !== null) { S.rv.sx = Math.max(0, S.rv.sx + dx); return true; } // drawRibbon clamps
+    if (S.edit && S.ribbonShown && S.rv.sx !== null) { S.rv.sx = Math.max(0, S.rv.sx + dx); S.rv.dragged = true; return true; } // drawRibbon clamps
     return false;
   }
-  function ribbonFollowGo() { // atc-hc3l: glide the held view back to the cursor, then follow
-    if (S.rv.hold) S.rv.glide = { from: S.rv.hold.sx, t0: performance.now() };
+  function ribbonFollowGo() { // atc-hc3l: glide the held view back to the cursor, then follow; atc-i0f2 slice 2: the one Follow control (ribbon button, Sync transport button, pill)
+    var pk = rvParts().park;
+    if (pk) rvSet({ park: null, hold: { sx: pk.sx } }, pk.id); // atc-i0f2: back to the playhead, past the mark; the only end of a park besides a new target
+    var hd = rvParts().hold;
+    if (hd) S.rv.glide = { from: hd.sx, t0: performance.now() };
   }
   $('score-ribbon-follow').addEventListener('pointerdown', function (e) { e.stopPropagation(); });
   $('score-ribbon-follow').addEventListener('click', function (e) { e.stopPropagation(); ribbonFollowGo(); });
   function ribbonScrubEnd() {
-    var sc = S.rv.scrub;
+    var sc = rvParts().scrub;
     clearTimeout(S.rv.scrubTimer); S.rv.scrubTimer = 0;
     if (!sc) return;
-    S.rv.scrub = null;
+    rvSet({ scrub: null });
     jumpTo(sc.t);
   }
   function ribbonPan() { return scoreRibbonPanOf(S.offY, S.rv.layout); } // atc-qucy
@@ -13700,32 +14613,16 @@ function initScorePanel_() {
   function drawRibbon(geo, t) {
     var L = ribbonLayoutFor(geo), dpr = Math.min(window.devicePixelRatio || 1, SCORE_MAX_DPR); // atc-elfg.5: the ribbon canvas is sized like the page canvases (CSS stretches the rest), so slice blits are 1:1
     var pl = isPlayingNow();
-    if (!pl && S.edit) { S.rv.hold = null; S.rv.glide = null; } // paused Edit holds by prevSx (atc-hc3l)
-    else if (!pl && !S.rv.hold) S.rv.glide = null; // atc-elfg.9: paused outside Edit, a held view stays held (Follow, seek, Previous/Next clear it)
-    if (pl && !S.rv.wasPl && S.edit && S.rv.sx !== null && !S.rv.hold) { // atc-elfg.9: Edit play from a held view glides to the cursor (the Follow glide) instead of jumping
-      var fx = scoreRibbonScroll(scoreRibbonX(S.marks, t, L), L, geo.W);
-      if (Math.abs(S.rv.sx - fx) > 1) { S.rv.hold = { sx: S.rv.sx }; S.rv.glide = { from: S.rv.sx, t0: performance.now() }; }
-    }
-    S.rv.wasPl = pl;
-    if (S.rv.glide && S.rv.hold) {
-      var gp = (performance.now() - S.rv.glide.t0) / 250, fsx = scoreRibbonScroll(scoreRibbonX(S.marks, t, L), L, geo.W);
-      if (gp >= 1) { S.rv.hold = null; S.rv.glide = null; } else S.rv.hold = { sx: scoreRibbonGlide(S.rv.glide.from, fsx, gp) };
-    }
-    var pinRx, pm = pinMark();
-    if (pm && !S.rv.scrub && !pl) { // atc-rlep.15: playing, only the playhead moves the view (no pin); atc-rlep.2 J4: Sync pinned: the view shows the target (scoreRibbonFrame applies the 65 percent rule)
-      S.rv.hold = null; S.rv.glide = null;
-      var pp0 = scoreRibbonPos(L, geo, pm, scoreRibbonScroll(scoreRibbonX(S.marks, t, L), L, geo.W) + SCORE_RIBBON_ANCHOR_X * geo.W, true);
-      if (pp0) pinRx = pp0.x;
-    }
-    var inp = { part: focusPart(), L: L, geo: geo, marks: S.marks, rep: scoreRepeatBar(playMarks(), t), t: t, edit: S.edit, playing: pl, selId: S.selId, ringId: ringId(), selAt: S.rv.selAt, prevSx: S.rv.sx, hold: S.rv.hold, scrub: S.rv.scrub, pinRx: pinRx, dpr: dpr, offY: ribbonPan(), gen: S.renderGen + '|' + S.pubGen + '|' + S.noteId };
-    var view = scoreRibbonFrame(inp);
-    S.rv.selAt = view.selAt; S.rv.sx = view.sx;
-    var off = S.edit && !pl && Math.abs(view.sx - view.followSx) > 8; // atc-ore.37
-    if (off !== !!S.rv.off) { S.rv.off = off; }
-    var fb = $('score-ribbon-follow'), fbShow = !!S.rv.hold && !S.rv.glide && !syncOn(); // atc-hc3l: the Follow button shows while the view is held off the cursor
+    var inp = { part: focusPart(), L: L, geo: geo, marks: S.marks, rep: scoreRepeatBar(playMarks(), t), t: t, edit: S.edit, playing: pl, selId: S.selId, ringId: ringId(), prevSx: S.rv.sx, dpr: dpr, shiftPx: (S.shift || 0) * (SCORE_RIBBON_BAR_X1 - SCORE_RIBBON_BAR_X0) * geo.W, offY: ribbonPan(), gen: S.renderGen + '|' + S.pubGen + '|' + S.noteId };
+    var rs = scoreRibbonResolveSx(S.rv.motion, { frame: inp, playing: pl, wasPl: S.rv.wasPl, syncOn: syncOn(), dragged: S.rv.dragged, pin: pinMark(), pinN: pinPassN(), enter: !!S.rv.enter, glide: S.rv.glide, now: performance.now() }); // atc-i0f2: the one position resolution (motion transitions, then the sx rules)
+    S.rv.motion = rs.motion; S.rv.glide = rs.glide; S.rv.wasPl = pl; if (pl) S.rv.dragged = false; if (S.rv.enter && pinMark()) S.rv.enter = false; // atc-i0f2 slice 2: the Sync-entry pastId is taken once a target exists
+    var view = rs.view;
+    S.rv.sx = view.sx;
+    var fb = $('score-ribbon-follow'), fbShow = rs.fbShow; // atc-i0f2: Sync shows it only for the centre auto-hold // atc-hc3l: the Follow button shows while the view is held off the cursor
     if (fb.hidden === fbShow) fb.hidden = !fbShow;
     if (fbShow) { fb.style.left = Math.round(geo.W - 90) + 'px'; fb.style.top = Math.round(geo.H - 52) + 'px'; }
     if (perfSt) scorePerfPlayhead(perfSt, view.sx, view.held);
+    seam('data-ribbon-shift', String(Math.round(view.shift))); // test seam: the per-song scroll shift applied this frame (px; always, paused too; atc-7vo2, atc-i0f2)
     seam('data-ribbon-scroll', String(Math.round(view.sx))); // test seam: the ribbon's scroll offset (px)
     seam('data-playhead-x', String(Math.round(view.playheadX))); // test seam: the playhead's screen x (40% of the width inside the ribbon)
     if (ribbonCv.width !== view.cw || ribbonCv.height !== view.ch) { ribbonCv.width = view.cw; ribbonCv.height = view.ch; ribbonCv.style.width = geo.W + 'px'; ribbonCv.style.height = geo.H + 'px'; }
@@ -13749,6 +14646,7 @@ function initScorePanel_() {
     seam('data-ribbon-volta', JSON.stringify(S.rv.voltaTxt)); // test seam: the volta text drawn per mark copy (atc-rmug.9)
     seam('data-ribbon-dots', JSON.stringify(S.rv.dotTxt)); // test seam: the number drawn in each mark's dot
     seam('data-ribbon-bar', view.bar ? view.bar.x0 + ',' + view.bar.x1 : ''); // test seam: the position bar's x extent (px); not tappable (drawn only)
+    seam('data-ribbon-bar-bottom', view.bar ? String(view.bar.bottom) : ''); // test seam: the lower bar's bottom edge y (px), fixed at the ribbon window's bottom (atc-7vo2)
     seam('data-ribbon-bar2', view.bar2 === null ? '' : String(Math.round(view.bar2))); // test seam: its y (px); drawn only
     seam('data-ribbon-passbar', view.rep ? view.rep.n + '/' + view.rep.passes + ',' + scorePassColor(view.rep.n) : ''); // test seam: the repeat colour bar (pass n of N, colour); drawn only (atc-rmug.5)
     seam('data-ribbon-sel', list.selV);
@@ -13924,7 +14822,7 @@ function initScorePanel_() {
       if (!S.ribbonShown) setRibbonShown(true);
       if (S.enterPt) { // owner 2026-11-03: Layout -> Sync, nothing selected: open at the slice and x of the page view's centre
         var ge = pageGeo(true), le = ribbonLayoutFor(ge), ex = scoreRibbonXOfPoint(le, ge, S.enterPt);
-        if (ex !== null) S.rv.sx = scoreClamp(scoreRibbonScroll(ex, le, ge.W), 0, Math.max(0, le.width - ge.W));
+        if (ex !== null) { S.rv.sx = scoreClamp(scoreRibbonScroll(ex, le, ge.W), 0, Math.max(0, le.width - ge.W)); var pme = pinMark(); if (pme) rvSet({ hold: null, park: { id: pme.id, sx: S.rv.sx } }); } // atc-i0f2 slice 2: the ribbon opens held where the page view was
         S.enterPt = null;
       }
       var d0 = performance.now();
@@ -14061,12 +14959,12 @@ function initScorePanel_() {
       focusMeasureOnTap(onMark);
       return;
     }
-    if (S.sub === 'sync') { if (S.selId) { S.selId = null; S.rv.selAt = null; syncUi(); } return; } // adr/0020 Sync: a tap on empty clears the selection; nothing is added
+    if (S.sub === 'sync') { if (S.selId) { S.selId = null; syncUi(); } return; } // adr/0020 Sync: a tap on empty clears the selection; nothing is added
     var tel = document.elementFromPoint(cx, cy); if (tel && tel.closest && tel.closest('.score-part')) return; // adr/0023: a tap on a part circle does nothing
     var tbm = !S.ribbonShown ? shownBoxMark() : null;
     if (tbm && tbm.page === hit.page) { var tbd = scoreBoxHit(tbm.box, hit.x, hit.y, boxTolPt(hit.page)); if (tbd && tbd !== 'move') return; } // adr/0018: a tap on a box handle does nothing
     if (mayAdd === false) return; // atc-taqj: a bounce, drag remnant or second contact never adds
-    if (S.selId) { S.selId = null; S.rv.selAt = null; syncUi(); return; } // Layout: a tap on empty score closes the sheet (provisional); the next one adds
+    if (S.selId) { S.selId = null; syncUi(); return; } // Layout: a tap on empty score closes the sheet (provisional); the next one adds
     if (isPlayingNow()) return; // atc-tty9.28: no new marks while the track plays
     if (S.place === 'jump') {
       var aj = scoreAddJump(S.marks, { page: hit.page, x: hit.x, y: hit.y });
@@ -14096,7 +14994,7 @@ function initScorePanel_() {
       noteGestureEnd_(); // atc-taqj: a second contact makes the whole gesture, and a short time after it, add-proof // a second finger: this is a pinch, so a first-finger drag that already nudged the ribbon offset is undone (atc-ore.30)
       if (S.gesture && S.gesture.offY0 !== undefined && S.ribbonShown) { S.offY = S.gesture.offY0; syncUi(); }
       S.gesture = null;
-      if (S.rv.scrub) ribbonScrubEnd(); // atc-elfg.1: the scrub ends here (seek, time display back to the playhead)
+      if (rvParts().scrub) ribbonScrubEnd(); // atc-elfg.1: the scrub ends here (seek, time display back to the playhead)
       return;
     }
     var g = { offY0: S.offY, id: e.pointerId, x0: e.clientX, y0: e.clientY, sl0: scroller.scrollLeft, st0: scroller.scrollTop, dx: 0, dy: 0, t0: performance.now(), moved: 0, drag: null, primary: e.isPrimary, quietUntil: S.noAddUntil || 0 };
@@ -14184,7 +15082,6 @@ function initScorePanel_() {
       g.drag.started = true;
       S.selId = g.drag.id;
       if (!S.ribbonShown && isPlayingNow()) pauseFollow(); // atc-tty9.33: Follow would chase the moved mark; a drag pauses it in the page view
-      if (S.ribbonShown) S.rv.selAt = g.drag.id; // atc-tty9.28: selected by the drag, so the ribbon does not recentre under the finger
       S.undo = scoreUndoPush(S.undo, S.marks);
       syncUi();
       try { scroller.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
@@ -14198,7 +15095,7 @@ function initScorePanel_() {
     var g = S.gesture;
     if (!g || g.id !== e.pointerId) return;
     S.gesture = null;
-    if (S.rv.scrub) { ribbonScrubEnd(); return; } // atc-qb45: the drag ends; the audio seeks to the time under the playhead line
+    if (rvParts().scrub) { ribbonScrubEnd(); return; } // atc-qb45: the drag ends; the audio seeks to the time under the playhead line
     if (cancelled) { // the browser took the gesture as a pan
       if (!S.ribbonShown && !(g.drag && g.drag.started)) userUnpin();
       if (g.drag && g.drag.started) setMarks(S.marks);
@@ -14267,7 +15164,7 @@ function initScorePanel_() {
     S.offsets = sh.offsets ? JSON.parse(JSON.stringify(sh.offsets)) : {};
     S.base = scoreBaseOf(sharedBoxed(), { applies: true }); S.basedOn = sh.updatedAt || null; // atc-ore.24: the copy now equals the shared map
     // atc-ore.38 AC 5: the saved vertical offset comes back too
-    S.viewOff = sh.view ? Number(sh.view.offY) || 0 : 0; if (S.ribbonShown) S.offY = S.viewOff * ptScale(); S.rv.key = '';
+    S.shift = scoreShiftOf(sh); S.viewOff = sh.view ? Number(sh.view.offY) || 0 : 0; if (S.ribbonShown) S.offY = S.viewOff * ptScale(); S.rv.key = '';
     S.migH = sh.view && sh.view.heightIn > 0 ? sh.view.heightIn : 0;
     commit(marksFromShared(sh.marks), false);
   }
@@ -14298,7 +15195,7 @@ function initScorePanel_() {
     if (m === 'layout' && !wasEdit) S.focusPt = playheadPoint(); // owner 2026-11-03: Play -> Layout opens at the playhead's line (add the missing mark there)
     if (m === 'layout' && wasEdit && wasSub === 'sync') S.focusPt = syncFocusPoint(); // owner 2026-11-03: Sync -> Layout shows the spot Sync showed (applied each frame for a moment: the refit below re-snaps)
     var enterPt = m === 'sync' && wasEdit && wasSub === 'layout' && !selMark() ? layoutCenterPoint() : null; // Layout -> Sync with no selection: the ribbon opens where the page view was
-    if (m === 'play') S.partRefId = null; S.edit = m !== 'play'; if (S.edit) S.sub = m; S.rv.selAt = null;
+    if (m === 'play') S.partRefId = null; S.edit = m !== 'play'; if (S.edit) S.sub = m; rvSet({ park: null, hold: null }, null); S.rv.enter = m === 'sync'; // atc-i0f2: a mode change ends the hold; entering Sync takes pastId from the playhead
     if (m === 'sync' && !(wasEdit && wasSub === 'sync')) syncRestart(); // a fresh pass through the queue
     if (m === 'sync' && !wasEdit) S.unpinned = true; // owner 2026-11-03: Play -> Sync shows the playhead (follow scroll), unpinned until a timing tap, Skip, the chip or a selection
     if (enterPt) { S.unpinned = true; S.enterPt = enterPt; }
@@ -14312,8 +15209,10 @@ function initScorePanel_() {
     if (playMode() && !S.followOn) resumeFollow(); // leaving Edit while playing is play mode: Follow is always on
     else syncUi();
     if (isOpen()) { if (S.resizeTimer) { clearTimeout(S.resizeTimer); S.resizeTimer = 0; } onResize(); } // the transport shows or hides with the mode: refit now, not 120 ms later under the user's first touch (BX3b/BX6/BX8)
+    document.dispatchEvent(new Event('pmix-score-mode')); // atc-9vp3.5: the Pitch Pipe button follows the mode
   }
   window.pmixSetScoreMode_ = setMode;
+  window.pmixScoreMode_ = function () { return S.edit ? S.sub : 'play'; }; // atc-9vp3.5: read by the Pitch Pipe entry (notationEntryShown)
   $('score-edit-done').addEventListener('click', function () { setMode('play'); });
   $('score-sub-layout').addEventListener('click', function () { setMode('layout'); });
   $('score-sub-sync').addEventListener('click', function () { setMode('sync'); });
@@ -14335,7 +15234,7 @@ function initScorePanel_() {
     var nowT = trackNow(), r = posStrip(nowT), c = dir < 0 ? r.prev : r.next, vm = null; // atc-rmug.4: the played order, track time; atc-rmug.30 (owner 2026-11-08): the neighbouring row of the list, no 1.5 s rule
     if (!c) return;
     S.marks.forEach(function (k) { if (k.id === c.id) vm = k; });
-    if (vm && syncOn()) { S.rv.hold = null; S.rv.glide = null; jumpTo(c.t); return; } // owner 2026-11-03 (atc-rlep.16): in Sync Previous/Next only move the playhead; the selected mark and the target hold
+    if (vm && syncOn()) { jumpTo(c.t); return; } // owner 2026-11-03 (atc-rlep.16): in Sync Previous/Next only move the playhead; the selected mark and the target hold
     if (vm) goToMark(vm, c.t);
   }
   /** atc-ore.36: go to a timed mark as the strip's PREV/NEXT do in the current mode (outside Edit: seek to the mark; in Edit: select, exact seek when paused). */
@@ -14344,7 +15243,6 @@ function initScorePanel_() {
     if (!S.edit) { jumpTo(seekT); return; }
     S.selId = m.id;
     syncUi();
-    S.rv.hold = null; S.rv.glide = null; // atc-hc3l: Previous/Next resume following
     if (isPlayingNow()) { showSelAtNow(); return; } // atc-tty9.28: while playing, Previous/Next only select (no seek), like a tap
     jumpTo(seekT);
     if (S.ribbonShown) return; // atc-niwk: the ribbon follows the cursor to the mark; the page-view visibility test and Follow pause do not apply (a paused Follow would leave the ribbon undrawn)
@@ -14618,6 +15516,7 @@ function initScorePanel_() {
       syncAfterTime(pe.key); // atc-rebb: advance like any target; atc-jsl4: from the pass entry (r.key is the mark's id), so the held key is the plain entry after it
       S.passBack = { pass: { id: m.id, key: pe.key, via: pe.via }, next: S.syncKey, marks: S.marks }; // atc-jsl4: Back from that entry returns to this pass entry
       enterTarget();
+      logSyncTime(m, tt, pe.key, true);
       return;
     }
     var fw = m.kind === 'mark' ? fixWinFor(m.id) : null;
@@ -14631,13 +15530,25 @@ function initScorePanel_() {
     commit(scoreSetMarkTime(S.marks, m.id, tt, pageSizes()).marks, true);
     syncAfterTime(r.key); // atc-rebb: a selection advances like any target (reverses review F2)
     enterTarget();
+    logSyncTime(m, tt, r.key, false);
   });
+  /** atc-29mt: one ui.syncTime per Sync Time tap so a field report ("the ribbon scrolled to the end") is explainable: what was timed, the new time, the next target, playing, the pre-roll, and the ribbon scroll before and two frames after (no secrets). */
+  function logSyncTime(m, tt, key, pass) {
+    try {
+      if (typeof logActivity_ !== 'function') return;
+      var sxBefore = S.rv.sx, nk = S.syncKey, nt = nk ? markById(String(nk).split('.')[0]) : null, pl = isPlayingNow(), pre = !!S.preId;
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        var ph = Number(panel.getAttribute('data-playhead-x'));
+        logActivity_('syncTime', { markId: m.id, label: m.measure || '', t: Math.round(tt * 100) / 100, pass: !!pass, nextId: nt ? nt.id : null, nextLabel: nt ? (nt.measure || '') : '', nextTimed: !!(nt && typeof nt.t === 'number'), playing: pl, preroll: pre, pinned: !S.unpinned, sxBefore: sxBefore === null ? null : Math.round(sxBefore), sxAfter: S.rv.sx === null ? null : Math.round(S.rv.sx), playheadX: isFinite(ph) ? ph : null, nowT: Math.round(scoreNowT() * 100) / 100 });
+      }); });
+    } catch (e) { /* telemetry only */ }
+  }
   $('score-skip').addEventListener('click', function () {
     var r = syncTargetNow();
     if (!r || !r.id || r.last) return;
     var nk = scoreSyncAdvance(S.marks, r.key); // atc-rmug.31 / atc-rebb: plain next entry, forward only, never wraps
     S.syncKey = nk || (scoreSyncEntries_(S.marks).some(function (q) { return q.key === r.key; }) ? r.key : null); // review F6: a selected non-entry (a forward jump without a pass) never becomes the held key: restart by the rule
-    S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.unpinned = false;
+    S.selId = null; S.lastSelId = null; S.unpinned = false;
     syncUi();
     enterTarget();
   });
@@ -14652,19 +15563,19 @@ function initScorePanel_() {
     }
     if (!r || !r.id || r.first) return;
     S.syncKey = scoreSyncBack(S.marks, r.key); // null for a non-entry: restart by the rule
-    S.selId = null; S.lastSelId = null; S.rv.selAt = null; S.unpinned = false;
+    S.selId = null; S.lastSelId = null; S.unpinned = false;
     syncUi();
     enterTarget();
   });
   function syncFollowGo() { // the pill and the Follow button: stop pinning, follow the cursor again
-    S.unpinned = true; S.rv.hold = null; S.rv.glide = null; S.rv.sx = null; S.rv.selAt = S.selId;
+    S.unpinned = true; rvSet({ hold: null }); S.rv.glide = null; S.rv.sx = null;
     if (!S.ribbonShown) resumeFollow(); else syncUi();
   }
-  $('score-pin').addEventListener('click', syncFollowGo);
-  $('score-sync-follow').addEventListener('click', syncFollowGo);
+  $('score-pin').addEventListener('click', function () { if (!S.ribbonShown) syncFollowGo(); }); // atc-i0f2 slice 2: on the ribbon the pill is a label
+  $('score-sync-follow').addEventListener('click', function () { if (S.ribbonShown) ribbonFollowGo(); else syncFollowGo(); });
   $('score-chip').addEventListener('click', function (e) { // the Sync chip: clear the selection, go to the first queue item
     if (!syncOn() || e.target.closest('select')) return;
-    S.selId = null; S.lastSelId = null; S.rv.selAt = null; syncRestart();
+    S.selId = null; S.lastSelId = null; syncRestart();
     syncUi();
     enterTarget();
   });
@@ -14784,7 +15695,7 @@ function initScorePanel_() {
 
 if (typeof module !== 'undefined') module.exports = { scorePartsOn, scorePartBand, scoreRibbonBands, SCORE_PART_SNAP_PT, scorePartOf, scorePartY, scoreSetPartY, scoreSnapPartY, scorePartYFor, scoreClampZoom, scoreParseZoom, scoreZoomStep, scorePlanCanvas, scoreProbeOk, scoreWindow, scorePageAt, scorePageTarget, scoreTrimToBudget, scoreRibbonSrcY, scorePrunePdfjsCaches_, scoreAssetUrl_,
   scoreWithIds, scoreTrackTime, scoreClockTime, scoreEase, scoreCenterTarget, scoreFollowMs, scoreHoldReleased, scoreIndexAt, scoreTargetView, scoreDetectSeek, scoreIsTap,
-  scoreDeriveLines, scoreSyncBack, scoreLayoutStrip, scoreRibbonPoint, scoreRibbonXOfPoint, scorePagePointAt, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagReason, scoreLoopErrors, scorePassFlags, scoreSyncAdvance, scoreSyncEntries_, scoreSyncNeeds_, scoreSyncT_, scoreNudgeInfo, scoreNudgeEntry, scorePassChoices, scoreRepeatBar, scorePassColor, SCORE_PASS_COLORS, scoreVoltaText, scorePassName, scoreFlagTitle, scoreFixWindow, scoreFixAccept, scoreFixMessage, scoreEstimateLabel, scoreFixPreroll, scoreSyncChipText, scoreSyncFlagged, scoreUntimedRepeatSigns, scoreSyncTarget, scoreSyncButtonText, scoreSyncStatus, scoreSyncSubline, scoreSyncCountdown, scoreMarkName, scoreMarkNum, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreVisualRows, scoreMarkNumbers, scoreProblemCounts, scoreAfter_, scoreSlots_, scorePlayedSequence, scoreSequenceWalk_, scoreSequenceTimes_, scoreReadingItems_, scorePosStrip, scoreStep, scoreCurEntry, scorePlayedMarks_, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark, scoreParseTime, scorePrevTimedT, scoreEditStartT, scoreSetEntryTime,
+  scoreDeriveLines, scoreSyncBack, scoreLayoutStrip, scoreRibbonPoint, scoreRibbonXOfPoint, scorePagePointAt, scoreCropFor, scoreMarkPoint, scoreNearestPreceding, scoreHitMark, scoreAddTime, scoreFitHeight, scoreClampReaction, scoreFitZoom, scoreZoomLadder, scoreClampLead, scoreSeekFrac, scoreIsVerticalPan, scorePanDecision, scoreIsPlayMode, scoreShowResume, scoreApplyOffset, scoreOffsetFor, scoreOffsetDyAt, scoreSetTrackOffset, scoreOffsetFromTap, scoreShiftView, scoreFollowView, scoreRibbonLayout, scoreRibbonX, scoreRibbonTimeAt, scoreMarkEstimate, scoreRibbonPinScroll, scoreValidate, scoreFlagReason, scoreLoopErrors, scorePassFlags, scoreSyncAdvance, scoreSyncEntries_, scoreSyncNeeds_, scoreSyncT_, scoreNudgeInfo, scoreNudgeEntry, scorePassChoices, scoreRepeatBar, scorePassColor, SCORE_PASS_COLORS, scoreVoltaText, scorePassName, scoreFlagTitle, scoreFixWindow, scoreFixAccept, scoreFixMessage, scoreEstimateLabel, scoreFixPreroll, scoreSyncChipText, scoreSyncFlagged, scoreUntimedRepeatSigns, scoreSyncTarget, scoreSyncButtonText, scoreSyncStatus, scoreSyncSubline, scoreSyncCountdown, scoreMarkName, scoreMarkNum, scorePinView, scoreAnchorView, scoreMarkNearPoint, scoreRibbonScroll, scoreRibbonFollow, scoreRibbonGlide, scoreRibbonEolT, scoreRibbonParkPage, scoreRibbonBar, SCORE_RIBBON_CULL_PAD, scoreRibbonMarkPos, scoreRibbonFrame, scoreMotionNew, scoreMotionParts, scoreMotionPack, scoreRibbonResolveSx, scoreRibbonPaintList, scoreRibbonHit, scoreRibbonSegAt, scoreRibbonNudge, scoreRibbonPanLimit, scoreRibbonPanMin, scoreRibbonPanOf, scoreViewOf, scoreShiftOf, scoreCopyMarks, scoreBoxOk, scoreLineBox, scoreBoxLineAt, scoreNewLineBox, scorePlaceMark, scoreStrayMarkKind, scoreHandOffBox, scoreMigrateBoxes, scoreBoxLimits, scoreBoxDrag, scoreSetBox, scoreApplyBoxSize, scoreBoxHit, SCORE_BOX_MIN_PT, scorePerfBuf, scorePerfPush, scorePerfPct, scorePerfStretch, scorePerfFrame, scorePerfDraw, scorePerfClock, scorePerfPlayhead, scorePxRound, scoreDisplayClock, scorePerfDue, scorePerfRecord, scorePerfOverlayText, scoreAddMark, scoreSetMarkTime, scoreVisualRows, scoreMarkNumbers, scoreProblemCounts, scoreHealthView, scoreAfter_, scoreSlots_, scorePlayedSequence, scoreSequenceWalk_, scoreSequenceTimes_, scoreReadingItems_, scorePosStrip, scoreStep, scoreCurEntry, scorePlayedMarks_, scoreMarkListRows, scoreDefaultMeasure, scoreNoteShort, scoreSelLabel, scorePageBar, scoreNudgeMark, scoreParseTime, scorePrevTimedT, scoreEditStartT, scoreSetEntryTime,
   scoreDeleteMark, scoreAddJump, scoreSetJump, scoreJumpHeader, scoreJumpRowSeekTime, scoreGotoOptions, scoreTakenState, scoreTakenPatch, scoreVoltaState, scoreEndingOf, scoreEndingsText, scoreEndingStartCheck, scoreEndingEndCheck, scoreAddEndings, scoreSetPasses, scoreJumpIsBack, scoreJumpDir, scoreSetKind, scoreJumpTarget, scoreJumpTime, scoreJumpRowSeekTime, scoreBrokenJumps, scoreJumpWarning, scorePlayedAt, scorePlayClock, scorePassState, scorePassTargetAt, scoreSetPassTime, scoreClearPassTime, scorePlayMarks, scoreAddPlain, scoreAddNote, scoreSetMarkFields, scoreClearTime, scoreTimed, scoreEolFor, scoreTimingX, scoreLineFor, scoreLineOwner, scorePtToPct, scoreClientToPt, scoreRibbonPos, scoreRibbonPosAll, scoreRibbonLineY, scoreRibbonStripMark, scoreRibbonStripHit, scoreRibbonSeekD, scoreStripSeekTime, scoreMoveMark, scoreAlignEols, scoreMarkLabel, scoreSeekLabel, scoreMarksKey, scoreFreshId, scoreMigrateMarksV1, scoreUpgradeMap, scoreEditableMarks, scoreSharedNewer, scoreQueueMerge, scoreSerializeMarks, scoreParseMarks, scoreMarksUnknownVersion, scoreDiffCount, scoreNoticeParts, scoreDiffText, scoreVisibility, scoreRibbonSetting, scoreRibbonWanted, scoreRibbonView, SCORE_UI, scoreUndoPush, scoreUndoPop, scoreClearPrompt,
   isHiddenName, scoreVisiblePdfs, scoreAvailable, scoreIntroDue, scoreSharedKey, scorePlainMarks, scoreSameMarks, scoreSharedParse, scorePickPdf, scoreMatchPdf, scoreSharedFor, scoreOrphanPrompt, scoreMisplacedText, scoreCarryKey, scoreCarryAllowed, scoreSavedFor, scoreLinkNote, scoreLinkText, scoreDropKey, scoreOffsetsFor, scoreQueuedSame, scoreSaveState, scoreSaveDiff, scoreSaveSummary, scoreSaveNames, scoreSavePayload, scoreSaveMessage, scoreOffsetsOf, scoreMarksOf, scoreSaveButton, scoreQueueParse, scoreQueueAdd, scoreQueueRemove, scoreQueueShouldRemove, scoreSaveConfirmText, scoreStaleOf, scoreStaleShown, scoreStaleAtLoad, scoreKeepMineBase, scoreCarriedKeyAfterLoad,
   scoreParseDevice, scoreBaseOf, scoreMerge, scoreMergeLoad, scoreStaleMerge, scoreStaleResult, scoreStaleText, scoreKeepMine, scoreDeviceEntry, scoreRebaseAfterSave, scoreSaveBasedOn, scoreLateReply, scoreReplyCacheAction, scoreReplyOutcome, scoreKey_, scoreLegacyKeys_, scoreQueueKey_, scoreQueueOwn, scoreRibbonKey_ };
@@ -15227,6 +16138,7 @@ if (typeof document !== 'undefined') {
   });
   initHelpGuide();
   initSettingsMenu();
+  initScoreHealth();
   initScheduleCalNote();
   initMediaViewer();
   initScorePanel_();
@@ -15253,6 +16165,111 @@ function initSettingsMenu() {
   document.getElementById('menu-close-btn').addEventListener('click', close);
   document.getElementById('menu-overlay').addEventListener('click', close);
   document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || modal.classList.contains('hidden')) return; e.stopImmediatePropagation(); close(); }); // the score panel's Escape handler must not also fire
+}
+
+/**
+ * Score health (atc-v91o): an admin-only Settings entry. The row appears when the server answers a scoreHealth probe (limit 0) with ok;
+ * any other answer (not_admin, signed out) keeps it hidden. The scan lists every folder first (scoreHealthFolders pages, rows 'waiting'), then checks them
+ * in batches (scoreHealth {folders}) and fills each row in; a checked row's name links to the folder in Play (healthTrackId_ + the ADR-0016 address, new tab) (atc-v91o.1).
+ * Copy test over prod asks first (it overwrites the PROD score; the server keeps a score.json.bak-<time> copy).
+ */
+function initScoreHealth() {
+  const row = document.getElementById('menu-health-row'), modal = document.getElementById('health-modal');
+  const list = document.getElementById('health-list'), summary = document.getElementById('health-summary');
+  let admin = null, probing = false, rows = [], scanId = 0;
+  const HEALTH_BATCH = 6;   // folders per scoreHealth check call
+  function setAdmin(v) { admin = v; row.hidden = !v; }
+  async function probe() {
+    if (admin !== null || probing || !isSignedIn_()) return;
+    probing = true;
+    try { await callApi('scoreHealth', { limit: 0 }); setAdmin(true); } catch (e) { setAdmin(false); }   // callApi throws on not_admin finally { probing = false; }
+  }
+  /** Rows: one per folder found by discovery, state 'waiting' -> 'checking' -> 'done' (row.rec is the record) or 'error'. */
+  function folderLink(rec) {
+    const tid = healthTrackId_(rec.tracks);
+    return new URL(addressSearch_('', { folder: rec.id, tracks: tid ? [tid] : [], play: !!tid }), window.location.href).href;
+  }
+  function render(note) {
+    const done = rows.filter((r) => r.state === 'done' || r.state === 'error');
+    const ok = rows.filter((r) => r.state === 'done' && scoreHealthView(r.rec).ok).length;
+    summary.textContent = rows.length + ' folders, ' + ok + ' ok, ' + (done.length - ok) + ' issues' + (note ? ' ' + note : '');
+    list.textContent = '';
+    rows.forEach((r) => {
+      const d = document.createElement('div'), v = r.state === 'done' ? scoreHealthView(r.rec) : null;
+      d.className = 'health-row'; d.setAttribute('data-testid', 'health-row');
+      d.setAttribute('data-status', v ? (v.ok ? 'ok' : v.issues[0].cls) : r.state);
+      const label = r.path || r.name, name = document.createElement('div'); name.className = 'health-name';
+      if (r.state === 'done') {
+        const a = document.createElement('a'); a.setAttribute('data-testid', 'health-link'); a.href = folderLink(r.rec); a.target = '_blank'; a.rel = 'noopener'; a.textContent = label; name.appendChild(a);
+      } else name.textContent = label;
+      d.appendChild(name);
+      const chips = document.createElement('div');
+      if (v) {
+        const rec = r.rec, meta = document.createElement('div'); meta.className = 'health-meta'; meta.textContent = rec.audioCount + ' music file' + (rec.audioCount === 1 ? '' : 's') + (rec.score && rec.score.updatedAt ? ', score ' + rec.score.updatedAt.slice(0, 10) : ''); d.appendChild(meta);
+        (v.ok ? [{ cls: 'ok', text: 'ok' }] : v.issues).forEach((c) => { const s = document.createElement('span'); s.className = 'health-chip ' + c.cls; s.textContent = c.text; chips.appendChild(s); });
+        if (rec.note) { const s = document.createElement('span'); s.className = 'health-meta'; s.textContent = rec.note; chips.appendChild(s); }
+      } else {
+        const s = document.createElement('span'); s.className = 'health-chip wait';
+        s.textContent = r.state === 'error' ? 'check failed: ' + r.error : (r.state === 'checking' ? 'checking...' : 'waiting'); chips.appendChild(s);
+      }
+      d.appendChild(chips);
+      if (v && r.rec.testNewer) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.setAttribute('data-testid', 'health-copy'); b.textContent = 'Copy test over prod';
+        b.addEventListener('click', () => copyTest(r.rec));
+        d.appendChild(b);
+      }
+      list.appendChild(d);
+    });
+  }
+  /** Phase 1 lists every folder (waiting rows appear as pages arrive); phase 2 checks them HEALTH_BATCH at a time and fills each row in. */
+  async function scan() {
+    const id = ++scanId; rows = []; render('(finding folders...)');
+    const progress = () => '(checked ' + rows.filter((r) => r.state === 'done' || r.state === 'error').length + ' of ' + rows.length + ')';
+    try {
+      let cursor;
+      do {
+        const r = await callApi('scoreHealthFolders', cursor ? { cursor: cursor } : {});
+        if (id !== scanId) return;
+        r.folders.forEach((f) => rows.push({ id: f.id, name: f.name, path: f.path, state: 'waiting', rec: null, error: '' }));
+        cursor = r.cursor;
+        render(cursor ? '(finding folders...)' : progress());
+      } while (cursor);
+      for (;;) {
+        const batch = rows.filter((r) => r.state === 'waiting').slice(0, HEALTH_BATCH);
+        if (!batch.length) break;
+        batch.forEach((r) => { r.state = 'checking'; }); render(progress());
+        const res = await callApi('scoreHealth', { folders: batch.map((r) => ({ id: r.id, name: r.name, path: r.path })) });
+        if (id !== scanId) return;
+        batch.forEach((r) => {
+          const rec = res.folders.find((f) => f.id === r.id), err = res.errors.find((e) => e.id === r.id);
+          if (rec) { r.rec = rec; r.state = 'done'; }
+          else if (err) { r.state = 'error'; r.error = err.error; }
+          else r.state = 'gone';   // no audio and no score: not a music folder
+        });
+        rows = rows.filter((r) => r.state !== 'gone');
+        render(progress());
+      }
+      render('');
+    } catch (e) { if (id === scanId) render('(scan failed: ' + (e.serverError || e.message) + ')'); }
+  }
+  async function copyTest(r) {
+    if (!window.confirm('Copy score-test.json over score.json in "' + (r.path || r.name) + '"?\n\nThis will overwrite the PROD score. A backup copy (score.json.bak-<time>) is kept in the same _pmix folder.')) return;
+    try {
+      const res = await callApi('scoreHealthCopyTest', { folderId: r.id });
+      r.testNewer = false; r.note = 'copied; backup ' + (res.backup || 'none'); render('');
+    } catch (e) { render('(copy failed: ' + (e.serverError || e.message) + ')'); }
+  }
+  function close() { modal.classList.add('hidden'); scanId++; }
+  document.addEventListener('pmix-settings-open', probe);
+  document.addEventListener('pmix-session-changed', () => { admin = null; row.hidden = true; });
+  document.getElementById('menu-health-btn').addEventListener('click', () => {
+    if (typeof window.pmixCloseSettings_ === 'function') window.pmixCloseSettings_();
+    modal.classList.remove('hidden'); scan();
+  });
+  document.getElementById('health-rescan').addEventListener('click', scan);
+  document.getElementById('health-close-btn').addEventListener('click', close);
+  document.getElementById('health-overlay').addEventListener('click', close);
+  document.addEventListener('keydown', (e) => { if (e.key !== 'Escape' || modal.classList.contains('hidden')) return; e.stopImmediatePropagation(); close(); });
 }
 
 /** Schedule popup's subscribe box (bd atc-hu9, atc-eb1): buttons and feed address come from the calendar block. */
