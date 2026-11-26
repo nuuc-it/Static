@@ -372,6 +372,7 @@ body {
 
 .btn-help { font-weight: 700; }
 .btn-schedule:hover:not(:disabled), .btn-links:hover:not(:disabled), .btn-menu:hover:not(:disabled), .btn-drive:hover, .btn-help:hover, .btn-pdf:hover { background: var(--surface-3); color: var(--text); }
+.btn-pdf[data-score="true"] img { display: block; width: 32px; height: 32px; }
 .btn-drive { text-decoration: none; }
 /* No folder loaded yet: the link has no href, so it shows but does nothing. */
 .btn-drive:not([href]) { opacity: .5; pointer-events: none; }
@@ -387,6 +388,7 @@ body {
 @media (max-width: 400px) {
   .header-actions { gap: 6px; }
   .btn-schedule, .btn-links, .btn-menu, .btn-drive, .btn-help, .btn-pdf { width: 36px; min-width: 36px; height: 36px; min-height: 36px; font-size: 16px; }
+  .btn-pdf[data-score="true"] img { width: 28px; height: 28px; }
   .header { padding-right: 212px; }
   .header:has(.btn-pdf:not(.hidden)) { padding-right: 254px; }
   .header h1 { font-size: 20px; min-height: 38px; } /* atc-tty9.3: a one-line title still clears the 36 px buttons, so the subtitle never overlaps them */
@@ -762,8 +764,10 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 .speed-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pitchpipe-slot { flex: 0 0 44px; width: 44px; height: 44px; } /* atc-9vp3.16: two equal slots keep the speed controls centred whether or not the button shows */
 .speed-row .speed-controls { flex: 0 1 auto; min-width: 0; }
-.btn-pitchpipe { display: block; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; font-size: 20px; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 10px; } /* atc-9vp3.16: far left of the speed row */
+.btn-pitchpipe { display: block; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; overflow: hidden; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 10px; } /* atc-9vp3.16: far left of the speed row */
 .btn-pitchpipe:hover:not(:disabled) { background: var(--surface-3); color: var(--text); border-color: var(--text-3); }
+.btn-pitchpipe img { display: block; width: 42px; height: 42px; border-radius: 9px; } /* emblem fills the button inside its 1 px border */
+.btn-pitchpipe:hover:not(:disabled) img { filter: brightness(1.18); } /* the image covers the surface, so hover lightens it instead */
 
 .skip-fine { display: inline-block; padding: 0 6px; font-size: 14px; } /* atc-tty9.39: fine skips show only while the score is in Edit */
 
@@ -1543,6 +1547,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
 
       <!-- Sticky CTA row -->
       <div class="sticky-cta">
+        <button class="btn btn-pitchpipe" data-testid="pitchpipe-select-btn" aria-label="Pitch Pipe" title="Pitch Pipe"><img src="icons/pitch-pipe-42.webp" srcset="icons/pitch-pipe-42.webp 1x, icons/pitch-pipe-84.webp 2x, icons/pitch-pipe-126.webp 3x" width="42" height="42" alt="" draggable="false"></button>
         <span class="sticky-cta-count" id="selection-count-label" aria-live="polite"></span>
         <div style="flex:1"></div>
         <button
@@ -1749,7 +1754,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
 
         <!-- Speed row (atc-9vp3.16): the Pitch Pipe entry at the far left, the speed controls centred between two equal 44 px slots, so hiding the button never shifts them -->
         <div class="speed-row">
-        <span class="pitchpipe-slot"><button class="btn btn-pitchpipe" data-testid="pitchpipe-btn" aria-label="Pitch Pipe" title="Pitch Pipe">&#9835;</button></span>
+        <span class="pitchpipe-slot"><button class="btn btn-pitchpipe" data-testid="pitchpipe-btn" aria-label="Pitch Pipe" title="Pitch Pipe"><img src="icons/pitch-pipe-42.webp" srcset="icons/pitch-pipe-42.webp 1x, icons/pitch-pipe-84.webp 2x, icons/pitch-pipe-126.webp 3x" width="42" height="42" alt="" draggable="false"></button></span>
         <div class="speed-controls">
           <button id="speed-slow-btn" data-testid="speed-slow" class="btn btn-speed" title="Slow down 10%">−</button>
           <span id="speed-display" data-testid="speed-display" class="speed-display">1.0×</span>
@@ -2349,10 +2354,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.8.2";
+var STATIC_BUILD_VERSION_ = "1.8.8.3";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-26T05:37:15.172Z";
+var STATIC_BUILD_DATE_ = "2026-11-26T16:45:45.795Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -6675,9 +6680,10 @@ var pmixNotation = (function () {
     };
   }
 
-  /** Whether the playback page shows the Pitch Pipe button: the playback page, not in Layout or Sync. */
+  /** Whether a page shows its Pitch Pipe button: the selection page ('select', atc-9vp3.17) always; the playback page, not in Layout or Sync. */
   function notationEntryShown(s) {
     if (!s || typeof s !== 'object') return false;
+    if (s.page === 'select') return true;
     return s.page === 'play' && s.scoreMode !== 'layout' && s.scoreMode !== 'sync';
   }
 
@@ -6721,10 +6727,11 @@ if (typeof module !== 'undefined') module.exports = pmixNotation;
  */
 function initPitchPipe_() {
   var btn = document.querySelector('[data-testid="pitchpipe-btn"]');
+  var selBtn = document.querySelector('[data-testid="pitchpipe-select-btn"]'); // atc-9vp3.17: the selection page's entry, far left of the sticky row
   var sheet = document.getElementById('notes-sheet');
   var body = document.getElementById('notes-body');
   if (!btn || !sheet || !body || typeof pmixNotation === 'undefined') return;
-  var panel = null, openedAt = 0, presses = 0, part = null;
+  var panel = null, openedAt = 0, presses = 0, part = null, opener = null;
 
   function scoreMode() { try { return typeof window.pmixScoreMode_ === 'function' ? window.pmixScoreMode_() : 'play'; } catch (e) { return 'play'; } }
   function focusPart() {
@@ -6734,14 +6741,25 @@ function initPitchPipe_() {
       return t ? scorePartOf(t.name) : null;
     } catch (e) { return null; }
   }
+  /** Selection page: the part of the one selected track, else none. */
+  function selectedPart() {
+    try {
+      var info = window.pmixScoreTracks_ ? window.pmixScoreTracks_() : null;
+      if (!info || !info.selected || info.selected.length !== 1) return null;
+      var t = info.tracks.filter(function (x) { return x.id === info.selected[0]; })[0];
+      return t ? scorePartOf(t.name) : null;
+    } catch (e) { return null; }
+  }
   function applyEntry() {
     var shown = pmixNotation.notationEntryShown({ page: 'play', scoreMode: scoreMode() }); // the button lives in the transport card
     btn.classList.toggle('hidden', !shown);
-    if (!shown) close();
+    if (selBtn) selBtn.classList.toggle('hidden', !pmixNotation.notationEntryShown({ page: 'select' }));
+    if (!shown && opener === btn) close();
   }
-  function open() {
+  function open(e) {
     if (panel) return;
-    part = focusPart();
+    opener = e && e.currentTarget === selBtn ? selBtn : btn;
+    part = opener === selBtn ? selectedPart() : focusPart();
     presses = 0;
     openedAt = Date.now();
     panel = pmixNotation.createNotesPanel(body, {
@@ -6760,9 +6778,12 @@ function initPitchPipe_() {
     panel = null;
     sheet.classList.add('hidden');
     try { logActivity_('notesPanel', { part: stats.part || '', presses: presses, openMs: Date.now() - openedAt }); } catch (e) { /* logging never blocks */ }
-    if (!btn.classList.contains('hidden') && typeof btn.focus === 'function') btn.focus();
+    var back = opener || btn;
+    if (!back.classList.contains('hidden') && typeof back.focus === 'function') back.focus();
+    opener = null;
   }
   btn.addEventListener('click', open);
+  if (selBtn) selBtn.addEventListener('click', open);
   document.getElementById('notes-close-btn').addEventListener('click', close);
   document.getElementById('notes-overlay').addEventListener('click', close);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && panel) { e.stopImmediatePropagation(); close(); } }, true);
@@ -13409,7 +13430,7 @@ function initScorePanel_() {
     return changed;
   }
   // ---- Discoverability (bd atc-ore.22): music-note PDF button and the first-time how-to ----
-  var NOTE_ICON = '<svg viewBox="0 0 24 24" width="1.15em" height="1.15em" fill="currentColor" aria-hidden="true" focusable="false"><path d="M6 2h8l5 5v6.6a3.2 3.2 0 0 0-1.5-.4c-1.4 0-2.5.9-2.5 2.1s1.1 2.1 2.5 2.1c.5 0 1-.1 1.4-.4V22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5L13 3.5zM15 11v6.1a3.2 3.2 0 0 0-1.5-.4c-1.4 0-2.5.9-2.5 2.1s1.1 2.1 2.5 2.1 2.5-.9 2.5-2.1V13h2v-2h-3z" fill-rule="evenodd"/></svg>';
+  var SCORE_ICON = '<img data-testid="score-icon" src="icons/score-32.webp" srcset="icons/score-32.webp 1x, icons/score-64.webp 2x, icons/score-96.webp 3x" width="32" height="32" alt="" draggable="false">';
   var introEl = $('score-intro'), introOk = $('score-intro-ok');
   var introReturn = null;
   var avail = { folder: '', fetched: '', ok: false, resolved: '', pending: '' }; // resolved = the folder whose check has settled (atc-ore.25 AC 4)
@@ -13439,7 +13460,7 @@ function initScorePanel_() {
     var b = document.querySelector('[data-testid="pdf-btn-playback"]');
     if (!b) return;
     if (avail.ok) {
-      if (b.getAttribute('data-score') !== 'true') { b.setAttribute('data-score', 'true'); b.innerHTML = NOTE_ICON; }
+      if (b.getAttribute('data-score') !== 'true') { b.setAttribute('data-score', 'true'); b.innerHTML = SCORE_ICON; }
       b.title = 'Open the score (follows playback)';
       b.setAttribute('aria-label', 'Open the score (follows playback)');
     } else if (b.getAttribute('data-score') === 'true') {
@@ -16415,7 +16436,7 @@ function renderFolderMedia(videos, pdfsIn, folderId) {
       else mediaViewer_.openChooser(pdfs, b);
     };
   });
-  if (scorePanel_) scorePanel_.checkScore(pdfs, folderId); // atc-ore.22: the playback button's music-note look and the first-time how-to
+  if (scorePanel_) scorePanel_.checkScore(pdfs, folderId); // atc-ore.22: the playback button's score icon and the first-time how-to
 }
 
 function initMediaViewer() {
