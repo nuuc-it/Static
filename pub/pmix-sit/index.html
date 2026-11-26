@@ -2349,10 +2349,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.8.1";
+var STATIC_BUILD_VERSION_ = "1.8.8.2";
 var STATIC_ENV_LABEL_ = "TEST";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbx6AZF5KKUi9HXM9oS2mMD0jtV25k5Fs21JqSSBM_v4U9Z8caHmMazdwhXyMD-4Agak/exec";
-var STATIC_BUILD_DATE_ = "2026-11-25T11:01:34.093Z";
+var STATIC_BUILD_DATE_ = "2026-11-26T05:37:15.172Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbwmoOPRDThQWDzMPU5H-6aVzvnprYbIL8yjbhLX3wBbi89ZY7cRLc2_yoYUK1H8LcX3/exec";
@@ -10557,36 +10557,40 @@ function scoreMotionPack(p, pastId) {
 function scoreRibbonResolveSx(m, i) {
   var f = i.frame, L = f.L, geo = f.geo, W = geo.W, edit = !!f.edit, pl = !!i.playing, pm = i.pin || null;
   var p = scoreMotionParts(m), hold = p.hold, park = p.park, scrub = p.scrub, pastId = m.pastId, glide = i.glide || null;
+  var ek = pm ? pm.id + '.' + (i.pinN > 0 ? i.pinN : 1) : null; // atc-ffh8: the target is a ribbon position, keyed by its entry key (mark id + pass); Held, the park and pastId key by it
   var fsx = scoreRibbonScroll(scoreRibbonX(f.marks, f.t, L) + (Number(f.shiftPx) || 0), L, W); // atc-i0f2 slice 3: the corrected playhead, so the limit compares the shifted follow
-  if (!pl && edit) { hold = null; glide = null; } // paused Edit holds by prevSx (atc-hc3l)
+  if (!pl && edit && !i.syncOn) { hold = null; glide = null; } // paused Layout-style Edit holds by prevSx (atc-hc3l); atc-ncw3: Sync keeps its hold through pause
   else if (!pl && !hold) glide = null; // atc-elfg.9: paused outside Edit, a held view stays held
   if (pl && !i.wasPl && edit && f.prevSx !== null && !hold && !park) { // atc-elfg.9: Edit play from a held view glides to the cursor
     if (Math.abs(f.prevSx - fsx) > 1) { hold = { sx: f.prevSx }; if (i.syncOn && !pm && i.dragged) hold.sync = true; else glide = { from: f.prevSx, t0: i.now }; }
   }
+  if (pm && hold && !hold.sync && !glide) glide = { from: hold.sx, t0: i.now }; // atc-ffh8: a target appearing ends a no-target Held, playing or paused: the view glides to the follow/pin position
   var pp0 = null, pinRx, limitRx, parkHold = null;
   if (pm) pp0 = i.pinN > 0 ? scoreRibbonPosPass(L, geo, pm, i.pinN, fsx + SCORE_RIBBON_ANCHOR_X * W, true) : scoreRibbonPos(L, geo, pm, fsx + SCORE_RIBBON_ANCHOR_X * W, true); // atc-i0f2 slice 2: the target's own pass copy, not the one nearest the playhead
   if (glide && hold) {
     var gp = (i.now - glide.t0) / 250, gx = fsx;
-    if (pp0 && pastId !== pm.id) gx = Math.min(gx, scoreRibbonScroll(pp0.x, L, W, SCORE_RIBBON_SYNC_LIMIT_X)); // the glide to the playhead stops at the Sync centre limit
+    if (pp0 && !pl) gx = Math.max(gx, pp0.x - 0.65 * W); // atc-630f: paused, the glide aims at the look-ahead the pin will resolve to
+    if (pp0 && pastId !== ek) gx = Math.min(gx, scoreRibbonScroll(pp0.x, L, W, SCORE_RIBBON_SYNC_LIMIT_X)); // the glide to the playhead stops at the Sync centre limit
     if (gp >= 1) { hold = null; glide = null; } else hold = { sx: scoreRibbonGlide(glide.from, gx, gp) };
   }
   if (pm) { // Sync target: pinned paused (65 percent rule in the frame), follows playing, never past the target (limitRx); the centre park (paused Edit already cleared hold and glide above)
     if (hold && hold.sync) { hold = null; glide = null; }
-    if (park && park.id !== pm.id) park = null;
-    if (pastId && pastId !== pm.id) pastId = null;
-    if (pp0) { limitRx = pp0.x; if (!pl) pinRx = pp0.x; }
+    if (park && park.id !== ek) park = null; // atc-ffh8: a change of mark or pass ends the park
+    if (pastId && pastId !== ek) pastId = null;
+    if (pp0) { limitRx = pp0.x; if (!pl && !hold) pinRx = pp0.x; } // atc-630f: a running paused glide is not overridden by the pin
     var lsx = pp0 ? scoreRibbonScroll(pp0.x, L, W, SCORE_RIBBON_SYNC_LIMIT_X) : 0;
-    if (i.enter && pp0) pastId = fsx > lsx + 0.5 ? pm.id : null; // entering Sync shows the playhead even when it is past the target (owner 2026-11-03)
-    if (pastId === pm.id && fsx <= lsx + 0.5) pastId = null; // the playhead is back before the mark: reaching it again parks again
+    if (i.enter && pp0) pastId = fsx > lsx + 0.5 ? ek : null; // entering Sync shows the playhead even when it is past the target (owner 2026-11-03)
+    if (pastId === ek && fsx <= lsx + 0.5) pastId = null; // the playhead is back before the mark: reaching it again parks again
     if (park) { parkHold = { sx: park.sx, keep: true }; pinRx = undefined; limitRx = undefined; }
-    else if (pastId === pm.id) limitRx = undefined;
+    else if (pastId === ek) limitRx = undefined;
     else if (limitRx !== undefined && !hold) { // atc-i0f2 slice 2: playing or paused, a seek or the auto-scroll that would pass the centre limit latches Held
-      if (fsx > lsx + 0.5) { park = { id: pm.id, sx: lsx }; parkHold = { sx: lsx, keep: true }; limitRx = undefined; pinRx = undefined; }
+      if (fsx > lsx + 0.5) { park = { id: ek, sx: lsx }; parkHold = { sx: lsx, keep: true }; limitRx = undefined; pinRx = undefined; }
     }
   } else { park = null; pastId = null; }
   var inp = {}, k;
   for (k in f) if (Object.prototype.hasOwnProperty.call(f, k)) inp[k] = f[k];
-  inp.hold = parkHold || hold; inp.scrub = scrub; inp.pinRx = pinRx; inp.limitRx = limitRx; inp.limitAx = SCORE_RIBBON_SYNC_LIMIT_X;
+  inp.hold = parkHold || (hold && !pl && edit ? { sx: hold.sx, keep: true } : hold); // atc-ncw3: a paused Sync hold applies (keep)
+  inp.scrub = scrub; inp.pinRx = pinRx; inp.limitRx = limitRx; inp.limitAx = SCORE_RIBBON_SYNC_LIMIT_X;
   return { motion: scoreMotionPack({ hold: hold, park: park, scrub: scrub }, pastId), glide: glide, view: scoreRibbonFrame(inp), fbShow: !!park || (!!hold && !glide) };
 }
 /** atc-elfg.6: what one drawn ribbon frame contains, from the frame view. mp = scoreRibbonMarkPos(...).
@@ -13697,6 +13701,8 @@ function initScorePanel_() {
     if (key !== r.id && !scoreNudgeInfo(S.marks, key)) return null; // an untimed pass entry takes its time from Time only
     return { id: r.id, key: key };
   }
+  /** atc-ffh8: the entry key (mark id + pass) of the Sync target position the ribbon motion keys Held and Follow by; null with no target. */
+  function pinEntryKey() { var m = pinMark(); return m ? m.id + '.' + (pinPassN() || 1) : null; }
   function pinMark() { if (!syncOn() || (S.unpinned && !S.ribbonShown) || S.offsetMode) return null; /* atc-i0f2 slice 2: the ribbon has no unpin (a pan holds the view, Follow returns it); the page view keeps it */ var r = syncTargetNow(); return r && r.id ? markById(r.id) : null; }
   /** atc-i0f2 slice 2: the pass (1, 2, ...) of the Sync target's entry, from its key ('m7.2' is pass 2); 0 when none. */
   function pinPassN() {
@@ -14471,9 +14477,10 @@ function initScorePanel_() {
     if (pk && S.rv.layout) { rvSet({ park: { id: pk.id, sx: scoreClamp(pk.sx + dx, 0, Math.max(0, S.rv.layout.width - pageGeo(true).W)) } }); return true; } // atc-i0f2: a drag while parked moves the parked view and it stays parked (only Follow or a new target ends it)
     if (S.ribbonShown && syncOn() && S.rv.layout) { // atc-i0f2 slice 2: a Sync pan holds the view at the target (Held); only Follow or a new target ends it
       var pmx = pinMark(), mx = Math.max(0, S.rv.layout.width - pageGeo(true).W);
-      if (pmx) { S.rv.glide = null; rvSet({ hold: null, park: { id: pmx.id, sx: scoreClamp((S.rv.sx || 0) + dx, 0, mx) } }); return true; }
+      if (pmx) { S.rv.glide = null; rvSet({ hold: null, park: { id: pinEntryKey(), sx: scoreClamp((S.rv.sx || 0) + dx, 0, mx) } }); return true; }
     }
     if (isPlayingNow()) return ribbonHoldBy(dx);
+    if (S.edit && S.ribbonShown && S.rv.sx !== null && syncOn() && S.rv.layout) { S.rv.glide = null; var hp = rvParts().hold; rvSet({ hold: { sx: scoreClamp((hp ? hp.sx : S.rv.sx) + dx, 0, Math.max(0, S.rv.layout.width - pageGeo(true).W)) } }); return true; } // atc-ncw3: Sync with no target: the paused drag holds the view (heldId null), so it survives pause and play and shows Follow
     if (S.edit && S.ribbonShown && S.rv.sx !== null) { S.rv.sx = Math.max(0, S.rv.sx + dx); S.rv.dragged = true; return true; } // drawRibbon clamps
     return false;
   }
@@ -14822,7 +14829,7 @@ function initScorePanel_() {
       if (!S.ribbonShown) setRibbonShown(true);
       if (S.enterPt) { // owner 2026-11-03: Layout -> Sync, nothing selected: open at the slice and x of the page view's centre
         var ge = pageGeo(true), le = ribbonLayoutFor(ge), ex = scoreRibbonXOfPoint(le, ge, S.enterPt);
-        if (ex !== null) { S.rv.sx = scoreClamp(scoreRibbonScroll(ex, le, ge.W), 0, Math.max(0, le.width - ge.W)); var pme = pinMark(); if (pme) rvSet({ hold: null, park: { id: pme.id, sx: S.rv.sx } }); } // atc-i0f2 slice 2: the ribbon opens held where the page view was
+        if (ex !== null) { S.rv.sx = scoreClamp(scoreRibbonScroll(ex, le, ge.W), 0, Math.max(0, le.width - ge.W)); var pme = pinMark(); if (pme) rvSet({ hold: null, park: { id: pinEntryKey(), sx: S.rv.sx } }); } // atc-i0f2 slice 2: the ribbon opens held where the page view was
         S.enterPt = null;
       }
       var d0 = performance.now();
