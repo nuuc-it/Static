@@ -57,6 +57,14 @@
     figure { margin-top: 12px; text-align: center; }
     img { display: block; width: 240px; max-width: 100%; height: auto; margin: 0 auto; border: 1px solid var(--border); border-radius: var(--radius); }
     figcaption { font-size: 12px; color: var(--text-3); margin-top: 6px; }
+    .inline-icon { display: inline-block; vertical-align: middle; width: 28px; height: 28px; margin: 0 2px; border: 0; border-radius: 6px; }
+    .fold { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+    .fold summary { min-height: 44px; padding: 10px 14px; font-size: 14px; font-weight: 600; color: var(--text-2); cursor: pointer; display: flex; align-items: center; border-radius: var(--radius); }
+    .fold summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .fold .edit-body { padding: 0 14px 14px; font-size: 15px; }
+    .fold .edit-body p + ul { margin-top: 6px; }
+    .fold .edit-body ul { margin-left: 20px; }
+    .fold .edit-body a { color: var(--blue); }
     .tips { margin-top: 20px; }
     .tips h2 { font-size: 16px; color: var(--text); margin-bottom: 6px; }
     .tips ul { margin-left: 20px; font-size: 15px; }
@@ -137,30 +145,51 @@
     </div>
   </section>
 
-  <section class="step" data-testid="help-section-score">
-    <h2><span class="num">4</span>Follow the score</h2>
+  <section class="step" data-testid="help-section-pitchpipe">
+    <h2><span class="num">4</span>Pitch Pipe</h2>
     <div class="text">
-      <p>If the song has a score that moves with the music, the <strong>music-note</strong> button appears on the mixer page (on the folder page, the PDF button opens the Drive viewer instead). Tap it and the score opens over the playing mix. Press Play and the score follows the music.</p>
+      <p>Need your starting note? Tap the <strong>Pitch Pipe</strong> button, a green tile marked PITCH <img class="inline-icon" src="icons/opening-note.svg" width="28" height="28" alt="" draggable="false">. It sits at the far left of the row with <strong>Open New</strong> and <strong>Play Selected</strong> on the song page, and at the far left of the speed row on the mixer.</p>
+      <ul>
+        <li>It opens on your part, or on the last part you used, or on Alto the first time. Change part with the <strong>S A T B</strong> buttons.</li>
+        <li>Tap a note to hear it. Hold it to keep it sounding. Use the flat, natural or sharp button first for a note in between.</li>
+        <li>It plays over the mix without stopping it. Close the sheet when you are done.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="step" data-testid="help-section-score">
+    <h2><span class="num">5</span>Follow the score</h2>
+    <div class="text" data-testid="help-score-play">
+      <p>If the song has a score that moves with the music, a <strong>score button</strong> appears on the mixer page: a navy disc with a cream rim showing a page of music <img class="inline-icon" src="icons/score-32.webp" srcset="icons/score-32.webp 1x, icons/score-64.webp 2x, icons/score-96.webp 3x" width="32" height="32" alt="" draggable="false">. (On the song page, the PDF button opens the Drive viewer instead.) Tap it and the score opens over the playing mix. Press Play and the score follows the music.</p>
       <ul>
         <li><strong>Follow:</strong> the page moves with the music and the line being sung sits near the top.</li>
         <li><strong>Start from a numbered mark:</strong> tap it and the music starts exactly there.</li>
         <li><strong>Prev / Next</strong> step to the previous or next mark.</li>
-        <li><strong>Look around:</strong> drag the score up or down while it plays to move the line you are singing higher or lower; Follow keeps going. In the Ribbon, dragging up or down moves the view up and down within the line&#39;s box, so you can look at another part of a tall line; it stops at the top and bottom of the box.</li>
-        <li><strong>Ribbon:</strong> instead of whole pages, the score scrolls sideways one line at a time. Switch it on or off in Settings. Pause keeps the Ribbon: drag or scroll it sideways and the time follows; Play carries on from there.</li>
+        <li><strong>Look around:</strong> drag the score while it plays and the view stays where you put it. Tap <strong>Follow</strong> to return to the music. In the Ribbon, dragging up or down looks at another part of a tall line.</li>
+        <li><strong>Ribbon:</strong> instead of whole pages, the score scrolls sideways one line at a time. Switch it on or off in Settings. Pause keeps the Ribbon: drag or scroll it sideways and the time follows; Play carries on from there. A seek or Prev / Next after a drag keeps your view too, until you tap Follow.</li>
         <li><strong>The green bar</strong> shows where you are in the line.</li>
       </ul>
       <p style="margin-top:8px">The <strong>gear</strong> button opens <strong>Settings</strong>:</p>
       <ul>
-        <li><strong>Mode:</strong> Play (listen and follow), Edit - Layout (place and label marks) or Edit - Sync (time marks to the music). Editing is explained on the mark-up page below.</li>
         <li><strong>Open Drive folder:</strong> opens this folder in Google Drive.</li>
         <li><strong>Copy Link:</strong> coming soon.</li>
-        <li><strong>Reaction:</strong> for editing a score, how far before your tap a mark is timed.</li>
         <li><strong>Lead:</strong> how long before a new line starts the page moves to it.</li>
         <li><strong>Crop width:</strong> trims the side margins so the music shows larger.</li>
         <li><strong>Ribbon:</strong> the sideways view, as above.</li>
       </ul>
-      <p style="margin-top:8px">Reaction, Lead, Ribbon and Crop width apply once a score is open; Ribbon needs timed marks. To add or fix the marks, see <a href="score-edit-help.html" target="_blank" rel="noopener" style="color:var(--blue)">how to mark up a score</a>.</p>
     </div>
+    <details class="fold" data-testid="help-score-edit">
+      <summary>Editing a score (limited users)</summary>
+      <div class="edit-body">
+        <p>Most singers never need this. Adding or fixing a score's marks, and saving them for everyone, is only for signed-in editors; anyone else's edits stay on their own device.</p>
+        <ul>
+          <li><strong>Mode</strong> in Settings: <strong>Play</strong> (listen and follow), <strong>Edit - Layout</strong> (place and label marks) or <strong>Edit - Sync</strong> (time marks to the music).</li>
+          <li><strong>Reaction:</strong> how far before your tap a mark is timed.</li>
+          <li><strong>Sync view:</strong> the view stays on the mark being timed (it never scrolls past the middle of the screen). Tap <strong>Follow</strong> to go back to the music; it glides there, paused or playing.</li>
+        </ul>
+        <p>Full steps: <a href="score-edit-help.html" target="_blank" rel="noopener">how to mark up a score</a>.</p>
+      </div>
+    </details>
   </section>
 
   <section class="tips">

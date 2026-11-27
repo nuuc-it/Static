@@ -372,6 +372,7 @@ body {
 
 .btn-help { font-weight: 700; }
 .btn-schedule:hover:not(:disabled), .btn-links:hover:not(:disabled), .btn-menu:hover:not(:disabled), .btn-drive:hover, .btn-help:hover, .btn-pdf:hover { background: var(--surface-3); color: var(--text); }
+.btn-pdf[data-score="true"] img { display: block; width: 32px; height: 32px; }
 .btn-drive { text-decoration: none; }
 /* No folder loaded yet: the link has no href, so it shows but does nothing. */
 .btn-drive:not([href]) { opacity: .5; pointer-events: none; }
@@ -387,6 +388,7 @@ body {
 @media (max-width: 400px) {
   .header-actions { gap: 6px; }
   .btn-schedule, .btn-links, .btn-menu, .btn-drive, .btn-help, .btn-pdf { width: 36px; min-width: 36px; height: 36px; min-height: 36px; font-size: 16px; }
+  .btn-pdf[data-score="true"] img { width: 28px; height: 28px; }
   .header { padding-right: 212px; }
   .header:has(.btn-pdf:not(.hidden)) { padding-right: 254px; }
   .header h1 { font-size: 20px; min-height: 38px; } /* atc-tty9.3: a one-line title still clears the 36 px buttons, so the subtitle never overlaps them */
@@ -762,8 +764,10 @@ button.score-pos-cell:disabled { opacity: .5; cursor: default; }
 .speed-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pitchpipe-slot { flex: 0 0 44px; width: 44px; height: 44px; } /* atc-9vp3.16: two equal slots keep the speed controls centred whether or not the button shows */
 .speed-row .speed-controls { flex: 0 1 auto; min-width: 0; }
-.btn-pitchpipe { display: block; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; font-size: 20px; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 10px; } /* atc-9vp3.16: far left of the speed row */
+.btn-pitchpipe { display: block; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; overflow: hidden; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 10px; } /* atc-9vp3.16: far left of the speed row */
 .btn-pitchpipe:hover:not(:disabled) { background: var(--surface-3); color: var(--text); border-color: var(--text-3); }
+.btn-pitchpipe img { display: block; width: 42px; height: 42px; border-radius: 9px; } /* emblem fills the button inside its 1 px border */
+.btn-pitchpipe:hover:not(:disabled) img { filter: brightness(1.18); } /* the image covers the surface, so hover lightens it instead */
 
 .skip-fine { display: inline-block; padding: 0 6px; font-size: 14px; } /* atc-tty9.39: fine skips show only while the score is in Edit */
 
@@ -1543,6 +1547,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
 
       <!-- Sticky CTA row -->
       <div class="sticky-cta">
+        <button class="btn btn-pitchpipe" data-testid="pitchpipe-select-btn" aria-label="Pitch Pipe" title="Pitch Pipe"><img src="icons/opening-note.svg" width="42" height="42" alt="" draggable="false"></button>
         <span class="sticky-cta-count" id="selection-count-label" aria-live="polite"></span>
         <div style="flex:1"></div>
         <button
@@ -1749,7 +1754,7 @@ li > .schedule-cal-wrap { margin-left: 8px; }
 
         <!-- Speed row (atc-9vp3.16): the Pitch Pipe entry at the far left, the speed controls centred between two equal 44 px slots, so hiding the button never shifts them -->
         <div class="speed-row">
-        <span class="pitchpipe-slot"><button class="btn btn-pitchpipe" data-testid="pitchpipe-btn" aria-label="Pitch Pipe" title="Pitch Pipe">&#9835;</button></span>
+        <span class="pitchpipe-slot"><button class="btn btn-pitchpipe" data-testid="pitchpipe-btn" aria-label="Pitch Pipe" title="Pitch Pipe"><img src="icons/opening-note.svg" width="42" height="42" alt="" draggable="false"></button></span>
         <div class="speed-controls">
           <button id="speed-slow-btn" data-testid="speed-slow" class="btn btn-speed" title="Slow down 10%">−</button>
           <span id="speed-display" data-testid="speed-display" class="speed-display">1.0×</span>
@@ -2349,10 +2354,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { createCl
  * first paint, and fetching a file to find out where to fetch files from is the round trip this
  * whole migration exists to remove.
  */
-var STATIC_BUILD_VERSION_ = "1.8.8";
+var STATIC_BUILD_VERSION_ = "1.8.9";
 var STATIC_ENV_LABEL_ = "PRODUCTION";
 var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwPcnwln3A1KI0V9T9FWLxA-s5FLDQY9xmr9CXc_HPA_8oS9lXvXrhRnEmlCU0PB0QK/exec";
-var STATIC_BUILD_DATE_ = "2026-11-25T10:52:34.694Z";
+var STATIC_BUILD_DATE_ = "2026-11-27T04:10:49.421Z";
 // Optional sign-in (bd atc-dfr): the NUUC-Dispatch /exec URL for this env, and the assertion audience
 // (practicemix-test on TEST, practicemix on PROD). Both null = unbuilt, sign-in disabled.
 var STATIC_DISPATCH_URL_ = "https://script.google.com/macros/s/AKfycbz-YsKzVeoehCr05zF4kF_wbKuTAhMm1RU1KSXK-W6UOKt9zg1zVTUi_TKKYnpkhSR-/exec";
@@ -6277,6 +6282,7 @@ var pmixNotation = (function () {
     items.forEach(function (it) { minPos = Math.min(minPos, it.pos); maxPos = Math.max(maxPos, it.pos); });
     var top = (-minPos / 2 + 1) * space;
     var height = top + (maxPos / 2 + 1) * space;
+    if (clef === 'treble8') height = Math.max(height, top + 6.9 * space); // room under the curl for the small 8 (atc-9vp3.21)
     var clefW = 2.8 * space;
     var letterW = 0.62 * LABEL_FS * space;
     var labelW = letterW;
@@ -6316,6 +6322,7 @@ var pmixNotation = (function () {
     // y = the line the clef glyph's origin sits on: treble G line (position 6), bass F line (position 2)
     var clefs = clef === 'grand' ? [{ kind: 'treble', top: top, y: top + 3 * space }, { kind: 'bass', top: top + 6 * space, y: top + 7 * space }]
       : clef === 'bass' ? [{ kind: 'bass', top: top, y: top + space }] : [{ kind: 'treble', top: top, y: top + 3 * space }];
+    if (clef === 'treble8') clefs[0].octave = 8; // the small 8 under the treble clef (atc-9vp3.21)
     return {
       clef: clef,
       space: space,
@@ -6358,7 +6365,11 @@ var pmixNotation = (function () {
     if (!geo || !Array.isArray(geo.columns)) return '';
     var o = opts && typeof opts === 'object' ? opts : {};
     var s = geo.space;
-    var clefs = '<g class="nt-clef" aria-hidden="true">' + geo.clefs.map(function (c) { return glyph(c.kind, 0.4 * s, c.y, s); }).join('') + '</g>';
+    var clefs = '<g class="nt-clef" aria-hidden="true">' + geo.clefs.map(function (c) {
+      // octave clef: a small serif 8 centred under the treble curl (curl bottom ~2.63 spaces below the G line)
+      var eight = c.octave === 8 ? '<text class="nt-octave" aria-hidden="true" x="' + 1.75 * s + '" y="' + (c.y + 3.3 * s) + '" font-weight="600" text-anchor="middle" dominant-baseline="central" font-size="' + 1.3 * s + '" font-family="Georgia, \'Times New Roman\', serif" fill="' + INK + '">8</text>' : '';
+      return glyph(c.kind, 0.4 * s, c.y, s) + eight;
+    }).join('') + '</g>';
     var notes = geo.columns.map(function (c) {
       var on = o.on !== undefined && o.on !== null && String(o.on) === c.id;
       var cls = 'nt-note' + (on ? ' nt-on' : '') + (c.role === 'start' ? ' nt-start' : '');
@@ -6675,9 +6686,10 @@ var pmixNotation = (function () {
     };
   }
 
-  /** Whether the playback page shows the Pitch Pipe button: the playback page, not in Layout or Sync. */
+  /** Whether a page shows its Pitch Pipe button: the selection page ('select', atc-9vp3.17) always; the playback page, not in Layout or Sync. */
   function notationEntryShown(s) {
     if (!s || typeof s !== 'object') return false;
+    if (s.page === 'select') return true;
     return s.page === 'play' && s.scoreMode !== 'layout' && s.scoreMode !== 'sync';
   }
 
@@ -6721,10 +6733,11 @@ if (typeof module !== 'undefined') module.exports = pmixNotation;
  */
 function initPitchPipe_() {
   var btn = document.querySelector('[data-testid="pitchpipe-btn"]');
+  var selBtn = document.querySelector('[data-testid="pitchpipe-select-btn"]'); // atc-9vp3.17: the selection page's entry, far left of the sticky row
   var sheet = document.getElementById('notes-sheet');
   var body = document.getElementById('notes-body');
   if (!btn || !sheet || !body || typeof pmixNotation === 'undefined') return;
-  var panel = null, openedAt = 0, presses = 0, part = null;
+  var panel = null, openedAt = 0, presses = 0, part = null, opener = null;
 
   function scoreMode() { try { return typeof window.pmixScoreMode_ === 'function' ? window.pmixScoreMode_() : 'play'; } catch (e) { return 'play'; } }
   function focusPart() {
@@ -6734,14 +6747,33 @@ function initPitchPipe_() {
       return t ? scorePartOf(t.name) : null;
     } catch (e) { return null; }
   }
+  /** Selection page: the part of the one selected track, else none. */
+  function selectedPart() {
+    try {
+      var info = window.pmixScoreTracks_ ? window.pmixScoreTracks_() : null;
+      if (!info || !info.selected || info.selected.length !== 1) return null;
+      var t = info.tracks.filter(function (x) { return x.id === info.selected[0]; })[0];
+      return t ? scorePartOf(t.name) : null;
+    } catch (e) { return null; }
+  }
+  var PART_KEY = 'pmix.' + (typeof pmixTarget === 'function' ? pmixTarget() : '') + '.v1.pitchPipePart'; // last part the Pitch Pipe was opened on
+  function storedPart() {
+    try { var v = window.localStorage.getItem(PART_KEY); return v && pmixNotation.NOTATION_RANGES.hasOwnProperty(v) ? v : null; } catch (e) { return null; }
+  }
+  function storePart(p) {
+    try { if (p && pmixNotation.NOTATION_RANGES.hasOwnProperty(p)) window.localStorage.setItem(PART_KEY, p); } catch (e) { /* preference is optional */ }
+  }
   function applyEntry() {
     var shown = pmixNotation.notationEntryShown({ page: 'play', scoreMode: scoreMode() }); // the button lives in the transport card
     btn.classList.toggle('hidden', !shown);
-    if (!shown) close();
+    if (selBtn) selBtn.classList.toggle('hidden', !pmixNotation.notationEntryShown({ page: 'select' }));
+    if (!shown && opener === btn) close();
   }
-  function open() {
+  function open(e) {
     if (panel) return;
-    part = focusPart();
+    opener = e && e.currentTarget === selBtn ? selBtn : btn;
+    part = (opener === selBtn ? selectedPart() : focusPart()) || storedPart() || 'A'; // the sheet always shows notes: track part, else last used, else Alto
+    storePart(part);
     presses = 0;
     openedAt = Date.now();
     panel = pmixNotation.createNotesPanel(body, {
@@ -6756,13 +6788,17 @@ function initPitchPipe_() {
   function close() {
     if (!panel) return;
     var stats = panel.stats();
+    storePart(stats.part); // a part chosen inside the panel is the next default
     panel.destroy();
     panel = null;
     sheet.classList.add('hidden');
     try { logActivity_('notesPanel', { part: stats.part || '', presses: presses, openMs: Date.now() - openedAt }); } catch (e) { /* logging never blocks */ }
-    if (!btn.classList.contains('hidden') && typeof btn.focus === 'function') btn.focus();
+    var back = opener || btn;
+    if (!back.classList.contains('hidden') && typeof back.focus === 'function') back.focus();
+    opener = null;
   }
   btn.addEventListener('click', open);
+  if (selBtn) selBtn.addEventListener('click', open);
   document.getElementById('notes-close-btn').addEventListener('click', close);
   document.getElementById('notes-overlay').addEventListener('click', close);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && panel) { e.stopImmediatePropagation(); close(); } }, true);
@@ -10557,36 +10593,40 @@ function scoreMotionPack(p, pastId) {
 function scoreRibbonResolveSx(m, i) {
   var f = i.frame, L = f.L, geo = f.geo, W = geo.W, edit = !!f.edit, pl = !!i.playing, pm = i.pin || null;
   var p = scoreMotionParts(m), hold = p.hold, park = p.park, scrub = p.scrub, pastId = m.pastId, glide = i.glide || null;
+  var ek = pm ? pm.id + '.' + (i.pinN > 0 ? i.pinN : 1) : null; // atc-ffh8: the target is a ribbon position, keyed by its entry key (mark id + pass); Held, the park and pastId key by it
   var fsx = scoreRibbonScroll(scoreRibbonX(f.marks, f.t, L) + (Number(f.shiftPx) || 0), L, W); // atc-i0f2 slice 3: the corrected playhead, so the limit compares the shifted follow
-  if (!pl && edit) { hold = null; glide = null; } // paused Edit holds by prevSx (atc-hc3l)
+  if (!pl && edit && !i.syncOn) { hold = null; glide = null; } // paused Layout-style Edit holds by prevSx (atc-hc3l); atc-ncw3: Sync keeps its hold through pause
   else if (!pl && !hold) glide = null; // atc-elfg.9: paused outside Edit, a held view stays held
   if (pl && !i.wasPl && edit && f.prevSx !== null && !hold && !park) { // atc-elfg.9: Edit play from a held view glides to the cursor
     if (Math.abs(f.prevSx - fsx) > 1) { hold = { sx: f.prevSx }; if (i.syncOn && !pm && i.dragged) hold.sync = true; else glide = { from: f.prevSx, t0: i.now }; }
   }
+  if (pm && hold && !hold.sync && !glide) glide = { from: hold.sx, t0: i.now }; // atc-ffh8: a target appearing ends a no-target Held, playing or paused: the view glides to the follow/pin position
   var pp0 = null, pinRx, limitRx, parkHold = null;
   if (pm) pp0 = i.pinN > 0 ? scoreRibbonPosPass(L, geo, pm, i.pinN, fsx + SCORE_RIBBON_ANCHOR_X * W, true) : scoreRibbonPos(L, geo, pm, fsx + SCORE_RIBBON_ANCHOR_X * W, true); // atc-i0f2 slice 2: the target's own pass copy, not the one nearest the playhead
   if (glide && hold) {
     var gp = (i.now - glide.t0) / 250, gx = fsx;
-    if (pp0 && pastId !== pm.id) gx = Math.min(gx, scoreRibbonScroll(pp0.x, L, W, SCORE_RIBBON_SYNC_LIMIT_X)); // the glide to the playhead stops at the Sync centre limit
+    if (pp0 && !pl) gx = Math.max(gx, pp0.x - 0.65 * W); // atc-630f: paused, the glide aims at the look-ahead the pin will resolve to
+    if (pp0 && pastId !== ek) gx = Math.min(gx, scoreRibbonScroll(pp0.x, L, W, SCORE_RIBBON_SYNC_LIMIT_X)); // the glide to the playhead stops at the Sync centre limit
     if (gp >= 1) { hold = null; glide = null; } else hold = { sx: scoreRibbonGlide(glide.from, gx, gp) };
   }
   if (pm) { // Sync target: pinned paused (65 percent rule in the frame), follows playing, never past the target (limitRx); the centre park (paused Edit already cleared hold and glide above)
     if (hold && hold.sync) { hold = null; glide = null; }
-    if (park && park.id !== pm.id) park = null;
-    if (pastId && pastId !== pm.id) pastId = null;
-    if (pp0) { limitRx = pp0.x; if (!pl) pinRx = pp0.x; }
+    if (park && park.id !== ek) park = null; // atc-ffh8: a change of mark or pass ends the park
+    if (pastId && pastId !== ek) pastId = null;
+    if (pp0) { limitRx = pp0.x; if (!pl && !hold) pinRx = pp0.x; } // atc-630f: a running paused glide is not overridden by the pin
     var lsx = pp0 ? scoreRibbonScroll(pp0.x, L, W, SCORE_RIBBON_SYNC_LIMIT_X) : 0;
-    if (i.enter && pp0) pastId = fsx > lsx + 0.5 ? pm.id : null; // entering Sync shows the playhead even when it is past the target (owner 2026-11-03)
-    if (pastId === pm.id && fsx <= lsx + 0.5) pastId = null; // the playhead is back before the mark: reaching it again parks again
+    if (i.enter && pp0) pastId = fsx > lsx + 0.5 ? ek : null; // entering Sync shows the playhead even when it is past the target (owner 2026-11-03)
+    if (pastId === ek && fsx <= lsx + 0.5) pastId = null; // the playhead is back before the mark: reaching it again parks again
     if (park) { parkHold = { sx: park.sx, keep: true }; pinRx = undefined; limitRx = undefined; }
-    else if (pastId === pm.id) limitRx = undefined;
+    else if (pastId === ek) limitRx = undefined;
     else if (limitRx !== undefined && !hold) { // atc-i0f2 slice 2: playing or paused, a seek or the auto-scroll that would pass the centre limit latches Held
-      if (fsx > lsx + 0.5) { park = { id: pm.id, sx: lsx }; parkHold = { sx: lsx, keep: true }; limitRx = undefined; pinRx = undefined; }
+      if (fsx > lsx + 0.5) { park = { id: ek, sx: lsx }; parkHold = { sx: lsx, keep: true }; limitRx = undefined; pinRx = undefined; }
     }
   } else { park = null; pastId = null; }
   var inp = {}, k;
   for (k in f) if (Object.prototype.hasOwnProperty.call(f, k)) inp[k] = f[k];
-  inp.hold = parkHold || hold; inp.scrub = scrub; inp.pinRx = pinRx; inp.limitRx = limitRx; inp.limitAx = SCORE_RIBBON_SYNC_LIMIT_X;
+  inp.hold = parkHold || (hold && !pl && edit ? { sx: hold.sx, keep: true } : hold); // atc-ncw3: a paused Sync hold applies (keep)
+  inp.scrub = scrub; inp.pinRx = pinRx; inp.limitRx = limitRx; inp.limitAx = SCORE_RIBBON_SYNC_LIMIT_X;
   return { motion: scoreMotionPack({ hold: hold, park: park, scrub: scrub }, pastId), glide: glide, view: scoreRibbonFrame(inp), fbShow: !!park || (!!hold && !glide) };
 }
 /** atc-elfg.6: what one drawn ribbon frame contains, from the frame view. mp = scoreRibbonMarkPos(...).
@@ -13405,7 +13445,7 @@ function initScorePanel_() {
     return changed;
   }
   // ---- Discoverability (bd atc-ore.22): music-note PDF button and the first-time how-to ----
-  var NOTE_ICON = '<svg viewBox="0 0 24 24" width="1.15em" height="1.15em" fill="currentColor" aria-hidden="true" focusable="false"><path d="M6 2h8l5 5v6.6a3.2 3.2 0 0 0-1.5-.4c-1.4 0-2.5.9-2.5 2.1s1.1 2.1 2.5 2.1c.5 0 1-.1 1.4-.4V22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5L13 3.5zM15 11v6.1a3.2 3.2 0 0 0-1.5-.4c-1.4 0-2.5.9-2.5 2.1s1.1 2.1 2.5 2.1 2.5-.9 2.5-2.1V13h2v-2h-3z" fill-rule="evenodd"/></svg>';
+  var SCORE_ICON = '<img data-testid="score-icon" src="icons/score-32.webp" srcset="icons/score-32.webp 1x, icons/score-64.webp 2x, icons/score-96.webp 3x" width="32" height="32" alt="" draggable="false">';
   var introEl = $('score-intro'), introOk = $('score-intro-ok');
   var introReturn = null;
   var avail = { folder: '', fetched: '', ok: false, resolved: '', pending: '' }; // resolved = the folder whose check has settled (atc-ore.25 AC 4)
@@ -13435,7 +13475,7 @@ function initScorePanel_() {
     var b = document.querySelector('[data-testid="pdf-btn-playback"]');
     if (!b) return;
     if (avail.ok) {
-      if (b.getAttribute('data-score') !== 'true') { b.setAttribute('data-score', 'true'); b.innerHTML = NOTE_ICON; }
+      if (b.getAttribute('data-score') !== 'true') { b.setAttribute('data-score', 'true'); b.innerHTML = SCORE_ICON; }
       b.title = 'Open the score (follows playback)';
       b.setAttribute('aria-label', 'Open the score (follows playback)');
     } else if (b.getAttribute('data-score') === 'true') {
@@ -13697,6 +13737,8 @@ function initScorePanel_() {
     if (key !== r.id && !scoreNudgeInfo(S.marks, key)) return null; // an untimed pass entry takes its time from Time only
     return { id: r.id, key: key };
   }
+  /** atc-ffh8: the entry key (mark id + pass) of the Sync target position the ribbon motion keys Held and Follow by; null with no target. */
+  function pinEntryKey() { var m = pinMark(); return m ? m.id + '.' + (pinPassN() || 1) : null; }
   function pinMark() { if (!syncOn() || (S.unpinned && !S.ribbonShown) || S.offsetMode) return null; /* atc-i0f2 slice 2: the ribbon has no unpin (a pan holds the view, Follow returns it); the page view keeps it */ var r = syncTargetNow(); return r && r.id ? markById(r.id) : null; }
   /** atc-i0f2 slice 2: the pass (1, 2, ...) of the Sync target's entry, from its key ('m7.2' is pass 2); 0 when none. */
   function pinPassN() {
@@ -14471,9 +14513,10 @@ function initScorePanel_() {
     if (pk && S.rv.layout) { rvSet({ park: { id: pk.id, sx: scoreClamp(pk.sx + dx, 0, Math.max(0, S.rv.layout.width - pageGeo(true).W)) } }); return true; } // atc-i0f2: a drag while parked moves the parked view and it stays parked (only Follow or a new target ends it)
     if (S.ribbonShown && syncOn() && S.rv.layout) { // atc-i0f2 slice 2: a Sync pan holds the view at the target (Held); only Follow or a new target ends it
       var pmx = pinMark(), mx = Math.max(0, S.rv.layout.width - pageGeo(true).W);
-      if (pmx) { S.rv.glide = null; rvSet({ hold: null, park: { id: pmx.id, sx: scoreClamp((S.rv.sx || 0) + dx, 0, mx) } }); return true; }
+      if (pmx) { S.rv.glide = null; rvSet({ hold: null, park: { id: pinEntryKey(), sx: scoreClamp((S.rv.sx || 0) + dx, 0, mx) } }); return true; }
     }
     if (isPlayingNow()) return ribbonHoldBy(dx);
+    if (S.edit && S.ribbonShown && S.rv.sx !== null && syncOn() && S.rv.layout) { S.rv.glide = null; var hp = rvParts().hold; rvSet({ hold: { sx: scoreClamp((hp ? hp.sx : S.rv.sx) + dx, 0, Math.max(0, S.rv.layout.width - pageGeo(true).W)) } }); return true; } // atc-ncw3: Sync with no target: the paused drag holds the view (heldId null), so it survives pause and play and shows Follow
     if (S.edit && S.ribbonShown && S.rv.sx !== null) { S.rv.sx = Math.max(0, S.rv.sx + dx); S.rv.dragged = true; return true; } // drawRibbon clamps
     return false;
   }
@@ -14822,7 +14865,7 @@ function initScorePanel_() {
       if (!S.ribbonShown) setRibbonShown(true);
       if (S.enterPt) { // owner 2026-11-03: Layout -> Sync, nothing selected: open at the slice and x of the page view's centre
         var ge = pageGeo(true), le = ribbonLayoutFor(ge), ex = scoreRibbonXOfPoint(le, ge, S.enterPt);
-        if (ex !== null) { S.rv.sx = scoreClamp(scoreRibbonScroll(ex, le, ge.W), 0, Math.max(0, le.width - ge.W)); var pme = pinMark(); if (pme) rvSet({ hold: null, park: { id: pme.id, sx: S.rv.sx } }); } // atc-i0f2 slice 2: the ribbon opens held where the page view was
+        if (ex !== null) { S.rv.sx = scoreClamp(scoreRibbonScroll(ex, le, ge.W), 0, Math.max(0, le.width - ge.W)); var pme = pinMark(); if (pme) rvSet({ hold: null, park: { id: pinEntryKey(), sx: S.rv.sx } }); } // atc-i0f2 slice 2: the ribbon opens held where the page view was
         S.enterPt = null;
       }
       var d0 = performance.now();
@@ -16408,7 +16451,7 @@ function renderFolderMedia(videos, pdfsIn, folderId) {
       else mediaViewer_.openChooser(pdfs, b);
     };
   });
-  if (scorePanel_) scorePanel_.checkScore(pdfs, folderId); // atc-ore.22: the playback button's music-note look and the first-time how-to
+  if (scorePanel_) scorePanel_.checkScore(pdfs, folderId); // atc-ore.22: the playback button's score icon and the first-time how-to
 }
 
 function initMediaViewer() {
